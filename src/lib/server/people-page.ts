@@ -8,9 +8,11 @@ import {
 	addShortlisted,
 	hasEnded,
 	listEventPeople,
+	parseExtra,
 	type EventPersonRow,
 	type GuestInput,
-	type Refusal
+	type Refusal,
+	type RowExtra
 } from './event-people.ts';
 import type { EventRow } from './events.ts';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
@@ -85,7 +87,8 @@ export function toView(row: EventPersonRow, since: number | null): PeopleRow {
 		note: row.note,
 		locked_at: row.locked_at,
 		blocked_at: row.blocked_at,
-		suppressed: !!row.d365_suppressed,
+		// A Found row from D365 carries the flag in its snapshot until Add refuses it (§6.1).
+		suppressed: !!row.d365_suppressed || !!parseExtra(row.extra)?.suppressed,
 		chase_count: row.chase_count,
 		touch_count: row.touch_count,
 		contact: {
@@ -162,6 +165,7 @@ export function reviewedGuests(
 		const r = (row ?? {}) as Record<string, unknown>;
 		const email = normalizeEmail(r.email);
 		const linkedinText = cleanText(r.linkedin, 300);
+		const extra = readExtra(r.extra);
 		const guest: GuestInput = {
 			name: cleanText(r.name, 100),
 			company: cleanText(r.company, 120) || company,
@@ -170,7 +174,8 @@ export function reviewedGuests(
 			phone: normalizePhone(r.phone, country),
 			linkedin: linkedinProfile(linkedinText),
 			reply: isReply(r.reply) ? r.reply : 'pending',
-			note: cleanText(r.note, 300)
+			note: cleanText(r.note, 300),
+			...(extra ? { extra } : {})
 		};
 		const which = `Row ${i + 1}${guest.name ? ` (${guest.name})` : ''}`;
 		if (!guest.name) return `${which} needs a name.`;
@@ -180,6 +185,20 @@ export function reviewedGuests(
 		guests.push(guest);
 	}
 	return guests;
+}
+
+/** The D365 flags a reviewed row carries back from the review card, as booleans and short text. */
+function readExtra(raw: unknown): RowExtra | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const e = raw as Record<string, unknown>;
+	return {
+		isCustomer: !!e.isCustomer,
+		doNotEmail: !!e.doNotEmail,
+		doNotPhone: !!e.doNotPhone,
+		suppressed: !!e.suppressed,
+		owner: cleanText(e.owner, 100),
+		status: cleanText(e.status, 60)
+	};
 }
 
 export interface AddRequest {
@@ -193,6 +212,8 @@ export interface AddRequest {
 	park: boolean;
 	/** The one-time "where did you get their details" answer for typed rows (D16). */
 	originDetail?: string;
+	/** The rows came from a Dynamics 365 export: customers, stamped `d365` (D11, D16). */
+	d365?: boolean;
 }
 
 export interface AddSummary {
@@ -232,12 +253,20 @@ export function addPeople(
 		}
 		if (req.typed.length) {
 			const bigPaste = req.typed.length > FOUND_THRESHOLD;
+			// D365 rows keep their source at any size, so the people they become are customers.
+			const typed = req.typed.map((g) =>
+				req.d365 ? { ...g, extra: { isCustomer: true, ...g.extra } } : g
+			);
 			if (req.park || bigPaste) {
 				const r = addFound(
 					db,
 					eventId,
-					req.typed,
-					{ source: bigPaste ? 'paste' : 'typed', by, originDetail: req.originDetail },
+					typed,
+					{
+						source: req.d365 ? 'd365' : bigPaste ? 'paste' : 'typed',
+						by,
+						originDetail: req.originDetail
+					},
 					now
 				);
 				summary.found += r.added;
@@ -247,8 +276,8 @@ export function addPeople(
 				const r = addShortlisted(
 					db,
 					eventId,
-					req.typed,
-					{ source: 'typed', by, originDetail: req.originDetail },
+					typed,
+					{ source: req.d365 ? 'd365' : 'typed', by, originDetail: req.originDetail },
 					now
 				);
 				summary.added += r.added.length;

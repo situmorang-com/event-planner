@@ -7,6 +7,17 @@ export type Via = 'whatsapp' | 'email' | 'linkedin' | 'other';
 export type Source =
 	'typed' | 'paste' | 'd365' | 'pool' | 'research' | 'self_registered' | 'walk_in' | 'copied';
 
+export type Origin = 'self_registered' | 'checkin' | 'd365' | 'typed' | 'research';
+
+/** How a person first entered the pool (D16), as the Contacts page and the exports say it. */
+export const ORIGIN_LABEL: Record<Origin, string> = {
+	self_registered: 'Registered',
+	checkin: 'Checked in',
+	d365: 'Dynamics 365',
+	typed: 'Typed',
+	research: 'Research'
+};
+
 export const STAGE_LABEL: Record<Stage, string> = {
 	found: 'Found',
 	shortlisted: 'Shortlisted',

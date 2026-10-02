@@ -84,11 +84,22 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   row so you can open the profile and fill in the rest. It doesn't fetch the profile itself:
   LinkedIn's terms forbid scraping and profiles sit behind a sign-in. When a link doesn't spell
   out a name ("rinaw88"), the review asks you to type it.
-- **Pasting a spreadsheet.** Include the header row and each column lands in the right place.
-  Headers can be English or Indonesian (_Nama_, _Perusahaan_, _Jabatan_, _No. HP_), and Outlook's
-  separate first-name and last-name columns work. A reply column (_Yes_, _Hadir_, _Tentative_,
-  _Tidak hadir_…) sets each reply. Anything it can't read, such as "Yes, with a colleague", is
-  kept word for word as a note.
+- **Pasting a spreadsheet, or opening a CSV.** Include the header row and each column lands in
+  the right place; **Open a CSV file** reads a saved export the same way. Headers can be English
+  or Indonesian (_Nama_, _Perusahaan_, _Jabatan_, _No. HP_), and Outlook's separate first-name
+  and last-name columns work. A reply column (_Yes_, _Hadir_, _Tentative_, _Tidak hadir_…) sets
+  each reply. Anything it can't read, such as "Yes, with a colleague", is kept word for word as
+  a note. The review card always shows which column it took for what; **Change columns** lets
+  you correct it, and opens by itself when fewer than two columns were recognised.
+- **Dynamics 365 exports.** Paste or open a contacts view (_Full Name_, _Parent Customer_,
+  _Email Address 1_, _Mobile Phone 1_, _Owner_, _Do not allow Emails_, _Do not allow Phone
+  Calls_, _Send Marketing Materials_, _Status_…). The hidden _(Do Not Modify)_ columns of a
+  static worksheet are dropped. Everyone imported is recorded as a customer (origin _Dynamics
+  365_), and the flags are honoured: _do not email_ hides the email button, _do not phone_ hides
+  WhatsApp, and _Do Not Send_ marketing or an _Inactive_ status marks the row **Suppressed**: it
+  waits under To review and cannot be added. A _Status_ column counts as replies only when its
+  values read as replies. The _Owner_ column becomes the company's owner when it names a team
+  member and the company has none; otherwise it is kept as a note on the company.
 - **To review.** What the research run found (see [Planning](#planning-finding-people-to-invite))
   waits here with its source link and reason. **Add** makes the person real and shortlists them;
   **Skip** hides the row (reversibly). A company header offers **Add all** and **Skip all**.
@@ -119,27 +130,48 @@ the event no chip is on; once it has ended, Checked in and No-show are.
 
 ## Planning: finding people to invite
 
-The **Planning** tab helps you decide who to invite before the guest list exists.
+The **Planning** tab holds the brief, the target companies and the research command. An event
+needs a date first: what research finds is kept only until the event starts.
 
 1. **Who should come?** Answer a few questions for the event: what it's for, which roles,
-   how senior, which departments, how many per company, and who to leave out.
+   how senior, which departments, how many per company, and who to leave out. Describe roles
+   and companies, not names: the brief Claude receives says only how many people are already
+   known at each company, never who, and a line that names someone is dropped from it.
 2. **Target companies.** One per line, with a website if you know it. Give a company its own
-   focus ("only their finance team") when it differs from the brief.
+   focus ("only their finance team") when it differs from the brief. Each company has a
+   **research tick**: by default a company is researched until enough contactable people are
+   known there (the "how many per company" number); tick or untick to decide yourself, and
+   _default_ puts it back. A run takes at most **15** ticked companies. After a run the company
+   shows _researched 2 Oct_. Blocked companies are never researched.
 3. **Find people with Claude.** Create a token under Settings › API tokens (shown once),
-   `export EVENT_PLANNER_TOKEN=…` in your terminal, and run the command the page shows. Your terminal fetches the event's research
-   brief, `claude -p` researches it with web search and fetch only, and the answer is posted
-   back. Claude never sees the token and has no shell, so a web page that tries to hijack it has
-   nothing to send. It sticks to public sources (company sites, news, search results) and work
-   details only: no LinkedIn sign-in, no emails or phone numbers.
+   `export EVENT_PLANNER_TOKEN=…` in your terminal, and run the command the page shows. It runs
+   under the SRKK Team/API account. Your terminal fetches the event's research brief, `claude
+-p` researches it with web search and fetch only, and the answer is posted back. Claude never
+   sees the token and has no shell, so a web page that tries to hijack it has nothing to send.
+   It sticks to public sources (company sites, news, search results) and work details only: no
+   LinkedIn sign-in, no emails or phone numbers. The brief is refused (and the reason printed)
+   while the event has no date, the brief is empty, no company is ticked, or more than 15 are.
 4. **Review what it found.** Each find waits under **To review** on the People tab with its
    title, why it fits, and its source. **Add** puts the person on the list; **Skip** hides them.
    Neither is suggested again, and neither is anyone already on the list, so re-running only
-   brings new people. An event needs a date before research runs: finds are deleted when it
-   starts.
+   brings new people. Once the event has started, research still runs but nothing it returns
+   is kept, and the Found rows nobody approved are deleted.
 
 The API behind step 3 is `GET /api/research/events/<id>/prompt` and
 `POST /api/research/events/<id>/suggestions`, both with `Authorization: Bearer <token>`.
 Tokens are stored hashed and can be revoked in Settings.
+
+## Contacts
+
+**Contacts** lists the pool: everyone who attended, replied or registered, matched by email,
+mobile, LinkedIn and name across every event. The **Prospects** chip shows the rest: people
+found by research or typed in who never replied or came. Each person shows their origin
+(checked in, registered, typed, Dynamics 365, research), how long they are kept, and whether
+they are locked. **Merge into…** folds two records that turned out to be one person into the
+one you keep; **Delete** is the right-to-erasure button: the person, their check-ins and every
+event row go, and the deletion is logged. **Export CSV** carries _Origin_ and _Kept until_
+columns; **Prospects CSV** exports the rest. In every export, a locked person's email, mobile
+and LinkedIn are blank.
 
 ## Settings
 
@@ -171,7 +203,7 @@ Copy `.env.example` to `.env`. Everything is optional in development.
 | `ORIGIN`                | Public URL, e.g. `https://checkin.example.com`. **Required in production** by SvelteKit's Node adapter, otherwise every form post is rejected. |
 | `PUBLIC_BASE_URL`       | URL printed into QR codes, if it differs from `ORIGIN`.                                                                                        |
 | `ORG_NAME`              | Shown in the consent line: "I agree that _SRKK_ may keep these details…"                                                                       |
-| `PRIVACY_URL`           | Adds a privacy policy link next to the consent box.                                                                                            |
+| `PRIVACY_URL`           | Privacy policy link next to the consent box, and in the source line sent to people found by research. **Required** to message those people.    |
 | `DEFAULT_PHONE_COUNTRY` | Reads local numbers such as `0812-3456-7890` as `+62…`. Default `ID`; use `MY` for Malaysia.                                                   |
 | `DEFAULT_TIMEZONE`      | Fallback event time zone. Default `Asia/Jakarta`; new events take the organizer's browser zone.                                                |
 | `DB_PATH`               | SQLite file. Default `data/attendance.db`. Put it on a persistent volume.                                                                      |
@@ -207,8 +239,25 @@ network.
   title, email, mobile, LinkedIn profile link, stage, reply, note, owner and the messages
   recorded. Deleting an event deletes its rows; a person stays in the pool.
 - **Deleting a contact** on the Contacts page removes that person, their whole check-in history
-  and any invitation under their email.
+  and every event row they were on, and writes an entry to the activity log.
+- **Locked people** (do-not-contact) are exported as name and company only, everywhere.
+- **Research findings** are never exported.
 - **Timestamps** in CSV exports are ISO 8601, in UTC.
+
+### Retention
+
+What the app deletes by itself, and when. The event-start step runs as soon as an event page
+is opened after the start; the rest is scheduled housekeeping.
+
+| What                                                 | Kept until                                    |
+| ---------------------------------------------------- | --------------------------------------------- |
+| Found rows nobody approved                           | the event starts                              |
+| Found rows that were skipped                         | 90 days after the event starts                |
+| Research and typed prospects who never replied       | 12 months after their last event              |
+| Past Indonesian attendees who never ticked a consent | 30 days after the notice, unless they reply   |
+| Attendees, customers, anyone who replied             | deleted by hand                               |
+| Touch and activity logs                              | with the row or the event                     |
+| Do-not-contact entries                               | forever (removed by hand only, with a reason) |
 
 ## Project layout
 
@@ -232,7 +281,10 @@ src/
       checkins.ts             check-ins, linked to people and their event rows
       people-page.ts          the People tab's view of an event and its add form
       match-arrivals.ts       pairing a v1 guest list with check-ins (used by the migration)
-      guest-list.ts           reading typed and pasted guest lists
+      guest-list.ts           reading typed, pasted and D365 guest lists; column mapping
+      exports.ts              the one export row every CSV goes through (locked people stripped)
+      jobs.ts                 the event-start purge, run lazily from the event pages
+      planning.ts             the brief, target companies, research ticks and the count-only prompt
       qr-token.ts             rotating QR tokens and the 30-minute scan pass
       auth.ts                 signed organizer session
       bus.ts                  in-process pub/sub behind the live stream

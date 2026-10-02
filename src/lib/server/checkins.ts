@@ -142,6 +142,8 @@ export interface AttendeeRow {
 	consent_at: number | null;
 	/** Attended an earlier event, i.e. was already in the database. */
 	is_returning: 0 | 1;
+	/** On the do-not-contact list: exports blank their channels (D13). */
+	locked_at: number | null;
 }
 
 export function listAttendees(db: DB, eventId: string): AttendeeRow[] {
@@ -149,7 +151,7 @@ export function listAttendees(db: DB, eventId: string): AttendeeRow[] {
 		.prepare(
 			`SELECT c.id AS checkin_id, p.id AS person_id, p.name, p.email, p.phone,
 				COALESCE(co.name, '') AS company, p.job_title, c.checked_in_at, c.method, c.device,
-				c.consent_at,
+				c.consent_at, p.locked_at,
 				EXISTS (
 					SELECT 1 FROM checkins prev
 					WHERE prev.person_id = c.person_id AND prev.event_id <> c.event_id

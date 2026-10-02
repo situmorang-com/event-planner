@@ -42,3 +42,24 @@ export const EMPTY_BRIEF: Brief = {
 export function briefIsReady(b: Brief): boolean {
 	return !!(b.roles.trim() || b.seniority.length || b.departments.length);
 }
+
+/** The shell variable the research command reads the API token from (§6.2). */
+export const RESEARCH_TOKEN_VAR = 'EVENT_PLANNER_TOKEN';
+
+/**
+ * The one-line pipeline the organizer runs: curl fetches the brief with the token, claude -p
+ * researches it with web tools only, and curl posts the answer back. Claude never sees the
+ * token, and the app refuses the brief (printing why) before Claude spends anything.
+ */
+export function researchCommand(base: string, eventId: string): string {
+	const auth = `-H "Authorization: Bearer $${RESEARCH_TOKEN_VAR}"`;
+	const promptUrl = `${base}/api/research/events/${eventId}/prompt`;
+	const postUrl = `${base}/api/research/events/${eventId}/suggestions`;
+	return [
+		`brief=$(curl -sS --fail-with-body ${auth} ${promptUrl}) || { echo "$brief" >&2; false; } \\`,
+		`  && printf '%s' "$brief" \\`,
+		`  | claude -p --tools "WebSearch WebFetch" --allowedTools "WebSearch WebFetch" --output-format json \\`,
+		`  | tee "event-planner-research-${eventId}-$(date +%H%M).json" \\`,
+		`  | curl -sS --fail-with-body ${auth} -H "content-type: application/json" --data-binary @- ${postUrl}`
+	].join('\n');
+}

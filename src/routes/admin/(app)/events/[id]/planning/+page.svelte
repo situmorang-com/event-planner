@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import EventTabs from '$lib/components/EventTabs.svelte';
-	import { briefIsReady, DEPARTMENTS, SENIORITY } from '$lib/planning';
-	import { formatDateTime } from '$lib/time';
+	import {
+		briefIsReady,
+		DEPARTMENTS,
+		researchCommand,
+		RESEARCH_TOKEN_VAR,
+		SENIORITY
+	} from '$lib/planning';
+	import { formatDate, formatDateTime } from '$lib/time';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import Check from '@lucide/svelte/icons/check';
@@ -26,19 +32,16 @@
 	let briefSaved = $state(false);
 	let copied = $state<string | null>(null);
 
-	const promptUrl = $derived(`${data.base}/api/research/events/${event.id}/prompt`);
-	const postUrl = $derived(`${data.base}/api/research/events/${event.id}/suggestions`);
 	// The agent gets web tools only and never the token: curl fetches its brief and posts its answer.
-	const command = $derived(
-		[
-			// The brief is fetched first: if the app refuses it, its reason is printed and Claude never runs.
-			`brief=$(curl -sS --fail-with-body -H "Authorization: Bearer $EVENT_PLANNER_TOKEN" ${promptUrl}) || { echo "$brief" >&2; false; } \\`,
-			`  && printf '%s' "$brief" \\`,
-			`  | claude -p --tools "WebSearch WebFetch" --allowedTools "WebSearch WebFetch" --output-format json \\`,
-			`  | tee "event-planner-research-${event.id}-$(date +%H%M).json" \\`,
-			`  | curl -sS --fail-with-body -H "Authorization: Bearer $EVENT_PLANNER_TOKEN" -H "content-type: application/json" --data-binary @- ${postUrl}`
-		].join('\n')
-	);
+	const command = $derived(researchCommand(data.base, event.id));
+	const overCap = $derived(data.ticked > data.cap);
+
+	/** "researched 2 Oct", "requested 2 Oct" or nothing, for a target's research tick. */
+	function researchNote(t: { researchedAt: number | null; requestedAt: number | null }) {
+		if (t.researchedAt) return `researched ${formatDate(t.researchedAt, event.timezone)}`;
+		if (t.requestedAt) return `requested ${formatDate(t.requestedAt, event.timezone)}`;
+		return '';
+	}
 
 	async function copy(text: string, what: string) {
 		await navigator.clipboard.writeText(text);
@@ -200,6 +203,10 @@
 						value={brief.avoid}
 						placeholder="Competitors, interns, people our sales team already meets"
 					/>
+					<p class="hint">
+						Roles and companies, not names: the brief Claude gets counts the people already known
+						per company and never carries a name, so a line naming someone is left out of it.
+					</p>
 				</div>
 			</div>
 			<div class="actions">
@@ -216,7 +223,10 @@
 			<div>
 				<h2>Target companies</h2>
 				<p class="muted">
-					The companies to find people at. Add a focus to change the brief for one company.
+					The companies to find people at. Add a focus to change the brief for one company (roles
+					and departments, not names). The tick says whether the next run researches it: by default,
+					until {brief.perCompany} contactable
+					{brief.perCompany === 1 ? 'person is' : 'people are'} known there. At most {data.cap} per run.
 				</p>
 			</div>
 		</div>
@@ -224,7 +234,28 @@
 		{#if data.targets.length}
 			<ul class="targets">
 				{#each data.targets as t (t.id)}
-					<li class="target">
+					<li class="target" class:unticked={!t.ticked}>
+						<form
+							method="POST"
+							action="?/research"
+							class="tick-form"
+							use:enhance={() =>
+								async ({ update }) =>
+									update({ reset: false })}
+						>
+							<input type="hidden" name="id" value={t.id} />
+							<!-- The hidden value is what the next click sends: the opposite of the tick. -->
+							<input type="hidden" name="research" value={t.ticked ? '0' : '1'} />
+							<label class="tick" title={t.blocked ? 'Blocked company' : 'Research this company'}>
+								<input
+									type="checkbox"
+									checked={t.ticked}
+									disabled={t.blocked}
+									onchange={(e) => e.currentTarget.form?.requestSubmit()}
+								/>
+								<span class="sr-only">Research {t.name}</span>
+							</label>
+						</form>
 						<div class="target-name">
 							<strong>{t.name}</strong>
 							{#if t.website}
@@ -237,7 +268,27 @@
 							{/if}
 							<span class="muted small">
 								{t.live} on the list{t.waiting ? ` · ${t.waiting} to review` : ''}
+								{#if t.blocked}
+									· <span class="bad">blocked</span>
+								{:else if t.research === null}
+									· {t.ticked ? 'research by default' : `${t.known} known, not researched`}
+								{/if}
+								{#if researchNote(t)}· {researchNote(t)}{/if}
 							</span>
+							{#if t.research !== null}
+								<form
+									method="POST"
+									action="?/research"
+									use:enhance={() =>
+										async ({ update }) =>
+											update({ reset: false })}
+								>
+									<input type="hidden" name="id" value={t.id} />
+									<button class="btn btn-ghost btn-sm reset" title="Back to the computed default">
+										default
+									</button>
+								</form>
+							{/if}
 						</div>
 						<form
 							method="POST"
@@ -252,7 +303,7 @@
 								class="focus"
 								name="focus"
 								value={t.focus}
-								placeholder="Focus for this company (optional)"
+								placeholder="Focus for this company: roles and departments, not names"
 								aria-label="Focus for {t.name}"
 								onblur={(e) => saveOnBlur(e, t.focus)}
 								onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), e.currentTarget.blur())}
@@ -319,18 +370,35 @@
 			</div>
 		</div>
 
+		{#if data.started}
+			<p class="banner banner-warn">
+				The event has started: research still runs, but the list has gone live, so what it finds now
+				is not kept. Found rows nobody approved were deleted when it began.
+			</p>
+		{/if}
 		{#if !ready}
 			<p class="banner banner-warn">
 				{briefIsReady(brief)
 					? 'Add at least one target company first.'
 					: 'Answer “which roles”, “how senior” or “which departments” above and save first.'}
 			</p>
+		{:else if overCap}
+			<p class="banner banner-warn">
+				{data.ticked} companies are ticked; a run takes at most {data.cap}. Untick some above.
+			</p>
+		{:else if data.refusal}
+			<p class="banner banner-warn">{data.refusal}</p>
+		{:else}
+			<p class="muted small">
+				The next run researches {data.ticked}
+				{data.ticked === 1 ? 'company' : 'companies'}.
+			</p>
 		{/if}
 
 		<div class="run">
 			<h3><KeyRound size={16} /> Access token</h3>
 			<p class="hint">
-				The command reads <code>EVENT_PLANNER_TOKEN</code> from your shell. Create one under
+				The command reads <code>{RESEARCH_TOKEN_VAR}</code> from your shell. Create one under
 				<a href="/admin/settings#tokens">Settings › API tokens</a> and export it once in the
 				terminal you research from (or in <code>~/.zshrc</code>).
 			</p>
@@ -531,11 +599,49 @@
 
 	.target {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+		grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) auto;
 		align-items: center;
 		gap: 12px;
 		padding: 10px 0;
 		border-top: 1px solid var(--border);
+	}
+
+	.target.unticked .target-name strong {
+		color: var(--muted);
+	}
+
+	.tick-form {
+		display: flex;
+	}
+
+	.tick {
+		display: grid;
+		place-items: center;
+		width: 28px;
+		height: 28px;
+		cursor: pointer;
+	}
+
+	.tick input {
+		width: 18px;
+		height: 18px;
+		margin: 0;
+		accent-color: var(--brand);
+	}
+
+	.tick input:disabled {
+		cursor: not-allowed;
+	}
+
+	.reset {
+		--h: 24px;
+		font-size: 12px;
+		padding: 0 8px;
+	}
+
+	.bad {
+		color: var(--bad);
+		font-weight: 650;
 	}
 
 	.target-name {
@@ -637,13 +743,18 @@
 	}
 
 	@media (max-width: 700px) {
-		.row,
-		.target {
+		.row {
 			grid-template-columns: 1fr;
 		}
 
+		/* The tick keeps the name beside it; the focus and remove controls drop under both. */
 		.target {
-			gap: 6px;
+			grid-template-columns: auto minmax(0, 1fr);
+			gap: 6px 10px;
+		}
+
+		.target > :nth-child(n + 3) {
+			grid-column: 1 / -1;
 		}
 
 		.other {

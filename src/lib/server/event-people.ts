@@ -1,7 +1,7 @@
 import { companyKey, nameKey } from '../invitations.ts';
 import { CHIPS, chipCounts, matchesChip, type Chip, type ChipRow, type Source } from '../people.ts';
 import { logActivity } from './activity-log.ts';
-import { ensureCompany, findCompany, isBlocked } from './companies.ts';
+import { ensureCompany, findCompany, isBlocked, noteCompanyOwner } from './companies.ts';
 import type { DB } from './database.ts';
 import { addEntry, check as doNotContact, lockPerson, type DncSource } from './do-not-contact.ts';
 import {
@@ -284,10 +284,12 @@ export function addFound(
 				continue;
 			}
 			keys.forEach((k) => seen.add(k));
+			const company = ensureCompany(db, g.company, {}, now);
+			if (company && g.extra?.owner) noteCompanyOwner(db, company.id, g.extra.owner, now);
 			insert.run({
 				eventId,
 				personId: null,
-				companyId: ensureCompany(db, g.company, {}, now)?.id ?? null,
+				companyId: company?.id ?? null,
 				name: g.name,
 				jobTitle: g.jobTitle,
 				email: g.email,
@@ -373,6 +375,10 @@ function applyExtra(db: DB, personId: string, extra: RowExtra | null | undefined
 		noPhone: extra.doNotPhone ? 1 : 0,
 		now
 	});
+	if (extra.owner) {
+		const person = getPerson(db, personId);
+		if (person?.company_id) noteCompanyOwner(db, person.company_id, extra.owner, now);
+	}
 }
 
 /**

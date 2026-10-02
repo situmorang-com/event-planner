@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { isReply, linkedinProfile } from '$lib/invitations';
+import { logActivity } from '$lib/server/activity-log';
 import { countCheckins } from '$lib/server/checkins';
 import { companySuggestions, renameCompany, setCompanyOwner } from '$lib/server/companies';
 import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
@@ -26,6 +27,7 @@ import {
 } from '$lib/server/event-people';
 import { getEvent } from '$lib/server/events';
 import { parseGuestList } from '$lib/server/guest-list';
+import { eventPageLoad } from '$lib/server/jobs';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { getPeople, mergeInto } from '$lib/server/people';
 import { addPeople, peopleView, reviewedGuests } from '$lib/server/people-page';
@@ -54,7 +56,8 @@ function ownerFrom(form: FormData): string | null {
 }
 
 export const load: PageServerLoad = ({ params, locals }) => {
-	const event = requireEvent(params.id);
+	// The start job runs lazily here until the scheduler lands (§5.4).
+	const event = eventPageLoad(db, requireEvent(params.id));
 	const tabs = {
 		checkins: countCheckins(db, event.id),
 		people: countLive(db, event.id),
@@ -77,7 +80,7 @@ export const actions: Actions = {
 			: null;
 		if (typeof reviewed === 'string') return fail(400, { addError: reviewed });
 		const parsed = reviewed
-			? { guests: reviewed, skipped: [], truncated: false }
+			? { guests: reviewed, skipped: [], truncated: false, d365: false }
 			: parseGuestList(String(form.get('names') ?? ''), { company, country });
 		const picked = getPeople(db, form.getAll('contact').map(String));
 		if (!picked.length && !parsed.guests.length) {
@@ -87,6 +90,8 @@ export const actions: Actions = {
 					: 'Add at least one name.'
 			});
 		}
+		// Reviewed rows say where they came from; a direct paste is read for D365 headers here.
+		const d365 = reviewed ? form.get('d365') === '1' : parsed.d365;
 		const summary = addPeople(
 			db,
 			event.id,
@@ -95,10 +100,19 @@ export const actions: Actions = {
 				picked,
 				company,
 				park: form.get('park') === '1',
-				originDetail: cleanText(form.get('originDetail'), 200)
+				originDetail: cleanText(form.get('originDetail'), 200),
+				d365
 			},
 			{ by: locals.who }
 		);
+		if (d365 && parsed.guests.length)
+			logActivity(db, {
+				eventId: event.id,
+				kind: 'import',
+				who: locals.who,
+				what: { source: 'd365', added: summary.added, found: summary.found },
+				rowCount: summary.added + summary.found
+			});
 		return { ...summary, skipped: parsed.skipped, truncated: parsed.truncated, company };
 	},
 

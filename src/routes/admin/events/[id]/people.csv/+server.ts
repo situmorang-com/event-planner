@@ -5,6 +5,7 @@ import { logActivity } from '$lib/server/activity-log';
 import { csvResponse, toCsv } from '$lib/server/csv';
 import { db } from '$lib/server/db';
 import { getEvent } from '$lib/server/events';
+import { exportRow, iso } from '$lib/server/exports';
 import { groupRows, peopleView } from '$lib/server/people-page';
 import type { RequestHandler } from './$types';
 
@@ -17,26 +18,27 @@ export const GET: RequestHandler = ({ params, locals }) => {
 	if (!event) error(404, 'Event not found');
 
 	const live = peopleView(db, event).rows.filter((r) => r.stage !== 'found');
-	const iso = (ts: number | null | undefined) => (ts ? new Date(ts).toISOString() : '');
 	const rows = groupRows(live).flatMap((group) =>
-		group.rows.map((r) => [
-			r.company,
-			r.name,
-			r.job_title,
-			r.locked_at ? '' : r.email,
-			r.locked_at ? '' : r.phone,
-			r.locked_at ? '' : r.linkedin,
-			STAGE_LABEL[r.stage],
-			REPLY_LABEL[r.reply],
-			effectiveOwner(r),
-			r.note,
-			r.locked_at ? 'yes' : '',
-			iso(r.invited_at),
-			iso(r.replied_at),
-			iso(r.confirmed_at),
-			iso(r.checked_in_at),
-			iso(r.consent_event_at)
-		])
+		group.rows
+			.map(exportRow)
+			.map((r) => [
+				r.company,
+				r.name,
+				r.job_title,
+				r.email,
+				r.phone,
+				r.linkedin,
+				STAGE_LABEL[r.stage],
+				REPLY_LABEL[r.reply],
+				effectiveOwner(r),
+				r.note,
+				r.locked ? 'yes' : '',
+				iso(r.invited_at),
+				iso(r.replied_at),
+				iso(r.confirmed_at),
+				iso(r.checked_in_at),
+				iso(r.consent_event_at)
+			])
 	);
 	logActivity(db, {
 		eventId: event.id,

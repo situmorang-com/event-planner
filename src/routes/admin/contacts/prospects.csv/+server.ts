@@ -4,14 +4,14 @@ import { db } from '$lib/server/db';
 import { poolCsv } from '$lib/server/exports';
 import type { RequestHandler } from './$types';
 
-/** The default Contacts list (§2.3) as a spreadsheet, logged like every export (§8). */
+/** The prospects (§2.3, §4.5): found or typed, never replied, attended or registered. */
 export const GET: RequestHandler = ({ locals }) => {
-	const { csv, count } = poolCsv(db);
+	const { csv, count } = poolCsv(db, { prospects: true });
 	logActivity(db, {
 		kind: 'export',
 		who: locals.who,
-		what: { export: 'contacts' },
+		what: { export: 'prospects' },
 		rowCount: count
 	});
-	return csvResponse(`contacts-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+	return csvResponse(`prospects-${new Date().toISOString().slice(0, 10)}.csv`, csv);
 };

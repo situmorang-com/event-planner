@@ -9,6 +9,7 @@ import { db } from '$lib/server/db';
 import { countLive, countToReview } from '$lib/server/event-people';
 import { parseEventForm } from '$lib/server/event-form';
 import { deleteEvent, getEvent, setEventOpen, updateEvent } from '$lib/server/events';
+import { eventPageLoad } from '$lib/server/jobs';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { computeStats } from '$lib/server/stats';
 import { checkinUrl, publicBaseUrl } from '$lib/server/urls';
@@ -21,8 +22,9 @@ function requireEvent(id: string) {
 }
 
 export const load: PageServerLoad = ({ params, url }) => {
-	const event = requireEvent(params.id);
 	const now = Date.now();
+	// The start job runs lazily here until the scheduler lands (§5.4).
+	const event = eventPageLoad(db, requireEvent(params.id), now);
 	const attendees = listAttendees(db, event.id);
 	const { base, reachable } = publicBaseUrl(url);
 

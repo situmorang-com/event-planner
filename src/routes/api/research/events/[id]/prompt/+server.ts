@@ -2,13 +2,11 @@ import { error, text } from '@sveltejs/kit';
 import { verifyBearer } from '$lib/server/api-tokens';
 import { db } from '$lib/server/db';
 import { getEvent } from '$lib/server/events';
-import { briefIsReady } from '$lib/planning';
+import { getBrief } from '$lib/server/planning';
 import {
-	getBrief,
-	listTargets,
 	markResearchRequested,
-	RESEARCH_CAP,
 	researchPrompt,
+	researchRefusal,
 	researchTargets
 } from '$lib/server/planning';
 import { allow } from '$lib/server/rate-limit';
@@ -21,20 +19,10 @@ export const GET: RequestHandler = ({ params, request }) => {
 	if (!allow(`research:${token.id}`, 60, 60_000)) error(429, 'Too many requests');
 	const event = getEvent(db, params.id);
 	if (!event) error(404, 'Event not found');
-	// Stop before Claude spends anything on a brief with nothing to research.
-	if (event.starts_at === null) error(409, 'Set the event date first.');
-	const brief = getBrief(db, event.id);
-	if (!briefIsReady(brief))
-		error(
-			409,
-			'Answer “Who should come?” on the Planning page first (roles, seniority or departments).'
-		);
-	if (!listTargets(db, event.id).length)
-		error(409, 'Add at least one target company on the Planning page first.');
-	const targets = researchTargets(db, event.id, brief.perCompany);
-	if (!targets.length) error(409, 'No target company is ticked for research.');
-	if (targets.length > RESEARCH_CAP)
-		error(409, `At most ${RESEARCH_CAP} companies per run; untick some on the Planning page.`);
+	// Stop before Claude spends anything on a brief with nothing to research (§6.2).
+	const refusal = researchRefusal(db, event);
+	if (refusal) error(409, refusal);
+	const targets = researchTargets(db, event.id, getBrief(db, event.id).perCompany);
 	markResearchRequested(
 		db,
 		event.id,

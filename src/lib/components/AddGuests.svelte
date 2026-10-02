@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { nameFromLinkedin, REPLY_LABEL, type Reply } from '$lib/invitations';
+	import Columns3 from '@lucide/svelte/icons/columns-3';
+	import FileUp from '@lucide/svelte/icons/file-up';
 	import ListPlus from '@lucide/svelte/icons/list-plus';
 	import SquarePen from '@lucide/svelte/icons/square-pen';
 	import X from '@lucide/svelte/icons/x';
@@ -25,6 +27,16 @@
 		company: string;
 	}
 
+	/** The flags a Dynamics 365 row carries (§6.1); shown on the card and saved with the person. */
+	interface Extra {
+		isCustomer?: boolean;
+		doNotEmail?: boolean;
+		doNotPhone?: boolean;
+		suppressed?: boolean;
+		owner?: string;
+		status?: string;
+	}
+
 	/** One person, field by field, while being checked before saving. */
 	interface Entry {
 		key: number;
@@ -36,6 +48,16 @@
 		linkedin: string;
 		reply: Reply;
 		note: string;
+		extra?: Extra | null;
+	}
+
+	/** What the review endpoint says about the paste's shape, for the column-mapping control. */
+	interface Mapping {
+		headers: string[];
+		header: boolean;
+		columns: Record<string, number>;
+		options: { key: string; label: string }[];
+		d365: boolean;
 	}
 
 	interface Props {
@@ -66,7 +88,14 @@
 	let refresh = $state(0);
 	/** null while typing; the rows being checked once "Check each field" is pressed. */
 	let entries = $state<Entry[] | null>(null);
+	let mapping = $state<Mapping | null>(null);
+	let showColumns = $state(false);
+	let fileInput = $state<HTMLInputElement | null>(null);
 	let nextKey = 0;
+	// The mapping control lists one select per header cell: which column it feeds, or none.
+	const matched = $derived(mapping ? Object.keys(mapping.columns).length : 0);
+	const mappable = $derived(!!mapping && mapping.headers.length >= 2);
+	const d365 = $derived(!!mapping?.d365);
 	const REPLY_ORDER: Reply[] = ['pending', 'yes', 'maybe', 'no'];
 
 	const PLACEHOLDER =
@@ -169,8 +198,11 @@
 		};
 	}
 
-	/** Splits the typed lines into fields on the server, the same way adding them would. */
-	async function review() {
+	/**
+	 * Splits the typed lines into fields on the server, the same way adding them would. With
+	 * `columns`, the organizer's own mapping is used instead of the detected one.
+	 */
+	async function review(columns?: Record<string, number>, header?: boolean) {
 		busy = true;
 		problem = '';
 		message = '';
@@ -178,26 +210,72 @@
 			const res = await fetch(`/admin/events/${eventId}/people/review.json`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ company, names })
+				body: JSON.stringify({ company, names, columns, header })
 			});
 			if (!res.ok) throw new Error(String(res.status));
-			const { guests } = (await res.json()) as {
+			const data = (await res.json()) as Mapping & {
 				guests: (Omit<Entry, 'key' | 'email' | 'phone' | 'linkedin'> & {
 					email: string | null;
 					phone: string | null;
 					linkedin: string | null;
 				})[];
 			};
-			entries = guests.length
-				? guests.map((g) =>
+			entries = data.guests.length
+				? data.guests.map((g) =>
 						entry({ ...g, email: g.email ?? '', phone: g.phone ?? '', linkedin: g.linkedin ?? '' })
 					)
 				: [entry()];
+			mapping = {
+				headers: data.headers,
+				header: data.header,
+				columns: data.columns,
+				options: data.options,
+				d365: data.d365
+			};
+			// A paste whose header the app could barely read is the one to show the mapping for.
+			if (columns === undefined) showColumns = mapping.headers.length >= 2 && matched < 2;
 		} catch {
 			problem = 'Couldn’t split those lines. Please try again.';
 		} finally {
 			busy = false;
 		}
+	}
+
+	/** The select for one header cell changed: re-read every row with the new mapping. */
+	function remap(index: number, column: string) {
+		if (!mapping) return;
+		const columns: Record<string, number> = {};
+		for (const [key, i] of Object.entries(mapping.columns)) if (i !== index) columns[key] = i;
+		if (column) columns[column] = index;
+		void review(columns, true);
+	}
+
+	function columnAt(index: number): string {
+		if (!mapping) return '';
+		return Object.entries(mapping.columns).find(([, i]) => i === index)?.[0] ?? '';
+	}
+
+	/** A CSV or tab-separated file goes through the same parser as a paste. */
+	async function pickFile(e: Event & { currentTarget: HTMLInputElement }) {
+		const file = e.currentTarget.files?.[0];
+		if (!file) return;
+		if (file.size > 2_000_000) {
+			problem = 'That file is too big. Export fewer rows, or paste the ones you need.';
+			return;
+		}
+		names = await file.text();
+		e.currentTarget.value = '';
+		await review();
+	}
+
+	function flags(extra: Extra | null | undefined): string[] {
+		if (!extra) return [];
+		const list: string[] = [];
+		if (extra.suppressed) list.push('Suppressed');
+		if (extra.doNotEmail) list.push('No email');
+		if (extra.doNotPhone) list.push('No calls');
+		if (extra.owner) list.push(`Owner ${extra.owner}`);
+		return list;
 	}
 
 	// A profile link pasted into an empty row usually spells out the name.
@@ -239,6 +317,8 @@
 				message = summarize(result.data as unknown as AddResult);
 				names = '';
 				entries = null;
+				mapping = null;
+				showColumns = false;
 				picked = [];
 				refresh++;
 			} else if (result.type === 'failure') {
@@ -330,15 +410,85 @@
 				<legend class="label">
 					Check each person <span class="optional">· nothing is saved until you add them</span>
 				</legend>
-				<button type="button" class="btn btn-ghost btn-sm" onclick={() => (entries = null)}>
-					Edit as text
-				</button>
+				<div class="entries-tools">
+					{#if mappable}
+						<button
+							type="button"
+							class="btn btn-ghost btn-sm"
+							aria-expanded={showColumns}
+							onclick={() => (showColumns = !showColumns)}
+						>
+							<Columns3 size={15} /> Change columns
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="btn btn-ghost btn-sm"
+						onclick={() => ((entries = null), (mapping = null))}
+					>
+						Edit as text
+					</button>
+				</div>
 			</div>
 			<input type="hidden" name="guests" value={JSON.stringify(entries)} />
+			{#if d365}
+				<input type="hidden" name="d365" value="1" />
+				<p class="hint d365">
+					A Dynamics 365 export: everyone here is recorded as a customer, and the
+					<em>do not email</em>, <em>do not phone</em> and marketing flags are honoured. Rows marked
+					<strong>Suppressed</strong> wait under To review and can’t be added.
+				</p>
+			{/if}
+			{#if mapping && mappable}
+				<div class="columns" class:open={showColumns}>
+					<p class="hint">
+						{#if matched < 2}
+							The app couldn’t tell which column is which. Say what each one holds:
+						{:else}
+							{matched} of {mapping.headers.length} columns recognised. Change any that landed in the
+							wrong place:
+						{/if}
+					</p>
+					{#if showColumns}
+						<div class="column-grid">
+							{#each mapping.headers as cell, i (i)}
+								<label class="column">
+									<span class="column-header" title={cell}>{cell || `Column ${i + 1}`}</span>
+									<select
+										class="input"
+										value={columnAt(i)}
+										disabled={busy}
+										onchange={(e) => remap(i, e.currentTarget.value)}
+									>
+										<option value="">Ignore</option>
+										{#each mapping.options as o (o.key)}
+											<option value={o.key}>{o.label}</option>
+										{/each}
+									</select>
+								</label>
+							{/each}
+						</div>
+						<label class="check">
+							<input
+								type="checkbox"
+								checked={mapping.header}
+								disabled={busy}
+								onchange={(e) => review(mapping?.columns, e.currentTarget.checked)}
+							/>
+							<span>The first line is a header row, not a person.</span>
+						</label>
+					{/if}
+				</div>
+			{/if}
 			{#each entries as e, i (e.key)}
-				<div class="entry">
+				<div class="entry" class:suppressed={!!e.extra?.suppressed}>
 					<div class="entry-head">
 						<span class="entry-number">{i + 1}</span>
+						{#if e.extra}
+							{#each flags(e.extra) as flag (flag)}
+								<span class="flag" class:flag-bad={flag === 'Suppressed'}>{flag}</span>
+							{/each}
+						{/if}
 						<button
 							type="button"
 							class="btn btn-ghost btn-icon btn-sm"
@@ -422,10 +572,30 @@
 				bind:value={names}></textarea>
 			<p class="hint">
 				One person per line. After the name you can add a job title, email, mobile or LinkedIn link,
-				separated by commas; a LinkedIn link on its own is enough. Pasting from a spreadsheet?
-				Include its header row (Name, Company, Email, Mobile…) and each column lands in the right
-				place. Use <strong>Check each field</strong> to see and fix every field before anything is saved.
+				separated by commas; a LinkedIn link on its own is enough. Pasting from a spreadsheet or a
+				Dynamics 365 export? Include its header row (Name, Company, Email, Mobile…) and each column
+				lands in the right place. Use <strong>Check each field</strong> to see and fix every field before
+				anything is saved.
 			</p>
+			<div class="file-row">
+				<input
+					type="file"
+					accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+					class="sr-only"
+					bind:this={fileInput}
+					onchange={pickFile}
+				/>
+				<button
+					type="button"
+					class="btn btn-secondary btn-sm"
+					disabled={busy}
+					onclick={() => fileInput?.click()}
+				>
+					<FileUp size={15} /> Open a CSV file
+				</button>
+				<span class="hint">A spreadsheet or D365 export saved as CSV; it is read the same way.</span
+				>
+			</div>
 		</div>
 	{/if}
 
@@ -462,7 +632,7 @@
 			>{message ? 'Done' : 'Cancel'}</button
 		>
 		{#if !entries}
-			<button type="button" class="btn btn-secondary" disabled={busy} onclick={review}>
+			<button type="button" class="btn btn-secondary" disabled={busy} onclick={() => review()}>
 				<SquarePen size={16} /> Check each field
 			</button>
 		{/if}
@@ -676,6 +846,88 @@
 
 	.entries-head legend {
 		padding: 0;
+	}
+
+	.entries-tools {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		flex-wrap: wrap;
+	}
+
+	.file-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+		margin-top: 8px;
+	}
+
+	.d365 {
+		padding: 10px 12px;
+		border-radius: var(--radius-sm);
+		background: var(--brand-soft);
+		color: var(--brand-text);
+	}
+
+	.columns {
+		display: grid;
+		gap: 10px;
+		padding: 12px 14px;
+		border-radius: var(--radius);
+		background: var(--surface-2);
+	}
+
+	.column-grid {
+		display: grid;
+		gap: 8px 10px;
+		grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+	}
+
+	.column {
+		display: grid;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.column-header {
+		font-size: 12.5px;
+		font-weight: 650;
+		color: var(--muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.column .input {
+		height: 38px;
+		padding: 0 10px;
+		border-radius: 10px;
+		font-size: 14px;
+	}
+
+	.flag {
+		display: inline-block;
+		padding: 2px 6px;
+		border-radius: 999px;
+		background: var(--surface-2);
+		color: var(--muted);
+		font-size: 11px;
+		font-weight: 650;
+		text-align: center;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.flag-bad {
+		background: color-mix(in oklab, var(--bad) 14%, transparent);
+		color: var(--bad);
+	}
+
+	.entry.suppressed {
+		opacity: 0.75;
 	}
 
 	.entry {

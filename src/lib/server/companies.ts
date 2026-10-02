@@ -2,7 +2,7 @@ import { companyKey } from '../invitations.ts';
 import type { DB } from './database.ts';
 import { rehashCompany } from './do-not-contact.ts';
 import { shortId } from './ids.ts';
-import type { Country } from './settings.ts';
+import { matchTeamName, type Country } from './settings.ts';
 
 export interface CompanyRow {
 	id: string;
@@ -158,6 +158,29 @@ export function isBlocked(company: Pick<CompanyRow, 'never_invite_at'> | null | 
 
 export function setCompanyOwner(db: DB, id: string, owner: string | null, now = Date.now()) {
 	db.prepare(`UPDATE companies SET owner = ?, updated_at = ? WHERE id = ?`).run(owner, now, id);
+}
+
+/**
+ * The owner column of a D365 export (§6.1): it becomes the company's owner only when nobody
+ * owns it yet and the value names a team member; anything else is kept as a note, so a CRM
+ * user who isn't on the team is still visible without becoming a bogus "me".
+ */
+export function noteCompanyOwner(db: DB, id: string, owner: string, now = Date.now()) {
+	const value = owner.replace(/\s+/g, ' ').trim();
+	const company = getCompany(db, id);
+	if (!value || !company) return;
+	const team = matchTeamName(db, value);
+	if (team && !company.owner) {
+		setCompanyOwner(db, id, team, now);
+		return;
+	}
+	const note = `D365 owner: ${value}`;
+	if (company.d365_note.split('\n').includes(note)) return;
+	db.prepare(`UPDATE companies SET d365_note = ?, updated_at = ? WHERE id = ?`).run(
+		[company.d365_note, note].filter(Boolean).join('\n'),
+		now,
+		id
+	);
 }
 
 export function setCompanyPhoneCountry(

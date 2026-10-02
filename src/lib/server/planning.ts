@@ -1,5 +1,5 @@
 import { companyKey, linkedinProfile, nameKey } from '../invitations.ts';
-import { EMPTY_BRIEF, type Brief } from '../planning.ts';
+import { briefIsReady, EMPTY_BRIEF, type Brief } from '../planning.ts';
 import { formatDateTime } from '../time.ts';
 import { ensureCompany } from './companies.ts';
 import type { DB } from './database.ts';
@@ -166,6 +166,25 @@ export function researchTargets(db: DB, eventId: string, perCompany: number): Ta
 }
 
 export const RESEARCH_CAP = 15;
+
+/**
+ * Why a research run can't start, as the organizer's terminal will print it, or null when the
+ * prompt may be served (§6.2). Checked before Claude spends anything on a brief with nothing
+ * to research.
+ */
+export function researchRefusal(db: DB, event: EventRow): string | null {
+	if (event.starts_at === null) return 'Set the event date first.';
+	const brief = getBrief(db, event.id);
+	if (!briefIsReady(brief))
+		return 'Answer “Who should come?” on the Planning page first (roles, seniority or departments).';
+	if (!listTargets(db, event.id).length)
+		return 'Add at least one target company on the Planning page first.';
+	const targets = researchTargets(db, event.id, brief.perCompany);
+	if (!targets.length) return 'No target company is ticked for research.';
+	if (targets.length > RESEARCH_CAP)
+		return `At most ${RESEARCH_CAP} companies per run; untick some on the Planning page.`;
+	return null;
+}
 
 export function markResearchRequested(db: DB, eventId: string, ids: number[], now = Date.now()) {
 	db.prepare(

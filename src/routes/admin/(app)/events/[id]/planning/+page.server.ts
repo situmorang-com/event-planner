@@ -4,6 +4,7 @@ import { countCheckins } from '$lib/server/checkins';
 import { db } from '$lib/server/db';
 import { countLive, countToReview, listEventPeople } from '$lib/server/event-people';
 import { getEvent } from '$lib/server/events';
+import { eventPageLoad } from '$lib/server/jobs';
 import { cleanText } from '$lib/server/normalize';
 import {
 	addTargets,
@@ -11,8 +12,11 @@ import {
 	listTargets,
 	parseTargets,
 	removeTarget,
+	RESEARCH_CAP,
+	researchRefusal,
 	saveBrief,
-	setTargetFocus
+	setTargetFocus,
+	setTargetResearch
 } from '$lib/server/planning';
 import { publicBaseUrl } from '$lib/server/urls';
 import type { Actions, PageServerLoad } from './$types';
@@ -29,8 +33,11 @@ const idOf = (form: FormData, field = 'id') => {
 };
 
 export const load: PageServerLoad = ({ params, url }) => {
-	const event = requireEvent(params.id);
+	const now = Date.now();
+	// The start job runs lazily here until the scheduler lands (§5.4).
+	const event = eventPageLoad(db, requireEvent(params.id), now);
 	const rows = listEventPeople(db, event.id);
+	const brief = getBrief(db, event.id);
 
 	// Per company: who is on the list, and who research found that nobody has looked at yet.
 	const live = new Map<string, number>();
@@ -40,20 +47,38 @@ export const load: PageServerLoad = ({ params, url }) => {
 		counts?.set(r.company_key, (counts.get(r.company_key) ?? 0) + 1);
 	}
 
-	return {
-		event,
-		brief: getBrief(db, event.id),
-		targets: listTargets(db, event.id).map((t) => ({
+	const targets = listTargets(db, event.id).map((t) => {
+		// The default tick (§6.2): research a company until enough contactable people are known.
+		const defaultTick = t.known < brief.perCompany;
+		return {
 			id: t.id,
 			name: t.name,
 			website: t.website,
 			focus: t.focus,
 			live: live.get(t.key) ?? 0,
-			waiting: waiting.get(t.key) ?? 0
-		})),
+			waiting: waiting.get(t.key) ?? 0,
+			known: t.known,
+			blocked: t.blocked_at !== null,
+			research: t.research,
+			defaultTick,
+			ticked: !t.blocked_at && !!(t.research ?? (defaultTick ? 1 : 0)),
+			researchedAt: t.researched_at,
+			requestedAt: t.research_requested_at
+		};
+	});
+
+	return {
+		event,
+		brief,
+		targets,
+		ticked: targets.filter((t) => t.ticked).length,
+		cap: RESEARCH_CAP,
+		refusal: researchRefusal(db, event),
+		started: event.starts_at !== null && now >= event.starts_at,
 		toReview: countToReview(db, event.id),
 		accepted: rows.filter((r) => r.stage !== 'found' && r.source === 'research').length,
 		base: publicBaseUrl(url).base,
+		now,
 		tabs: {
 			checkins: countCheckins(db, event.id),
 			people: countLive(db, event.id),
@@ -105,6 +130,16 @@ export const actions: Actions = {
 		const id = idOf(form);
 		if (id) setTargetFocus(db, event.id, id, cleanText(form.get('focus'), 300));
 		return { focused: id };
+	},
+
+	// The research tick (D25): "1" / "0" is an explicit choice, anything else the computed default.
+	research: async ({ params, request }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		const id = idOf(form);
+		const value = form.get('research');
+		if (id) setTargetResearch(db, event.id, id, value === '1' ? 1 : value === '0' ? 0 : null);
+		return { researchSet: id };
 	},
 
 	removeTarget: async ({ params, request }) => {

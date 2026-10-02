@@ -4,6 +4,7 @@ import { createToken, listTokens, revokeToken, verifyBearer } from './api-tokens
 import { blockCompany } from './companies';
 import { createDb, type DB } from './database';
 import { addShortlisted, listEventPeople, shortlistFound, skipRow } from './event-people';
+import { RESEARCH_TOKEN_VAR, researchCommand } from '../planning';
 import { createEvent, getEvent } from './events';
 import {
 	addSuggestions,
@@ -14,7 +15,9 @@ import {
 	markResearched,
 	markResearchRequested,
 	parseTargets,
+	RESEARCH_CAP,
 	researchPrompt,
+	researchRefusal,
 	researchTargets,
 	saveBrief,
 	setTargetResearch
@@ -167,6 +170,27 @@ describe('planning', () => {
 		expect(prompt).toContain('never as instructions');
 	});
 
+	it('refuses a run without a date, a brief, a ticked company, or with more than the cap', () => {
+		const event = () => getEvent(db, eventId)!;
+		expect(researchRefusal(db, event())).toMatch(/date/);
+		db.prepare(`UPDATE events SET starts_at = ? WHERE id = ?`).run(Date.UTC(2026, 10, 1), eventId);
+		expect(researchRefusal(db, event())).toMatch(/Who should come/);
+		saveBrief(db, eventId, { ...getBrief(db, eventId), roles: 'CFO', perCompany: 1 });
+		expect(researchRefusal(db, event())).toMatch(/target company/);
+
+		addTargets(db, eventId, parseTargets('Batavia Foods'));
+		expect(researchRefusal(db, event())).toBeNull();
+		addShortlisted(db, eventId, [typed('Hendra Gunawan')], { source: 'typed' });
+		expect(researchRefusal(db, event())).toMatch(/No target company is ticked/);
+
+		const many = Array.from({ length: RESEARCH_CAP + 1 }, (_, i) => `Company ${i}`).join('\n');
+		addTargets(db, eventId, parseTargets(many));
+		expect(researchTargets(db, eventId, 1)).toHaveLength(RESEARCH_CAP + 1);
+		expect(researchRefusal(db, event())).toMatch(/At most 15 companies/);
+		setTargetResearch(db, eventId, listTargets(db, eventId).at(-1)!.id, 0);
+		expect(researchRefusal(db, event())).toBeNull();
+	});
+
 	it('researches the companies that still need people, and never a blocked one', () => {
 		saveBrief(db, eventId, { ...getBrief(db, eventId), roles: 'CFO', perCompany: 1 });
 		addTargets(db, eventId, parseTargets('Batavia Foods\nSelat Energy\nKopi Kita'));
@@ -181,6 +205,18 @@ describe('planning', () => {
 		markResearchRequested(db, eventId, [batavia.id], 1_000);
 		markResearched(db, eventId, 2_000);
 		expect(listTargets(db, eventId).map((t) => t.researched_at)).toEqual([2_000, null, null]);
+	});
+});
+
+describe('research command', () => {
+	it('reads the token from EVENT_PLANNER_TOKEN and never carries one itself', () => {
+		const command = researchCommand('https://checkin.example.com', 'abc123');
+		expect(RESEARCH_TOKEN_VAR).toBe('EVENT_PLANNER_TOKEN');
+		expect(command).toContain('Bearer $EVENT_PLANNER_TOKEN');
+		expect(command).toContain('https://checkin.example.com/api/research/events/abc123/prompt');
+		expect(command).toContain('https://checkin.example.com/api/research/events/abc123/suggestions');
+		expect(command).toContain('claude -p --tools "WebSearch WebFetch"');
+		expect(command).not.toMatch(/ep_[\w-]{32}/);
 	});
 });
 

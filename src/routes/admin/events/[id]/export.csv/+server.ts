@@ -1,17 +1,20 @@
 import { error } from '@sveltejs/kit';
+import { logActivity } from '$lib/server/activity-log';
 import { listAttendees } from '$lib/server/checkins';
 import { csvResponse, toCsv } from '$lib/server/csv';
 import { db } from '$lib/server/db';
 import { getEvent } from '$lib/server/events';
+import { exportRow, iso } from '$lib/server/exports';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = ({ params }) => {
+/** Who checked in, in arrival order. A locked person's channels are blanked here too (D13). */
+export const GET: RequestHandler = ({ params, locals }) => {
 	const event = getEvent(db, params.id);
 	if (!event) error(404, 'Event not found');
 
-	const iso = (ts: number | null) => (ts ? new Date(ts).toISOString() : '');
 	const rows = listAttendees(db, event.id)
 		.reverse()
+		.map(exportRow)
 		.map((a, i) => [
 			i + 1,
 			a.name,
@@ -23,8 +26,16 @@ export const GET: RequestHandler = ({ params }) => {
 			a.method,
 			a.device,
 			a.is_returning ? 'yes' : 'no',
-			iso(a.consent_at)
+			iso(a.consent_at),
+			a.locked ? 'yes' : ''
 		]);
+	logActivity(db, {
+		eventId: event.id,
+		kind: 'export',
+		who: locals.who,
+		what: { export: 'attendees' },
+		rowCount: rows.length
+	});
 
 	const csv = toCsv(
 		[
@@ -38,7 +49,8 @@ export const GET: RequestHandler = ({ params }) => {
 			'Method',
 			'Device',
 			'Returning',
-			'Consent given (UTC)'
+			'Consent given (UTC)',
+			'Locked'
 		],
 		rows
 	);

@@ -81,16 +81,17 @@ without stopping the app. **configured**; restore not yet exercised.
 Pushed with `coolify.sh env push <APP_UUID> .env.production`. The file is gitignored and never
 committed.
 
-| Variable                | Value                            | Why                                                                                                      |
-| ----------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `ORIGIN`                | `https://checkin.situmorang.com` | Otherwise every form POST is 403 behind Traefik. Also the base URL printed into QR codes.                |
-| `ADMIN_PASSWORD`        | random, 24 characters            | Organizer sign-in. Without it, sign-in is disabled in production.                                        |
-| `ORG_NAME`              | `SRKK`                           | The consent line attendees agree to.                                                                     |
-| `ADDRESS_HEADER`        | `X-Forwarded-For`                | Real client IPs for the rate limits. Without it, every attendee looks like Traefik and shares one limit. |
-| `XFF_DEPTH`             | `1`                              | Traefik is the only proxy in front. Set to `2` if Cloudflare proxying is ever turned on.                 |
-| `DB_PATH`               | `/data/attendance.db`            | Inside the mount.                                                                                        |
-| `DEFAULT_PHONE_COUNTRY` | `ID`                             | Reads `0812…` as `+62812…`.                                                                              |
-| `DEFAULT_TIMEZONE`      | `Asia/Jakarta`                   | Fallback only; events store their own zone.                                                              |
+| Variable                | Value                            | Why                                                                                                                                                                                                                |
+| ----------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ORIGIN`                | `https://checkin.situmorang.com` | Otherwise every form POST is 403 behind Traefik. Also the base URL printed into QR codes.                                                                                                                          |
+| `ADMIN_PASSWORD`        | random, 24 characters            | Organizer sign-in. Without it, sign-in is disabled in production.                                                                                                                                                  |
+| `ORG_NAME`              | `SRKK`                           | The consent line attendees agree to.                                                                                                                                                                               |
+| `ADDRESS_HEADER`        | `X-Forwarded-For`                | Real client IPs for the rate limits. Without it, every attendee looks like Traefik and shares one limit.                                                                                                           |
+| `XFF_DEPTH`             | `1`                              | Traefik is the only proxy in front. Set to `2` if Cloudflare proxying is ever turned on.                                                                                                                           |
+| `DB_PATH`               | `/data/attendance.db`            | Inside the mount.                                                                                                                                                                                                  |
+| `DEFAULT_PHONE_COUNTRY` | `ID`                             | Reads `0812…` as `+62812…`.                                                                                                                                                                                        |
+| `DEFAULT_TIMEZONE`      | `Asia/Jakarta`                   | Fallback only; events store their own zone.                                                                                                                                                                        |
+| `PRIVACY_URL`           | the SRKK privacy policy URL      | **Required** for people found by research: every message to them carries a source line that links it, and without it their WhatsApp and email buttons stay hidden with a hint. Also linked beside the consent box. |
 
 These are baked into the image instead:
 

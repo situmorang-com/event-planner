@@ -11,6 +11,7 @@ import {
 	listEventPeople,
 	setOwner,
 	setReply,
+	shortlistFound,
 	type GuestInput
 } from './event-people';
 import { createEvent, updateEvent } from './events';
@@ -189,6 +190,7 @@ describe('addPeople', () => {
 	let db: DB;
 	let eventId: string;
 	const rows = () => listEventPeople(db, eventId);
+	const event = () => db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId) as never;
 
 	beforeEach(() => {
 		db = createDb(':memory:');
@@ -229,6 +231,52 @@ describe('addPeople', () => {
 		});
 		expect(result).toMatchObject({ added: 0, found: 1 });
 		expect(rows()[0]).toMatchObject({ stage: 'found', source: 'typed', person_id: null });
+	});
+
+	it('imports D365 rows as customers with their flags, and parks suppressed ones', () => {
+		setTeamNames(db, ['Sari Dewi']);
+		const result = addPeople(db, eventId, {
+			typed: [
+				guest('Rina', {
+					email: 'rina@batavia.co.id',
+					extra: { doNotEmail: true, owner: 'Sari Dewi', status: 'Active' }
+				}),
+				guest('Andi', { extra: { suppressed: true, owner: 'Someone In Sales' } })
+			],
+			picked: [],
+			company: '',
+			park: false,
+			d365: true
+		});
+		expect(result).toMatchObject({ added: 1, found: 0, refused: [{ name: 'Andi' }] });
+		expect(result.refused[0].reason).toBe('suppressed');
+		const [rina] = rows();
+		expect(rina).toMatchObject({ stage: 'shortlisted', source: 'd365' });
+		expect(getPeople(db, [rina.person_id!])[0]).toMatchObject({
+			origin: 'd365',
+			is_customer: 1,
+			d365_no_email: 1,
+			d365_no_phone: 0
+		});
+		expect(findCompany(db, 'Batavia Foods')).toMatchObject({ owner: 'Sari Dewi', d365_note: '' });
+
+		// Parked: the snapshot keeps the flags, the owner note lands on the company, Add refuses.
+		const parked = addPeople(db, eventId, {
+			typed: [guest('Budi', { extra: { suppressed: true, owner: 'Someone In Sales' } })],
+			picked: [],
+			company: '',
+			park: true,
+			d365: true
+		});
+		expect(parked).toMatchObject({ added: 0, found: 1 });
+		const budi = rows().find((r) => r.name === 'Budi')!;
+		expect(budi).toMatchObject({ stage: 'found', source: 'd365' });
+		expect(peopleView(db, event()).rows.find((r) => r.id === budi.id)?.suppressed).toBe(true);
+		expect(shortlistFound(db, eventId, budi.id)).toMatchObject({ status: 'refused' });
+		expect(findCompany(db, 'Batavia Foods')).toMatchObject({
+			owner: 'Sari Dewi',
+			d365_note: 'D365 owner: Someone In Sales'
+		});
 	});
 
 	it('shortlists pool picks under the typed company, and reports what it could not add', () => {
