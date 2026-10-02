@@ -5,6 +5,8 @@ declare global {
 		// interface Error {}
 		interface Locals {
 			admin: boolean;
+			/** The team name this browser picked (§4.4), or '' when none is set or trusted. */
+			who: string;
 		}
 		// interface PageData {}
 		// interface PageState {}

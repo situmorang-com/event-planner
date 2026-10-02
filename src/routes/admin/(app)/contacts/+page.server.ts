@@ -9,9 +9,9 @@ export const load: PageServerLoad = ({ url }) => {
 
 export const actions: Actions = {
 	// Right-to-erasure requests: removes the person and every check-in they made.
-	delete: async ({ request }) => {
+	delete: async ({ request, locals }) => {
 		const id = String((await request.formData()).get('id') ?? '');
-		if (id) deleteContact(db, id);
+		if (id) deleteContact(db, id, locals.who);
 		return { deleted: true };
 	}
 };

@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import EventTabs from '$lib/components/EventTabs.svelte';
 	import { briefIsReady, DEPARTMENTS, SENIORITY } from '$lib/planning';
-	import { formatDateTime, timeAgo } from '$lib/time';
+	import { formatDateTime } from '$lib/time';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import Check from '@lucide/svelte/icons/check';
@@ -39,7 +39,6 @@
 			`  | curl -sS --fail-with-body -H "Authorization: Bearer $EVENT_PLANNER_TOKEN" -H "content-type: application/json" --data-binary @- ${postUrl}`
 		].join('\n')
 	);
-	const newToken = $derived(form && 'token' in form ? form.token : null);
 
 	async function copy(text: string, what: string) {
 		await navigator.clipboard.writeText(text);
@@ -330,54 +329,11 @@
 
 		<div class="run">
 			<h3><KeyRound size={16} /> Access token</h3>
-			{#if newToken}
-				<p class="banner banner-brand">
-					Copy this now; it won’t be shown again. Run it in the terminal you’ll research from (or
-					add it to <code>~/.zshrc</code>).
-				</p>
-				<div class="code">
-					<pre>export EVENT_PLANNER_TOKEN={newToken}</pre>
-					<button
-						class="btn btn-secondary btn-sm"
-						onclick={() => copy(`export EVENT_PLANNER_TOKEN=${newToken}`, 'token')}
-					>
-						{#if copied === 'token'}<Check size={15} /> Copied{:else}<Copy size={15} /> Copy{/if}
-					</button>
-				</div>
-			{/if}
-			{#if data.tokens.length}
-				<ul class="tokens">
-					{#each data.tokens as t (t.id)}
-						<li>
-							<span>{t.label}</span>
-							<span class="muted small">
-								created {timeAgo(t.created_at, Date.now())}{t.last_used_at
-									? ` · last used ${timeAgo(t.last_used_at, Date.now())}`
-									: ' · never used'}
-							</span>
-							<form
-								method="POST"
-								action="?/revokeToken"
-								use:enhance={({ cancel }) => {
-									if (!confirm('Revoke this token? Anything using it stops working.')) cancel();
-								}}
-							>
-								<input type="hidden" name="id" value={t.id} />
-								<button class="btn btn-ghost btn-sm">Revoke</button>
-							</form>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-			<form method="POST" action="?/createToken" use:enhance class="new-token">
-				<input
-					class="input"
-					name="label"
-					placeholder="Label, e.g. Edmund’s MacBook"
-					aria-label="Token label"
-				/>
-				<button class="btn btn-secondary btn-sm">Create a token</button>
-			</form>
+			<p class="hint">
+				The command reads <code>EVENT_PLANNER_TOKEN</code> from your shell. Create one under
+				<a href="/admin/settings#tokens">Settings › API tokens</a> and export it once in the
+				terminal you research from (or in <code>~/.zshrc</code>).
+			</p>
 
 			<h3><Sparkles size={16} /> Command</h3>
 			<div class="code">
@@ -567,8 +523,7 @@
 		font-weight: 650;
 	}
 
-	.targets,
-	.tokens {
+	.targets {
 		list-style: none;
 		margin: 0;
 		padding: 0;
@@ -644,31 +599,6 @@
 		overflow-x: auto;
 		font-size: 13px;
 		line-height: 1.6;
-	}
-
-	.tokens li {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 6px 0;
-	}
-
-	.tokens li span:first-child {
-		font-weight: 650;
-	}
-
-	.tokens form {
-		margin-left: auto;
-	}
-
-	.new-token {
-		display: flex;
-		gap: 8px;
-		max-width: 520px;
-	}
-
-	.new-token .input {
-		height: 36px;
 	}
 
 	.review-link {

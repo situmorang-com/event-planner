@@ -31,7 +31,6 @@ import { getPeople, mergeInto } from '$lib/server/people';
 import { addPeople, peopleView, reviewedGuests } from '$lib/server/people-page';
 import { teamNames } from '$lib/server/settings';
 import { getStageState, suggestedTouchKind, type Via } from '$lib/server/stages';
-import { whoAmI } from '$lib/server/who';
 import type { Actions, PageServerLoad } from './$types';
 
 function requireEvent(id: string) {
@@ -54,21 +53,21 @@ function ownerFrom(form: FormData): string | null {
 	return name && teamNames(db).includes(name) ? name : null;
 }
 
-export const load: PageServerLoad = ({ params, cookies }) => {
+export const load: PageServerLoad = ({ params, locals }) => {
 	const event = requireEvent(params.id);
 	const tabs = {
 		checkins: countCheckins(db, event.id),
 		people: countLive(db, event.id),
 		review: countToReview(db, event.id)
 	};
-	const base = { event, me: whoAmI(db, cookies), team: teamNames(db), tabs };
+	const base = { event, me: locals.who || null, team: teamNames(db), tabs };
 	// Without a date there is nothing to count down to, and Found rows have no expiry (D17).
 	if (event.starts_at === null) return { ...base, view: null, companies: [] };
 	return { ...base, view: peopleView(db, event), companies: companySuggestions(db) };
 };
 
 export const actions: Actions = {
-	add: async ({ params, request, cookies }) => {
+	add: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const company = cleanText(form.get('company'), 120);
@@ -98,7 +97,7 @@ export const actions: Actions = {
 				park: form.get('park') === '1',
 				originDetail: cleanText(form.get('originDetail'), 200)
 			},
-			{ by: whoAmI(db, cookies) ?? '' }
+			{ by: locals.who }
 		);
 		return { ...summary, skipped: parsed.skipped, truncated: parsed.truncated, company };
 	},
@@ -154,10 +153,10 @@ export const actions: Actions = {
 		return { edited: id };
 	},
 
-	remove: async ({ params, request, cookies }) => {
+	remove: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const id = rowId(await request.formData());
-		if (id !== null) removeRow(db, event.id, id, { by: whoAmI(db, cookies) ?? '' });
+		if (id !== null) removeRow(db, event.id, id, { by: locals.who });
 		return { removed: id };
 	},
 
@@ -187,20 +186,20 @@ export const actions: Actions = {
 		return { companyOwned: id };
 	},
 
-	shortlist: async ({ params, request, cookies }) => {
+	shortlist: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const id = rowId(await request.formData());
 		if (id === null) return fail(400, { shortlistError: 'That row is gone.' });
-		const result = shortlistFound(db, event.id, id, { by: whoAmI(db, cookies) ?? '' });
+		const result = shortlistFound(db, event.id, id, { by: locals.who });
 		if (result.status === 'refused')
 			return fail(409, { shortlistError: `${result.name}: ${result.reason}.` });
 		return { shortlisted: id, status: result.status };
 	},
 
-	skip: async ({ params, request, cookies }) => {
+	skip: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const id = rowId(await request.formData());
-		if (id !== null) skipRow(db, event.id, id, { by: whoAmI(db, cookies) ?? '' });
+		if (id !== null) skipRow(db, event.id, id, { by: locals.who });
 		return { skipped: id };
 	},
 
@@ -211,24 +210,24 @@ export const actions: Actions = {
 		return { unskipped: id };
 	},
 
-	addAll: async ({ params, request, cookies }) => {
+	addAll: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const key = String((await request.formData()).get('companyKey') ?? '');
-		const results = shortlistAll(db, event.id, key, { by: whoAmI(db, cookies) ?? '' });
+		const results = shortlistAll(db, event.id, key, { by: locals.who });
 		return {
 			addedAll: results.filter((r) => r.status === 'added').length,
 			refusedAll: results.flatMap((r) => (r.status === 'refused' ? [r.name] : []))
 		};
 	},
 
-	skipAll: async ({ params, request, cookies }) => {
+	skipAll: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const key = String((await request.formData()).get('companyKey') ?? '');
-		return { skippedAll: skipAll(db, event.id, key, { by: whoAmI(db, cookies) ?? '' }) };
+		return { skippedAll: skipAll(db, event.id, key, { by: locals.who }) };
 	},
 
 	// Sent with navigator.sendBeacon as a message link opens (§7), so nothing waits on it.
-	touch: async ({ params, request, cookies }) => {
+	touch: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = rowId(form);
@@ -239,7 +238,7 @@ export const actions: Actions = {
 		addTouch(db, event.id, id, {
 			kind: suggestedTouchKind(state),
 			via,
-			by: whoAmI(db, cookies) ?? ''
+			by: locals.who
 		});
 		return { touched: id };
 	},
@@ -251,37 +250,36 @@ export const actions: Actions = {
 		return { untouched: id };
 	},
 
-	invited: async ({ params, request, cookies }) => {
+	invited: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = rowId(form);
 		if (id === null) return fail(400, { invitedError: true });
-		if (form.get('on') === '1')
-			markInvited(db, event.id, id, 'linkedin', { by: whoAmI(db, cookies) ?? '' });
+		if (form.get('on') === '1') markInvited(db, event.id, id, 'linkedin', { by: locals.who });
 		else unmarkInvited(db, event.id, id, 'linkedin');
 		return { invited: id };
 	},
 
-	lock: async ({ params, request, cookies }) => {
+	lock: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = rowId(form);
 		if (id === null) return fail(400, { lockError: 'That row is gone.' });
 		lockRow(db, event.id, id, {
 			reason: cleanText(form.get('reason'), 200),
-			by: whoAmI(db, cookies) ?? ''
+			by: locals.who
 		});
 		return { locked: id };
 	},
 
-	merge: async ({ params, request, cookies }) => {
+	merge: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = rowId(form);
 		const survivor = cleanText(form.get('survivor'), 40);
 		const row = id === null ? undefined : getEventPerson(db, event.id, id);
 		if (!row?.person_id || !survivor) return fail(400, { mergeError: 'Pick who to keep.' });
-		if (!mergeInto(db, row.person_id, survivor, { by: whoAmI(db, cookies) ?? '' }))
+		if (!mergeInto(db, row.person_id, survivor, { by: locals.who }))
 			return fail(409, { mergeError: 'Those two can’t be merged.' });
 		return { merged: id };
 	}

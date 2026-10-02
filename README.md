@@ -125,8 +125,8 @@ The **Planning** tab helps you decide who to invite before the guest list exists
    how senior, which departments, how many per company, and who to leave out.
 2. **Target companies.** One per line, with a website if you know it. Give a company its own
    focus ("only their finance team") when it differs from the brief.
-3. **Find people with Claude.** Create a token (shown once), `export EVENT_PLANNER_TOKEN=…` in your
-   terminal, and run the command the page shows. Your terminal fetches the event's research
+3. **Find people with Claude.** Create a token under Settings › API tokens (shown once),
+   `export EVENT_PLANNER_TOKEN=…` in your terminal, and run the command the page shows. Your terminal fetches the event's research
    brief, `claude -p` researches it with web search and fetch only, and the answer is posted
    back. Claude never sees the token and has no shell, so a web page that tries to hijack it has
    nothing to send. It sticks to public sources (company sites, news, search results) and work
@@ -139,7 +139,27 @@ The **Planning** tab helps you decide who to invite before the guest list exists
 
 The API behind step 3 is `GET /api/research/events/<id>/prompt` and
 `POST /api/research/events/<id>/suggestions`, both with `Authorization: Bearer <token>`.
-Tokens are stored hashed and can be revoked on the same page.
+Tokens are stored hashed and can be revoked in Settings.
+
+## Settings
+
+**Settings** in the header holds what the whole team shares:
+
+- **Team names.** The names that can be picked as "me" in the header. Everyone signs in with the
+  same password, so this is how the app knows who added a row, sent an invitation, locked someone
+  or exported a list. Pick your name once per browser (it is a plain cookie, trusted only while
+  the name is still on the list); until you do, stamps are blank and **Mine** stays off.
+- **API tokens.** Create, copy once, revoke. Used by the research command on the Planning tab.
+- **Phone country.** How local numbers are read when nothing says otherwise; new events start
+  with it, and an event or a company can pick its own.
+- **Do-not-contact list.** Everyone who asked not to hear from us, as hashed entries with masked
+  labels (`r***@batavia.co.id`, `H*** G*** @ Batavia Foods`), the reason, where the request came
+  from, who recorded it and when. Add an entry by hand (email, mobile, or name and company) to
+  lock whoever it matches now and refuse them on every list later. Entries never expire; one
+  comes off only by hand, with a reason, and that is logged.
+
+Every export, deletion, lock, unlock and merge is written to an activity log with ids and counts
+only, never names. An event's page shows its entries under **Activity**.
 
 ## Configuration
 
@@ -202,6 +222,8 @@ src/
     components/               QR code, charts, event form, People rows and add forms
     server/
       schema.ts, database.ts  schema (SQLite), versioned migrations run on start
+      settings.ts, who.ts     team names, phone-country default; the "me" cookie
+      activity-log.ts         exports, deletions, locks and merges, as ids and counts
       migrate-v2.ts           contacts/guest lists → people and event rows (with a .pre-v2 copy)
       people.ts, companies.ts the cross-event pool: identity matching, field precedence, merge
       event-people.ts         one person on one event: found/shortlisted/invited… rows, touches
@@ -216,7 +238,7 @@ src/
       bus.ts                  in-process pub/sub behind the live stream
   routes/
     c/[id]/                   attendee check-in page (the QR target)
-    admin/(app)/              events, event dashboard, people, planning, contacts
+    admin/(app)/              events, event dashboard, people, planning, contacts, settings
     admin/events/[id]/        display (entrance screen), stream (SSE), exports, poster
 scripts/seed-demo.ts          demo data (npm run demo:seed)
 ```

@@ -1,8 +1,12 @@
 import type { Handle } from '@sveltejs/kit';
 import { isAdmin } from '$lib/server/auth';
+import { db } from '$lib/server/db';
+import { whoAmI } from '$lib/server/who';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.admin = isAdmin(event.cookies);
+	// Only an organizer stamps anything, so the name is only looked up for one.
+	event.locals.who = event.locals.admin ? (whoAmI(db, event.cookies) ?? '') : '';
 
 	const { pathname, search } = event.url;
 	const protectedPath = pathname.startsWith('/admin') && pathname !== '/admin/login';

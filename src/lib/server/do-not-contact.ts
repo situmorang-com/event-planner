@@ -35,7 +35,8 @@ export const hashName = (name: string) => sha(nameKey(name));
 export const hashNameCompany = (nameHash: string, key: string) => sha(`${nameHash}@${key}`);
 
 export function maskEmail(email: string): string {
-	const [user, domain] = email.split('@');
+	// Masked the way it is hashed, so the label matches whatever spelling arrives later.
+	const [user, domain] = email.trim().toLowerCase().split('@');
 	return `${user.slice(0, 1)}***@${domain ?? ''}`;
 }
 
@@ -201,6 +202,38 @@ export function lockPerson(
 		logActivity(db, { kind: 'lock', who: by, what: { personId }, rowCount: 1 }, now);
 	})();
 	return true;
+}
+
+/**
+ * An entry typed on the settings page. Anyone in the pool it matches is locked straight away,
+ * so the list and the markers never disagree; the activity log gets ids and a count only.
+ */
+export function blockByHand(
+	db: DB,
+	input: Omit<EntryInput, 'source'>,
+	now = Date.now()
+): { id: number; locked: number } | null {
+	return db.transaction(() => {
+		const id = addEntry(db, { ...input, source: 'staff' }, now);
+		if (id === null) return null;
+		const reason = input.reason ?? '';
+		const people = db
+			.prepare(`${PERSON_DETAILS} WHERE p.locked_at IS NULL`)
+			.all() as LockedPerson[];
+		const hit = people.filter((p) => check(db, p)?.id === id);
+		for (const p of hit) markLocked(db, p.id, reason, now);
+		logActivity(
+			db,
+			{
+				kind: 'lock',
+				who: input.by,
+				what: { entryId: id, kind: input.kind },
+				rowCount: hit.length
+			},
+			now
+		);
+		return { id, locked: hit.length };
+	})();
 }
 
 /** Mirrors a do-not-contact hit onto the person and clears whatever was due for them. */

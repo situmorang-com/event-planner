@@ -1,6 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
 import { DEPARTMENTS, SENIORITY, type Brief } from '$lib/planning';
-import { createToken, listTokens, revokeToken } from '$lib/server/api-tokens';
 import { countCheckins } from '$lib/server/checkins';
 import { db } from '$lib/server/db';
 import { countLive, countToReview, listEventPeople } from '$lib/server/event-people';
@@ -54,7 +53,6 @@ export const load: PageServerLoad = ({ params, url }) => {
 		})),
 		toReview: countToReview(db, event.id),
 		accepted: rows.filter((r) => r.stage !== 'found' && r.source === 'research').length,
-		tokens: listTokens(db),
 		base: publicBaseUrl(url).base,
 		tabs: {
 			checkins: countCheckins(db, event.id),
@@ -114,16 +112,5 @@ export const actions: Actions = {
 		const id = idOf(await request.formData());
 		if (id) removeTarget(db, event.id, id);
 		return { targetRemoved: id };
-	},
-
-	createToken: async ({ request }) => {
-		const label = cleanText((await request.formData()).get('label'), 60) || 'claude -p';
-		return { token: createToken(db, label) };
-	},
-
-	revokeToken: async ({ request }) => {
-		const id = idOf(await request.formData());
-		if (id) revokeToken(db, id);
-		return { revoked: id };
 	}
 };

@@ -6,14 +6,13 @@ import { csvResponse, toCsv } from '$lib/server/csv';
 import { db } from '$lib/server/db';
 import { getEvent } from '$lib/server/events';
 import { groupRows, peopleView } from '$lib/server/people-page';
-import { whoAmI } from '$lib/server/who';
 import type { RequestHandler } from './$types';
 
 /**
  * The event's list as a spreadsheet. Found rows never leave the app (§8), and a locked
  * person's channels are blanked everywhere they are exported (D13).
  */
-export const GET: RequestHandler = ({ params, cookies }) => {
+export const GET: RequestHandler = ({ params, locals }) => {
 	const event = getEvent(db, params.id);
 	if (!event) error(404, 'Event not found');
 
@@ -42,7 +41,7 @@ export const GET: RequestHandler = ({ params, cookies }) => {
 	logActivity(db, {
 		eventId: event.id,
 		kind: 'export',
-		who: whoAmI(db, cookies) ?? '',
+		who: locals.who,
 		what: { export: 'people' },
 		rowCount: rows.length
 	});

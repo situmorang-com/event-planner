@@ -4,6 +4,7 @@ import { findCompany, renameCompany } from './companies';
 import { createDb, type DB } from './database';
 import {
 	addEntry,
+	blockByHand,
 	check,
 	hashEmail,
 	hashName,
@@ -127,6 +128,33 @@ describe('locking', () => {
 				{ source: 'research' }
 			)
 		).toMatchObject({ added: 0, refused: [{ name: 'Rina Wijaya', reason: 'do not contact' }] });
+	});
+
+	it('typed on the settings page, locks whoever it matches and logs a count only', () => {
+		const other = createPerson(
+			db,
+			{ name: 'Dewi Lestari', email: 'dewi@selat.co.id', company: 'Selat Energy' },
+			{ origin: 'typed' }
+		);
+		expect(
+			blockByHand(db, { kind: 'email', value: 'RINA@batavia.co.id', reason: 'asked', by: 'Sari' })
+		).toEqual({ id: expect.any(Number), locked: 1 });
+		expect(getPerson(db, personId)).toMatchObject({
+			locked_at: expect.any(Number),
+			lock_reason: 'asked'
+		});
+		expect(getPerson(db, other)?.locked_at).toBeNull();
+		expect(listEntries(db)).toMatchObject([
+			{ kind: 'email', label: 'r***@batavia.co.id', source: 'staff', by: 'Sari', reason: 'asked' }
+		]);
+		expect(listActivity(db, null)[0]).toMatchObject({ kind: 'lock', who: 'Sari', row_count: 1 });
+		expect(listActivity(db, null)[0].what).not.toContain('rina');
+
+		expect(
+			blockByHand(db, { kind: 'name_company', value: 'Dewi Lestari', company: 'PT Selat Energy' })
+		).toMatchObject({ locked: 1 });
+		expect(getPerson(db, other)?.locked_at).not.toBeNull();
+		expect(blockByHand(db, { kind: 'phone', value: '   ' })).toBeNull();
 	});
 
 	it('is removed by staff with a reason, which unlocks people nothing else lists', () => {

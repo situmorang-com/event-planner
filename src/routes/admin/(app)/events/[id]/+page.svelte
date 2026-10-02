@@ -25,6 +25,7 @@
 	import CircleAlert from '@lucide/svelte/icons/circle-alert';
 	import Settings from '@lucide/svelte/icons/settings';
 	import Printer from '@lucide/svelte/icons/printer';
+	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -86,6 +87,31 @@
 		await navigator.clipboard.writeText(data.staticLink);
 		copied = true;
 		setTimeout(() => (copied = false), 1600);
+	}
+
+	// The log holds ids and counts only (§8), so this is all there is to say about an entry.
+	const ACTIVITY_LABEL = {
+		export: 'Exported',
+		delete: 'Deleted',
+		purge: 'Purged',
+		import: 'Imported',
+		merge: 'Merged',
+		bulk: 'Bulk action',
+		lock: 'Don’t contact again',
+		unlock: 'Taken off the do-not-contact list'
+	} as const;
+
+	function activityDetail(kind: keyof typeof ACTIVITY_LABEL, what: string, count: number) {
+		let parsed: Record<string, unknown> = {};
+		try {
+			parsed = JSON.parse(what) ?? {};
+		} catch {
+			// An unreadable entry still shows its kind and count.
+		}
+		const rows = `${count} ${count === 1 ? 'row' : 'rows'}`;
+		if (kind === 'export' && typeof parsed.export === 'string')
+			return `the ${parsed.export} list, ${rows}`;
+		return rows;
 	}
 
 	const addErrors = $derived<Record<string, string | undefined>>(
@@ -429,6 +455,28 @@
 				</tbody>
 			</table>
 		</div>
+	{/if}
+</section>
+
+<section class="card panel activity">
+	<div class="panel-head">
+		<h2><ScrollText size={17} /> Activity</h2>
+		<p class="muted">Exports, deletions, locks and merges on this event: who, when and how many</p>
+	</div>
+	{#if data.activity.length === 0}
+		<p class="placeholder muted">Nothing logged yet.</p>
+	{:else}
+		<ul class="log">
+			{#each data.activity as a (a.id)}
+				<li>
+					<span class="log-kind">{ACTIVITY_LABEL[a.kind]}</span>
+					<span class="muted">{activityDetail(a.kind, a.what, a.row_count)}</span>
+					<span class="muted small log-when">
+						{a.who || 'Someone'} · {formatDateTime(a.at, event.timezone)}
+					</span>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 </section>
 
@@ -790,6 +838,41 @@
 	td a:hover {
 		color: var(--brand-text);
 		text-decoration: underline;
+	}
+
+	.activity {
+		margin-bottom: 14px;
+	}
+
+	.activity h2 {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.log {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.log li {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		flex-wrap: wrap;
+		padding: 8px 0;
+		border-top: 1px solid var(--border);
+		font-size: 14.5px;
+	}
+
+	.log-kind {
+		font-weight: 650;
+	}
+
+	.log-when {
+		margin-left: auto;
+		white-space: nowrap;
 	}
 
 	.settings {

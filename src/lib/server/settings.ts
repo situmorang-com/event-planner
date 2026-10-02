@@ -57,6 +57,27 @@ export function setTeamNames(db: DB, names: string[]) {
 	);
 }
 
+/** Adds a name to the end of the list; a name already there (any case) is left as it was. */
+export function addTeamName(db: DB, raw: string): string[] {
+	const name = raw.replace(/\s+/g, ' ').trim();
+	const names = teamNames(db);
+	if (name && !names.some((n) => n.toLowerCase() === name.toLowerCase())) names.push(name);
+	setTeamNames(db, names);
+	return teamNames(db);
+}
+
+/**
+ * Removes a name. Rows stamped with it keep the old name: the stamp says who did something at
+ * the time, and whoAmI() stops trusting the name on its own.
+ */
+export function removeTeamName(db: DB, name: string): string[] {
+	setTeamNames(
+		db,
+		teamNames(db).filter((n) => n !== name.trim())
+	);
+	return teamNames(db);
+}
+
 /** A team name as it was saved, matched case-insensitively (first-name match allowed); null if unknown. */
 export function matchTeamName(db: DB, raw: string): string | null {
 	const q = raw.trim().toLowerCase();

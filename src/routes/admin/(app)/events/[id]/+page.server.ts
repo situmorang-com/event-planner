@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { toLocalInput } from '$lib/time';
 import { publicName } from '$lib/names';
+import { listActivity } from '$lib/server/activity-log';
 import { publish } from '$lib/server/bus';
 import { checkIn, listAttendees, removeCheckin } from '$lib/server/checkins';
 import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
@@ -31,6 +32,7 @@ export const load: PageServerLoad = ({ params, url }) => {
 		stats: computeStats(attendees, { now, isOpen: !!event.is_open }),
 		people: countLive(db, event.id),
 		review: countToReview(db, event.id),
+		activity: listActivity(db, event.id, 50),
 		staticLink: checkinUrl(base, event.id),
 		reachable,
 		created: url.searchParams.has('created'),
@@ -66,7 +68,7 @@ export const actions: Actions = {
 		return { saved: true };
 	},
 
-	add: async ({ params, request }) => {
+	add: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const values = {
@@ -91,7 +93,8 @@ export const actions: Actions = {
 		const result = checkIn(db, event.id, input, {
 			method: 'staff',
 			device: 'other',
-			consent: false
+			consent: false,
+			by: locals.who
 		});
 		if (result.status === 'created') {
 			publish(event.id, {

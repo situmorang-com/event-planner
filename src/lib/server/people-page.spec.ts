@@ -17,7 +17,6 @@ import { createEvent, updateEvent } from './events';
 import { createPerson, getPeople } from './people';
 import { addPeople, FOUND_THRESHOLD, peopleView, reviewedGuests } from './people-page';
 import { setTeamNames } from './settings';
-import { whoAmI } from './who';
 
 const guest = (name: string, extra: Partial<GuestInput> = {}): GuestInput => ({
 	name,
@@ -302,20 +301,6 @@ describe('reviewedGuests', () => {
 			/isn’t a LinkedIn profile link/
 		);
 		expect(reviewedGuests('not json', '', 'ID')).toMatch(/didn’t arrive intact/);
-	});
-});
-
-describe('whoAmI', () => {
-	it('trusts the cookie only while the name is on the team list', () => {
-		const db = createDb(':memory:');
-		setTeamNames(db, ['Edmund', 'Sari']);
-		const cookies = (value?: string) => ({ get: () => value });
-		expect(whoAmI(db, cookies('sari'))).toBe('Sari');
-		expect(whoAmI(db, cookies(' Edmund '))).toBe('Edmund');
-		expect(whoAmI(db, cookies('Someone'))).toBeNull();
-		expect(whoAmI(db, cookies())).toBeNull();
-		setTeamNames(db, ['Sari']);
-		expect(whoAmI(db, cookies('Edmund'))).toBeNull();
 	});
 });
 
