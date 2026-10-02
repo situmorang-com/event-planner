@@ -2,7 +2,7 @@ import { error, text } from '@sveltejs/kit';
 import { verifyBearer } from '$lib/server/api-tokens';
 import { db } from '$lib/server/db';
 import { getEvent } from '$lib/server/events';
-import { addSuggestions, extractSuggestions } from '$lib/server/planning';
+import { addSuggestions, extractSuggestions, markResearched } from '$lib/server/planning';
 import { allow } from '$lib/server/rate-limit';
 import { publicBaseUrl } from '$lib/server/urls';
 import type { RequestHandler } from './$types';
@@ -45,6 +45,10 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 		error(422, `No {"suggestions": [...]} list in Claude's answer. It said: ${said}`);
 	}
 
+	markResearched(db, event.id);
+	// Research after the start creates no Found rows: the list has gone live (§5.4).
+	if (event.starts_at !== null && Date.now() >= event.starts_at)
+		return text(`Event Planner: ${event.name} has started, ${found.length} names not kept.\n`);
 	const { added, skipped } = addSuggestions(db, event.id, found);
 	const review = `${publicBaseUrl(url).base}/admin/events/${event.id}/planning`;
 	return text(

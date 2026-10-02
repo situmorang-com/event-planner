@@ -33,11 +33,11 @@
 	const command = $derived(
 		[
 			// The brief is fetched first: if the app refuses it, its reason is printed and Claude never runs.
-			`brief=$(curl -sS --fail-with-body -H "Authorization: Bearer $HADIR_TOKEN" ${promptUrl}) || { echo "$brief" >&2; false; } \\`,
+			`brief=$(curl -sS --fail-with-body -H "Authorization: Bearer $EVENT_PLANNER_TOKEN" ${promptUrl}) || { echo "$brief" >&2; false; } \\`,
 			`  && printf '%s' "$brief" \\`,
 			`  | claude -p --tools "WebSearch WebFetch" --allowedTools "WebSearch WebFetch" --output-format json \\`,
 			`  | tee "event-planner-research-${event.id}-$(date +%H%M).json" \\`,
-			`  | curl -sS --fail-with-body -H "Authorization: Bearer $HADIR_TOKEN" -H "content-type: application/json" --data-binary @- ${postUrl}`
+			`  | curl -sS --fail-with-body -H "Authorization: Bearer $EVENT_PLANNER_TOKEN" -H "content-type: application/json" --data-binary @- ${postUrl}`
 		].join('\n')
 	);
 	const newToken = $derived(form && 'token' in form ? form.token : null);
@@ -331,10 +331,10 @@
 				it to <code>~/.zshrc</code>).
 			</p>
 			<div class="code">
-				<pre>export HADIR_TOKEN={newToken}</pre>
+				<pre>export EVENT_PLANNER_TOKEN={newToken}</pre>
 				<button
 					class="btn btn-secondary btn-sm"
-					onclick={() => copy(`export HADIR_TOKEN=${newToken}`, 'token')}
+					onclick={() => copy(`export EVENT_PLANNER_TOKEN=${newToken}`, 'token')}
 				>
 					{#if copied === 'token'}<Check size={15} /> Copied{:else}<Copy size={15} /> Copy{/if}
 				</button>

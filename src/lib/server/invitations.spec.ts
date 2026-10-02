@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { checkIn, listAttendees } from './checkins';
 import { deleteContact } from './contacts';
-import { createDb, migrate, type DB } from './database';
+import { createDb, type DB } from './database';
 import { createEvent } from './events';
 import {
 	addInvitations,
@@ -141,7 +141,7 @@ describe('guest list', () => {
 
 	it('erases invitations along with the contact they belong to', () => {
 		const other = newEvent(db, 'Other');
-		const { contactId } = checkIn(
+		const { personId } = checkIn(
 			db,
 			eventId,
 			{ name: 'Rina', email: 'rina@example.com', phone: null, company: '', jobTitle: '' },
@@ -153,7 +153,7 @@ describe('guest list', () => {
 		]);
 		addInvitations(db, other, [guest('Rina Wijaya', { email: 'rina@example.com' })]);
 
-		deleteContact(db, contactId);
+		deleteContact(db, personId);
 		expect(listInvitations(db, eventId).map((i) => i.name)).toEqual(['Andi']);
 		expect(listInvitations(db, other)).toEqual([]);
 	});
@@ -235,18 +235,5 @@ describe('matchArrivals', () => {
 		const list = invitees({ name: 'Andi Pratama', company: 'Kopi Kita' });
 		const came = checkins({ name: 'Andi Pratama' }, { name: 'Andi Pratama', company: 'Kopi Kita' });
 		expect(pairs(list, came)).toEqual([101]);
-	});
-});
-
-describe('migrate', () => {
-	it('adds the LinkedIn column to a guest list created before it existed', () => {
-		const db = createDb(':memory:');
-		db.exec(`ALTER TABLE invitations DROP COLUMN linkedin`);
-		migrate(db);
-		migrate(db);
-		const columns = (db.prepare(`PRAGMA table_info(invitations)`).all() as { name: string }[]).map(
-			(c) => c.name
-		);
-		expect(columns).toContain('linkedin');
 	});
 });

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { DB } from './database';
+import type { DB } from './database.ts';
 
 export interface TokenRow {
 	id: number;
@@ -12,7 +12,7 @@ const hash = (token: string) => createHash('sha256').update(token).digest('base6
 
 /** A new research token. Only its hash is stored, so this is the one time it can be shown. */
 export function createToken(db: DB, label: string, now = Date.now()) {
-	const token = `hdr_${randomBytes(24).toString('base64url')}`;
+	const token = `ep_${randomBytes(24).toString('base64url')}`;
 	db.prepare(`INSERT INTO api_tokens (label, hash, created_at) VALUES (?, ?, ?)`).run(
 		label,
 		hash(token),
@@ -39,7 +39,8 @@ export function revokeToken(db: DB, id: number, now = Date.now()) {
 
 /** The live token behind an `Authorization: Bearer …` header, or null. */
 export function verifyBearer(db: DB, header: string | null, now = Date.now()): TokenRow | null {
-	const token = /^Bearer\s+(hdr_[\w-]{20,})\s*$/.exec(header ?? '')?.[1];
+	// hdr_ tokens predate the rename and keep working until they are revoked.
+	const token = /^Bearer\s+((?:ep|hdr)_[\w-]{20,})\s*$/.exec(header ?? '')?.[1];
 	if (!token) return null;
 	const row = db
 		.prepare(

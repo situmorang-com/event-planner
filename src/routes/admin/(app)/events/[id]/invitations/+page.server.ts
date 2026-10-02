@@ -13,12 +13,12 @@ import {
 	companySuggestions,
 	groupByCompany,
 	listInvitations,
-	matchArrivals,
 	removeInvitation,
 	renameCompany,
 	setNote,
 	setReply,
 	updateInvitation,
+	walkIns,
 	type GuestInput
 } from '$lib/server/invitations';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
@@ -34,7 +34,7 @@ function requireEvent(id: string) {
  * Rows checked field by field in the add form, as JSON. Every field is cleaned again here;
  * returns the first problem as a message instead when a row can't be saved.
  */
-function reviewedGuests(raw: string, company: string): GuestInput[] | string {
+function reviewedGuests(raw: string, company: string, country: string): GuestInput[] | string {
 	let rows: unknown;
 	try {
 		rows = JSON.parse(raw);
@@ -52,7 +52,7 @@ function reviewedGuests(raw: string, company: string): GuestInput[] | string {
 			company: cleanText(r.company, 120) || company,
 			jobTitle: cleanText(r.jobTitle, 120),
 			email,
-			phone: normalizePhone(r.phone, DEFAULT_PHONE_COUNTRY),
+			phone: normalizePhone(r.phone, country),
 			linkedin: linkedinProfile(linkedinText),
 			reply: isReply(r.reply) ? r.reply : 'pending',
 			note: cleanText(r.note, 300)
@@ -76,7 +76,6 @@ export const load: PageServerLoad = ({ params }) => {
 	const event = requireEvent(params.id);
 	const invitations = listInvitations(db, event.id);
 	const checkins = listAttendees(db, event.id);
-	const { arrived, walkIns } = matchArrivals(invitations, checkins);
 
 	const guests = invitations.map((i) => ({
 		id: i.id,
@@ -88,22 +87,14 @@ export const load: PageServerLoad = ({ params }) => {
 		linkedin: i.linkedin,
 		reply: i.reply,
 		note: i.note,
-		arrived_at: arrived.get(i.id)?.checked_in_at ?? null
+		arrived_at: i.arrived_at
 	}));
 
 	return {
 		event,
 		groups: groupByCompany(guests),
 		// Walk-ins only mean something once there's a guest list to compare against.
-		walkIns: invitations.length
-			? walkIns.map((a) => ({
-					checkinId: a.checkin_id,
-					name: a.name,
-					company: a.company,
-					jobTitle: a.job_title,
-					checkedInAt: a.checked_in_at
-				}))
-			: [],
+		walkIns: invitations.length ? walkIns(db, event.id) : [],
 		checkins: checkins.length,
 		suggestions: countNewSuggestions(db, event.id),
 		companies: companySuggestions(db)
@@ -116,14 +107,14 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const company = cleanText(form.get('company'), 120);
 		const reviewed = form.has('guests')
-			? reviewedGuests(String(form.get('guests')), company)
+			? reviewedGuests(String(form.get('guests')), company, event.phone_country)
 			: null;
 		if (typeof reviewed === 'string') return fail(400, { addError: reviewed });
 		const parsed = reviewed
 			? { guests: reviewed, skipped: [], truncated: false }
 			: parseGuestList(String(form.get('names') ?? ''), {
 					company,
-					country: DEFAULT_PHONE_COUNTRY
+					country: event.phone_country || DEFAULT_PHONE_COUNTRY
 				});
 		const picked = getContacts(db, form.getAll('contact').map(String)).map((c) => ({
 			name: c.name,
@@ -187,7 +178,7 @@ export const actions: Actions = {
 			company: cleanText(values.company, 120),
 			jobTitle: cleanText(values.jobTitle, 120),
 			email: normalizeEmail(values.email),
-			phone: normalizePhone(values.phone, DEFAULT_PHONE_COUNTRY),
+			phone: normalizePhone(values.phone, event.phone_country || DEFAULT_PHONE_COUNTRY),
 			linkedin: linkedinProfile(values.linkedin)
 		};
 		const errors: Record<string, string> = {};

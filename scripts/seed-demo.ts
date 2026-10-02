@@ -1,13 +1,24 @@
-// Fills the database with demo events, ~60 realistic check-ins and two guest lists so the
-// dashboard, entrance screen and invitation planner have something to show. Contacts use
-// @example.com addresses.
+// Fills the database with demo events, ~60 realistic check-ins, two guest lists and a few
+// research finds so the dashboard, entrance screen, invitations and planning pages have
+// something to show. People use @example.com addresses.
 //
 //   npm run demo:seed            (uses DB_PATH or data/attendance.db)
 //
-// Runs on Node's built-in TypeScript support and reuses the app's real check-in logic.
+// Runs on Node's built-in TypeScript support and reuses the app's real modules, so every row
+// goes through the same matching, stages and consent rules as the app itself.
 import { checkIn, type Device, type Method } from '../src/lib/server/checkins.ts';
 import { createDb } from '../src/lib/server/database.ts';
-import { shortId } from '../src/lib/server/ids.ts';
+import {
+	addFound,
+	addShortlisted,
+	setNote,
+	setReply,
+	type GuestInput
+} from '../src/lib/server/event-people.ts';
+import { createEvent as newEvent } from '../src/lib/server/events.ts';
+import { addTargets, saveBrief } from '../src/lib/server/planning.ts';
+import { setTeamNames } from '../src/lib/server/settings.ts';
+import type { Reply } from '../src/lib/server/stages.ts';
 
 const db = createDb(process.env.DB_PATH ?? 'data/attendance.db');
 
@@ -105,15 +116,15 @@ const person = (name: string, i: number) => ({
 });
 
 function createEvent(name: string, venue: string, startsAt: number, qrMode: 'rotating' | 'static') {
-	const id = shortId();
-	db.prepare(
-		`INSERT INTO events (id, name, venue, starts_at, timezone, qr_mode, is_open, created_at)
-		VALUES (?, ?, ?, ?, 'Asia/Jakarta', ?, 1, ?)`
-	).run(id, name, venue, startsAt, qrMode, startsAt - 7 * 86_400_000);
-	return id;
+	return newEvent(
+		db,
+		{ name, venue, startsAt, timezone: 'Asia/Jakarta', qrMode, targetCount: 40 },
+		startsAt - 7 * 86_400_000
+	);
 }
 
 const now = Date.now();
+setTeamNames(db, ['Edmund', 'Sari']);
 
 // An earlier event, so some of today's attendees show up as "returning".
 const earlier = createEvent(
@@ -132,35 +143,8 @@ PEOPLE.slice(0, 18).forEach((name, i) => {
 	);
 });
 
-// Today's event: arrivals over the last ~95 minutes, peaking about an hour ago.
-const today = createEvent(
-	'Partner Summit 2026 (demo)',
-	'Grand Ballroom, Jakarta',
-	now - 100 * 60_000,
-	'rotating'
-);
-PEOPLE.forEach((name, i) => {
-	const u = (i + 0.5) / PEOPLE.length;
-	// Cosine-shaped arrival curve: a trickle, a rush in the middle, then stragglers.
-	const jitter = (((i * 37) % 11) - 5) * 20_000;
-	const offset = Math.min(
-		94 * 60_000,
-		Math.max(0, 95 * 60_000 * (0.5 + Math.asin(2 * u - 1) / Math.PI) + jitter)
-	);
-	const device: Device = i % 17 === 0 ? 'other' : i % 3 === 1 ? 'android' : 'ios';
-	const method: Method = i < 18 && i % 2 === 0 ? 'returning' : i % 7 === 3 ? 'picker' : 'form';
-	checkIn(
-		db,
-		today,
-		person(name, i),
-		{ method, device, consent: true },
-		now - 95 * 60_000 + offset
-	);
-});
-
 // Guest lists. Most of today's arrivals were invited (some only by name, some with a title in
 // front), a few confirmed guests never came, and the last fifteen arrivals are walk-ins.
-type Reply = 'pending' | 'yes' | 'maybe' | 'no';
 interface Guest {
 	name: string;
 	company: string;
@@ -172,26 +156,21 @@ interface Guest {
 }
 
 function invite(eventId: string, guests: Guest[], addedAt: number) {
-	const insert = db.prepare(
-		`INSERT INTO invitations (event_id, name, company, job_title, email, phone, reply, note,
-			replied_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	);
 	guests.forEach((g, i) => {
-		const repliedAt = g.reply === 'pending' ? null : addedAt + (i + 1) * 5 * 3_600_000;
-		insert.run(
-			eventId,
-			g.name,
-			g.company,
-			g.jobTitle ?? '',
-			g.email ?? null,
-			g.phone ?? null,
-			g.reply,
-			g.note ?? '',
-			repliedAt,
-			addedAt,
-			repliedAt ?? addedAt
-		);
+		const input: GuestInput = {
+			name: g.name,
+			company: g.company,
+			jobTitle: g.jobTitle ?? '',
+			email: g.email ?? null,
+			phone: g.phone ?? null
+		};
+		addShortlisted(db, eventId, [input], { source: 'typed', by: 'Edmund' }, addedAt);
+		const row = db
+			.prepare(`SELECT id FROM event_people WHERE event_id = ? ORDER BY id DESC LIMIT 1`)
+			.get(eventId) as { id: number };
+		if (g.reply !== 'pending')
+			setReply(db, eventId, row.id, g.reply, addedAt + (i + 1) * 5 * 3_600_000);
+		if (g.note) setNote(db, eventId, row.id, g.note, addedAt);
 	});
 }
 
@@ -204,6 +183,14 @@ const NOTES: Record<number, string> = {
 // On the list with a title, by name only: they still match the check-ins typed without one.
 const TITLED: Record<number, string> = { 11: 'Mr', 14: 'Bapak', 20: 'Ibu' };
 
+// Today's event: the list goes in first, then arrivals over the last ~95 minutes, peaking
+// about an hour ago, so each check-in lands on its own row.
+const today = createEvent(
+	'Partner Summit 2026 (demo)',
+	'Grand Ballroom, Jakarta',
+	now - 100 * 60_000,
+	'rotating'
+);
 const invited: Guest[] = PEOPLE.slice(0, 45).map((name, i) => {
 	const p = person(name, i);
 	const byName = i % 3 === 2; // on the list by name only; matched to their check-in by name
@@ -238,7 +225,27 @@ const noShows: Guest[] = [
 ];
 invite(today, [...invited, ...noShows], now - 21 * 86_400_000);
 
-// An upcoming event that's still being planned: replies are coming in, nobody has checked in.
+PEOPLE.forEach((name, i) => {
+	const u = (i + 0.5) / PEOPLE.length;
+	// Cosine-shaped arrival curve: a trickle, a rush in the middle, then stragglers.
+	const jitter = (((i * 37) % 11) - 5) * 20_000;
+	const offset = Math.min(
+		94 * 60_000,
+		Math.max(0, 95 * 60_000 * (0.5 + Math.asin(2 * u - 1) / Math.PI) + jitter)
+	);
+	const device: Device = i % 17 === 0 ? 'other' : i % 3 === 1 ? 'android' : 'ios';
+	const method: Method = i < 18 && i % 2 === 0 ? 'returning' : i % 7 === 3 ? 'picker' : 'form';
+	checkIn(
+		db,
+		today,
+		person(name, i),
+		{ method, device, consent: true, consentFuture: i % 4 !== 0 },
+		now - 95 * 60_000 + offset
+	);
+});
+
+// An upcoming event that's still being planned: replies are coming in, nobody has checked in,
+// and the research has turned up a few names to review.
 const dinner = createEvent(
 	'Year-end Customer Dinner (demo)',
 	'Hotel Mulia, Jakarta',
@@ -259,6 +266,55 @@ invite(
 		};
 	}),
 	now - 3 * 86_400_000
+);
+saveBrief(db, dinner, {
+	goal: 'Thank this year’s customers and introduce the finance team to Dynamics 365 Finance.',
+	roles: 'CFO, Finance Director, Head of IT',
+	seniority: ['C-level / owner', 'VP / Director'],
+	departments: ['Finance', 'IT'],
+	perCompany: 2,
+	avoid: 'Competitors and anyone already engaged by sales.'
+});
+addTargets(db, dinner, [
+	{ name: 'Batavia Foods', website: 'bataviafoods.example.com' },
+	{ name: 'Selat Energy', website: '' },
+	{ name: 'Pelita Manufacturing', website: 'pelita.example.com' }
+]);
+addFound(
+	db,
+	dinner,
+	[
+		{
+			name: 'Lestari Kusuma',
+			company: 'Batavia Foods',
+			jobTitle: 'Group CFO',
+			email: null,
+			phone: null,
+			sourceUrl: 'https://bataviafoods.example.com/leadership',
+			reason: 'Leads group finance and the ERP programme.'
+		},
+		{
+			name: 'Harun Abdullah',
+			company: 'Pelita Manufacturing',
+			jobTitle: 'Head of IT',
+			email: null,
+			phone: null,
+			linkedin: 'https://www.linkedin.com/in/harun-abdullah',
+			sourceUrl: 'https://pelita.example.com/news/erp-rollout',
+			reason: 'Quoted on the ERP rollout.'
+		},
+		{
+			name: 'Citra Dewi',
+			company: 'Selat Energy',
+			jobTitle: 'Finance Director',
+			email: null,
+			phone: null,
+			sourceUrl: 'https://selat.example.com/about',
+			reason: 'Finance lead named on the About page.'
+		}
+	],
+	{ source: 'research' },
+	now - 86_400_000
 );
 
 console.log(`Demo data added. Open /admin/events/${today} (and /admin/events/${today}/display).`);

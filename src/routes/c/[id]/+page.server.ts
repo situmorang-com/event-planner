@@ -1,11 +1,12 @@
 import { error, fail, type Cookies } from '@sveltejs/kit';
 import { publicName, firstName } from '$lib/names';
 import { publish } from '$lib/server/bus';
-import { checkIn, type ContactRow, type Method } from '$lib/server/checkins';
+import { checkIn, type Method } from '$lib/server/checkins';
 import { DEFAULT_PHONE_COUNTRY, ORG_NAME, PRIVACY_URL } from '$lib/server/config';
 import { db, secret } from '$lib/server/db';
 import { deviceFromUserAgent } from '$lib/server/device';
 import { getEvent } from '$lib/server/events';
+import { getPerson } from '$lib/server/people';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { issuePass, PASS_TTL_MS, verifyPass, verifyQrToken } from '$lib/server/qr-token';
 import { allow } from '$lib/server/rate-limit';
@@ -18,16 +19,13 @@ const passCookie = (eventId: string) => `ea_pass_${eventId}`;
 
 function rememberedContact(cookies: Cookies) {
 	const id = unsignValue(secret, cookies.get(ME_COOKIE));
-	if (!id) return null;
-	return (
-		(db.prepare(`SELECT * FROM contacts WHERE id = ?`).get(id) as ContactRow | undefined) ?? null
-	);
+	return (id && getPerson(db, id)) || null;
 }
 
 // Venue laptops often serve plain http on the LAN, where a Secure cookie (or a Secure delete
 // header) is silently dropped, so every cookie follows the request's protocol.
-function rememberMe(cookies: Cookies, url: URL, contactId: string) {
-	cookies.set(ME_COOKIE, signValue(secret, contactId), {
+function rememberMe(cookies: Cookies, url: URL, personId: string) {
+	cookies.set(ME_COOKIE, signValue(secret, personId), {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
@@ -82,7 +80,7 @@ export const load: PageServerLoad = async ({ params, url, cookies, request, loca
 	const me = rememberedContact(cookies);
 	const already = me
 		? (db
-				.prepare(`SELECT id, checked_in_at FROM checkins WHERE event_id = ? AND contact_id = ?`)
+				.prepare(`SELECT id, checked_in_at FROM checkins WHERE event_id = ? AND person_id = ?`)
 				.get(event.id, me.id) as { id: number; checked_in_at: number } | undefined)
 		: undefined;
 
@@ -145,7 +143,7 @@ export const actions: Actions = {
 		const input = {
 			name: cleanText(raw.name, 100),
 			email: normalizeEmail(raw.email),
-			phone: normalizePhone(raw.phone, DEFAULT_PHONE_COUNTRY),
+			phone: normalizePhone(raw.phone, event.phone_country || DEFAULT_PHONE_COUNTRY),
 			company: cleanText(raw.company, 120),
 			jobTitle: cleanText(raw.jobTitle, 120)
 		};
@@ -166,7 +164,7 @@ export const actions: Actions = {
 			consent
 		});
 
-		if (form.get('remember') === 'on') rememberMe(cookies, url, result.contactId);
+		if (form.get('remember') === 'on') rememberMe(cookies, url, result.personId);
 		else forgetMe(cookies, url);
 
 		if (result.status === 'created') {

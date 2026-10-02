@@ -103,7 +103,7 @@ The **Planning** tab helps you decide who to invite before the guest list exists
    how senior, which departments, how many per company, and who to leave out.
 2. **Target companies.** One per line, with a website if you know it. Give a company its own
    focus ("only their finance team") when it differs from the brief.
-3. **Find people with Claude.** Create a token (shown once), `export HADIR_TOKEN=…` in your
+3. **Find people with Claude.** Create a token (shown once), `export EVENT_PLANNER_TOKEN=…` in your
    terminal, and run the command the page shows. Your terminal fetches the event's research
    brief, `claude -p` researches it with web search and fetch only, and the answer is posted
    back. Claude never sees the token and has no shell, so a web page that tries to hijack it has
@@ -175,9 +175,14 @@ src/
     invitations.ts            replies, name and company matching keys, follow-up messages
     components/               QR code, charts, event form, guest-list rows and forms
     server/
-      database.ts             schema (SQLite, created on start)
-      checkins.ts             check-in and contact matching logic
-      invitations.ts          guest lists: storage, company groups, pairing with check-ins
+      schema.ts, database.ts  schema (SQLite), versioned migrations run on start
+      migrate-v2.ts           contacts/guest lists → people and event rows (with a .pre-v2 copy)
+      people.ts, companies.ts the cross-event pool: identity matching, field precedence, merge
+      event-people.ts         one person on one event: found/shortlisted/invited… rows, touches
+      stages.ts               the stage transition table, the only place a stage changes
+      do-not-contact.ts       hashed do-not-contact list and person locks
+      checkins.ts             check-ins, linked to people and their event rows
+      invitations.ts          the guest-list view of event rows, company groups
       guest-list.ts           reading typed and pasted guest lists
       qr-token.ts             rotating QR tokens and the 30-minute scan pass
       auth.ts                 signed organizer session

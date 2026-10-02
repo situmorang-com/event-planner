@@ -1,10 +1,18 @@
-import { companyKey, linkedinProfile, nameKey } from '$lib/invitations';
-import { EMPTY_BRIEF, type Brief } from '$lib/planning';
-import { formatDateTime } from '$lib/time';
-import type { DB } from './database';
-import type { EventRow } from './events';
-import { addInvitations, guestListCheck, listInvitations } from './invitations';
-import { cleanText } from './normalize';
+import { companyKey, linkedinProfile, nameKey } from '../invitations.ts';
+import { EMPTY_BRIEF, type Brief } from '../planning.ts';
+import { formatDateTime } from '../time.ts';
+import { ensureCompany } from './companies.ts';
+import type { DB } from './database.ts';
+import {
+	addFound,
+	listEventPeople,
+	shortlistFound,
+	skipRow,
+	unskipRow,
+	type EventPersonRow
+} from './event-people.ts';
+import type { EventRow } from './events.ts';
+import { cleanText } from './normalize.ts';
 
 /* ───────────────────────── Brief ───────────────────────── */
 
@@ -64,15 +72,32 @@ export function saveBrief(db: DB, eventId: string, brief: Brief, now = Date.now(
 export interface TargetRow {
 	id: number;
 	event_id: string;
+	company_id: string;
 	name: string;
+	key: string;
 	website: string;
 	focus: string;
+	/** NULL: the computed default (§6.2); 0/1: an explicit tick. */
+	research: 0 | 1 | null;
+	research_requested_at: number | null;
+	researched_at: number | null;
+	source: 'typed' | 'copied' | 'd365' | null;
+	blocked_at: number | null;
+	/** People in the pool at this company who may be contacted. */
+	known: number;
 	created_at: number;
 }
 
 export function listTargets(db: DB, eventId: string): TargetRow[] {
 	return db
-		.prepare(`SELECT * FROM target_companies WHERE event_id = ? ORDER BY name COLLATE NOCASE`)
+		.prepare(
+			`SELECT ec.id, ec.event_id, ec.company_id, co.name, co.key, co.website, ec.focus, ec.research,
+				ec.research_requested_at, ec.researched_at, ec.source, co.never_invite_at AS blocked_at,
+				(SELECT COUNT(*) FROM people p WHERE p.company_id = co.id AND p.locked_at IS NULL) AS known,
+				ec.created_at
+			FROM event_companies ec JOIN companies co ON co.id = ec.company_id
+			WHERE ec.event_id = ? ORDER BY co.name COLLATE NOCASE`
+		)
 		.all(eventId) as TargetRow[];
 }
 
@@ -93,11 +118,12 @@ export function addTargets(
 	db: DB,
 	eventId: string,
 	targets: { name: string; website: string }[],
+	{ source = 'typed' as TargetRow['source'] } = {},
 	now = Date.now()
 ) {
-	const seen = new Set(listTargets(db, eventId).map((t) => companyKey(t.name)));
+	const seen = new Set(listTargets(db, eventId).map((t) => t.key));
 	const insert = db.prepare(
-		`INSERT INTO target_companies (event_id, name, website, created_at) VALUES (?, ?, ?, ?)`
+		`INSERT INTO event_companies (event_id, company_id, source, created_at) VALUES (?, ?, ?, ?)`
 	);
 	const added: string[] = [];
 	const duplicates: string[] = [];
@@ -110,7 +136,8 @@ export function addTargets(
 				continue;
 			}
 			seen.add(key);
-			insert.run(eventId, t.name, t.website, now);
+			const company = ensureCompany(db, t.name, { website: t.website }, now)!;
+			insert.run(eventId, company.id, source, now);
 			added.push(t.name);
 		}
 	})();
@@ -118,20 +145,53 @@ export function addTargets(
 }
 
 export function setTargetFocus(db: DB, eventId: string, id: number, focus: string) {
-	db.prepare(`UPDATE target_companies SET focus = ? WHERE id = ? AND event_id = ?`).run(
+	db.prepare(`UPDATE event_companies SET focus = ? WHERE id = ? AND event_id = ?`).run(
 		focus,
 		id,
 		eventId
 	);
 }
 
-export function removeTarget(db: DB, eventId: string, id: number) {
-	db.prepare(`DELETE FROM target_companies WHERE id = ? AND event_id = ?`).run(id, eventId);
+/** NULL puts the company back on the computed default. */
+export function setTargetResearch(db: DB, eventId: string, id: number, research: 0 | 1 | null) {
+	db.prepare(`UPDATE event_companies SET research = ? WHERE id = ? AND event_id = ?`).run(
+		research,
+		id,
+		eventId
+	);
 }
 
-/* ───────────────────────── Suggestions ───────────────────────── */
+export function removeTarget(db: DB, eventId: string, id: number) {
+	db.prepare(`DELETE FROM event_companies WHERE id = ? AND event_id = ?`).run(id, eventId);
+}
 
-export type SuggestionStatus = 'new' | 'added' | 'dismissed';
+/** Companies a run researches: ticked (or defaulted in, §6.2) and not blocked. */
+export function researchTargets(db: DB, eventId: string, perCompany: number): TargetRow[] {
+	return listTargets(db, eventId).filter(
+		(t) => !t.blocked_at && (t.research ?? (t.known < perCompany ? 1 : 0))
+	);
+}
+
+export const RESEARCH_CAP = 15;
+
+export function markResearchRequested(db: DB, eventId: string, ids: number[], now = Date.now()) {
+	db.prepare(
+		`UPDATE event_companies SET research_requested_at = ?
+		WHERE event_id = ? AND id IN (SELECT value FROM json_each(?))`
+	).run(now, eventId, JSON.stringify(ids));
+}
+
+/** The answer came back: every company asked for in the last day counts as researched. */
+export function markResearched(db: DB, eventId: string, now = Date.now()) {
+	db.prepare(
+		`UPDATE event_companies SET researched_at = ?
+		WHERE event_id = ? AND research_requested_at IS NOT NULL AND research_requested_at > ?`
+	).run(now, eventId, now - 86_400_000);
+}
+
+/* ───────────────────────── Suggestions (Found rows from research) ───────────────────────── */
+
+export type SuggestionStatus = 'new' | 'dismissed';
 
 export interface SuggestionRow {
 	id: number;
@@ -156,16 +216,49 @@ export interface SuggestionInput {
 	reason: string;
 }
 
+const asSuggestion = (r: EventPersonRow): SuggestionRow => ({
+	id: r.id,
+	event_id: r.event_id,
+	company: r.company,
+	name: r.name,
+	job_title: r.job_title,
+	linkedin: r.linkedin,
+	source_url: r.source_url ?? '',
+	reason: r.reason ?? '',
+	status: r.skipped_at ? 'dismissed' : 'new',
+	created_at: r.created_at,
+	decided_at: r.skipped_at
+});
+
+/** Found rows the research brought in, open ones and skipped ones alike. */
 export function listSuggestions(db: DB, eventId: string): SuggestionRow[] {
-	return db
-		.prepare(`SELECT * FROM suggestions WHERE event_id = ? ORDER BY company COLLATE NOCASE, id`)
-		.all(eventId) as SuggestionRow[];
+	return listEventPeople(db, eventId)
+		.filter((r) => r.stage === 'found' && r.source === 'research')
+		.sort(
+			(a, b) => a.company.localeCompare(b.company, 'en', { sensitivity: 'base' }) || a.id - b.id
+		)
+		.map(asSuggestion);
 }
 
 export function countNewSuggestions(db: DB, eventId: string): number {
 	return (
 		db
-			.prepare(`SELECT COUNT(*) AS n FROM suggestions WHERE event_id = ? AND status = 'new'`)
+			.prepare(
+				`SELECT COUNT(*) AS n FROM event_people
+				WHERE event_id = ? AND stage = 'found' AND skipped_at IS NULL`
+			)
+			.get(eventId) as { n: number }
+	).n;
+}
+
+/** Research finds that became people on the list. */
+export function countAcceptedSuggestions(db: DB, eventId: string): number {
+	return (
+		db
+			.prepare(
+				`SELECT COUNT(*) AS n FROM event_people
+				WHERE event_id = ? AND stage <> 'found' AND source = 'research'`
+			)
 			.get(eventId) as { n: number }
 	).n;
 }
@@ -224,41 +317,39 @@ export function extractSuggestions(body: unknown): unknown[] | null {
 }
 
 /**
- * Keeps suggestions that are new: not already suggested (even if dismissed), not on the guest
- * list, and not repeated within the batch.
+ * Found rows for what the agent sent (§6.2): names already on the event (live or skipped),
+ * locked people and blocked companies are left out, as are repeats within the batch.
  */
 export function addSuggestions(db: DB, eventId: string, raw: unknown[], now = Date.now()) {
-	const keys = (s: { name: string; company: string; linkedin: string | null }) => [
-		`name:${nameKey(s.name)}@${companyKey(s.company)}`,
-		...(s.linkedin ? [`linkedin:${s.linkedin}`] : [])
-	];
-	const seen = new Set(listSuggestions(db, eventId).flatMap(keys));
-	const onList = guestListCheck(db, eventId);
-	const insert = db.prepare(
-		`INSERT INTO suggestions (event_id, company, name, job_title, linkedin, source_url, reason,
-			created_at)
-		VALUES (@eventId, @company, @name, @jobTitle, @linkedin, @sourceUrl, @reason, @now)`
-	);
-	let added = 0;
+	const guests = [];
 	let skipped = 0;
-	db.transaction(() => {
-		for (const item of raw.slice(0, 300)) {
-			const s = cleanSuggestion(item);
-			if (!s) {
-				skipped++;
-				continue;
-			}
-			const k = keys(s);
-			if (k.some((x) => seen.has(x)) || onList({ ...s, email: null })) {
-				skipped++;
-				continue;
-			}
-			k.forEach((x) => seen.add(x));
-			insert.run({ ...s, eventId, now });
-			added++;
+	const seen = new Set<string>();
+	for (const item of raw.slice(0, 300)) {
+		const s = cleanSuggestion(item);
+		if (!s) {
+			skipped++;
+			continue;
 		}
-	})();
-	return { added, skipped };
+		const key = `${nameKey(s.name)}@${companyKey(s.company)}`;
+		if (seen.has(key) || (s.linkedin && seen.has(s.linkedin))) {
+			skipped++;
+			continue;
+		}
+		seen.add(key);
+		if (s.linkedin) seen.add(s.linkedin);
+		guests.push({
+			name: s.name,
+			company: s.company,
+			jobTitle: s.jobTitle,
+			email: null,
+			phone: null,
+			linkedin: s.linkedin,
+			sourceUrl: s.sourceUrl,
+			reason: s.reason
+		});
+	}
+	const result = addFound(db, eventId, guests, { source: 'research' }, now);
+	return { added: result.added, skipped: skipped + result.skipped + result.refused.length };
 }
 
 export function setSuggestionStatus(
@@ -268,87 +359,74 @@ export function setSuggestionStatus(
 	status: SuggestionStatus,
 	now = Date.now()
 ) {
-	db.prepare(`UPDATE suggestions SET status = ?, decided_at = ? WHERE id = ? AND event_id = ?`).run(
-		status,
-		status === 'new' ? null : now,
-		id,
-		eventId
-	);
+	if (status === 'dismissed') skipRow(db, eventId, id, {}, now);
+	else unskipRow(db, eventId, id, now);
 }
 
 /** Puts a suggested person on the guest list (no reply yet). Returns their name, or null. */
 export function acceptSuggestion(db: DB, eventId: string, id: number, now = Date.now()) {
-	const s = db
-		.prepare(`SELECT * FROM suggestions WHERE id = ? AND event_id = ? AND status <> 'added'`)
-		.get(id, eventId) as SuggestionRow | undefined;
-	if (!s) return null;
-	db.transaction(() => {
-		addInvitations(
-			db,
-			eventId,
-			[
-				{
-					name: s.name,
-					company: s.company,
-					jobTitle: s.job_title,
-					email: null,
-					phone: null,
-					linkedin: s.linkedin
-				}
-			],
-			now
-		);
-		setSuggestionStatus(db, eventId, id, 'added', now);
-	})();
-	return s.name;
+	const result = shortlistFound(db, eventId, id, {}, now);
+	return result.status === 'added' ? result.name : null;
 }
 
 /* ───────────────────────── The research brief for claude -p ───────────────────────── */
 
 /**
- * Everything the agent needs in one prompt: who to look for, where, who is already known,
- * the rules, and the exact JSON to answer with. It has web tools only, so it never sees the
- * API token; the shell pipeline posts its answer back.
+ * Everything the agent needs in one prompt: who to look for, where, how many people are
+ * already known per company (counts only, never names: D10), the rules, and the exact JSON to
+ * answer with. It has web tools only, so it never sees the API token; the shell pipeline posts
+ * its answer back.
  */
-export function researchPrompt(db: DB, event: EventRow): string {
+export function researchPrompt(db: DB, event: EventRow, now = Date.now()): string {
 	const brief = getBrief(db, event.id);
-	const targets = listTargets(db, event.id);
-	const known = new Map<string, string[]>();
-	const remember = (company: string, label: string) => {
-		const key = companyKey(company);
-		known.set(key, [...(known.get(key) ?? []), label]);
-	};
-	for (const i of listInvitations(db, event.id))
-		remember(i.company, `${i.name}${i.linkedin ? ` (${i.linkedin})` : ''} — already invited`);
-	for (const s of listSuggestions(db, event.id))
-		remember(
-			s.company,
-			`${s.name}${s.linkedin ? ` (${s.linkedin})` : ''} — already ${s.status === 'dismissed' ? 'rejected' : 'suggested'}`
-		);
+	const targets = researchTargets(db, event.id, brief.perCompany);
+	const rows = listEventPeople(db, event.id);
+	const known = new Map<string, number>();
+	for (const r of rows) known.set(r.company_key, (known.get(r.company_key) ?? 0) + 1);
+
+	// Free text must not smuggle a name into the prompt: any line naming someone is dropped.
+	const names = new Set(rows.map((r) => nameKey(r.name)).filter(Boolean));
+	const scrub = (text: string) =>
+		text
+			.split(/\r?\n/)
+			.filter((line) => {
+				const l = line.toLowerCase();
+				for (const n of names) if (l.includes(n)) return false;
+				return true;
+			})
+			.join('\n')
+			.trim();
 
 	const when = event.starts_at ? formatDateTime(event.starts_at, event.timezone) : 'date to be set';
+	const avoid = scrub(brief.avoid);
 	const who = [
 		brief.roles && `Roles or titles: ${brief.roles}`,
 		brief.seniority.length && `Seniority: ${brief.seniority.join(', ')}`,
 		brief.departments.length && `Departments: ${brief.departments.join(', ')}`,
-		brief.avoid && `Do not suggest: ${brief.avoid}`
+		avoid && `Do not suggest: ${avoid}`
 	].filter(Boolean);
 
 	const companies = targets.map((t) => {
 		const lines = [`### ${t.name}${t.website ? ` (${t.website})` : ''}`];
-		if (t.focus) lines.push(`Focus for this company: ${t.focus}`);
-		const people = known.get(companyKey(t.name)) ?? [];
-		if (people.length) lines.push('Already known, skip these:', ...people.map((p) => `- ${p}`));
+		const focus = scrub(t.focus);
+		if (focus) lines.push(`Focus for this company: ${focus}`);
+		const n = known.get(t.key) ?? 0;
+		if (n)
+			lines.push(
+				`${n} ${n === 1 ? 'person' : 'people'} at this company ${n === 1 ? 'is' : 'are'} already known; suggest others.`
+			);
 		return lines.join('\n');
 	});
+
+	const started = event.starts_at !== null && now >= event.starts_at;
 
 	return `You are researching who to invite to a business event. Find real people who currently
 work at each target company and fit the brief below. Your answer is reviewed by the organizer
 before anyone is contacted.
-
+${started ? '\nNote: this event has already started, so new names will not be kept.\n' : ''}
 ## The event
 ${event.name} — ${when}${event.venue ? `, ${event.venue}` : ''}
-${brief.goal ? `Purpose: ${brief.goal}` : ''}
+${brief.goal ? `Purpose: ${scrub(brief.goal)}` : ''}
 
 ## Who to look for
 ${who.length ? who.map((w) => `- ${w}`).join('\n') : '- Senior decision-makers relevant to the event'}

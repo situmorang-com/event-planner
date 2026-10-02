@@ -10,6 +10,7 @@ import { cleanText } from '$lib/server/normalize';
 import {
 	acceptSuggestion,
 	addTargets,
+	countAcceptedSuggestions,
 	getBrief,
 	listSuggestions,
 	listTargets,
@@ -71,7 +72,7 @@ export const load: PageServerLoad = ({ params, url }) => {
 			reason: s.reason
 		})),
 		dismissed: suggestions.filter((s) => s.status === 'dismissed').length,
-		accepted: suggestions.filter((s) => s.status === 'added').length,
+		accepted: countAcceptedSuggestions(db, event.id),
 		tokens: listTokens(db),
 		base: publicBaseUrl(url).base,
 		checkins: countCheckins(db, event.id),

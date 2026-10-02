@@ -1,5 +1,5 @@
 import { linkedinProfile, nameFromLinkedin, nameKey, type Reply } from '$lib/invitations';
-import type { GuestInput } from './invitations';
+import type { GuestInput } from './event-people';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize';
 
 type Column =
@@ -177,7 +177,12 @@ function readHeader(cells: string[]): Columns | null {
 	return named && (found >= 2 || cells.filter(Boolean).length === 1) ? columns : null;
 }
 
-type Row = Required<GuestInput>;
+type Row = Required<
+	Pick<
+		GuestInput,
+		'name' | 'company' | 'jobTitle' | 'email' | 'phone' | 'linkedin' | 'reply' | 'note'
+	>
+>;
 
 function fromColumns(cells: string[], columns: Columns, company: string, country: string): Row {
 	const get = (c: Column) => {

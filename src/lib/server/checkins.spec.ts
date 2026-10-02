@@ -55,7 +55,7 @@ describe('checkIn', () => {
 			5_000
 		);
 		expect(again).toMatchObject({ status: 'existing', number: 1, checkedInAt: 1_000 });
-		expect(again.contactId).toBe(first.contactId);
+		expect(again.personId).toBe(first.personId);
 		expect(listAttendees(db, eventId)).toHaveLength(1);
 	});
 
@@ -88,7 +88,7 @@ describe('checkIn', () => {
 			qrMode: 'static'
 		});
 		const selfServe = checkIn(db, other, person(), meta);
-		expect(selfServe.contactId).toBe(staffAdded.contactId);
+		expect(selfServe.personId).toBe(staffAdded.personId);
 
 		const colleague = checkIn(
 			db,
@@ -96,7 +96,7 @@ describe('checkIn', () => {
 			person({ name: 'Assistant', email: 'pa@example.com' }),
 			meta
 		);
-		expect(colleague.contactId).not.toBe(staffAdded.contactId);
+		expect(colleague.personId).not.toBe(staffAdded.personId);
 	});
 
 	it('marks people who attended an earlier event as returning', () => {

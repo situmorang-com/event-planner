@@ -115,8 +115,16 @@ coolify.sh rollback-images <APP_UUID>   # list previous images
 coolify.sh rollback <APP_UUID> <TAG>    # redeploy one without rebuilding
 ```
 
-The schema only ever grows (`CREATE TABLE IF NOT EXISTS`), so an older image runs fine on a
-newer database.
+Within one schema version the schema only grows (`CREATE TABLE IF NOT EXISTS`), so an older
+image runs fine on a newer database. **Schema version 2** (the people pipeline) is the
+exception: on its first start it rebuilds `contacts`, `invitations`, `suggestions` and
+`target_companies` into `people`, `event_people` and `event_companies`, and drops the old
+tables. Before touching anything it writes a copy of the file beside the database,
+`<DB_PATH>.pre-v2` (so `/data/attendance.db.pre-v2` in the volume). Rolling back to an image
+from before version 2 therefore means restoring that copy over `DB_PATH` first; an older image
+started on the new file would recreate empty `contacts` and `invitations` tables. If the
+migration fails it rolls back and the app refuses to start, leaving the version-1 file intact
+for the previous image.
 
 ## 8. Restoring from a backup
 

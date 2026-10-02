@@ -1,6 +1,24 @@
-import { companyKey, nameKey, type Reply } from '$lib/invitations';
-import type { ContactRow } from './checkins';
-import type { DB } from './database';
+// The guest list as the Invitations page and its CSV know it, on top of event rows. A thin
+// layer until the People page replaces that UI; new code should use event-people.ts directly.
+import { companyKey, nameKey, type Reply } from '../invitations.ts';
+import { companySuggestions as companies, renameCompanyByKey } from './companies.ts';
+import type { DB } from './database.ts';
+import {
+	addShortlisted,
+	listEventPeople,
+	listWalkIns,
+	onEventCheck,
+	removeRow,
+	rowByCheckin,
+	setDetails,
+	setNote as noteRow,
+	setReply as replyRow,
+	type EventPersonRow,
+	type GuestInput
+} from './event-people.ts';
+import { peopleAtCompany, type PersonRow } from './people.ts';
+
+export type { GuestInput };
 
 export interface InvitationRow {
 	id: number;
@@ -16,6 +34,8 @@ export interface InvitationRow {
 	replied_at: number | null;
 	created_at: number;
 	updated_at: number;
+	/** When they checked in at the event, if they have. */
+	arrived_at: number | null;
 }
 
 export interface GuestDetails {
@@ -27,123 +47,67 @@ export interface GuestDetails {
 	linkedin?: string | null;
 }
 
-export interface GuestInput extends GuestDetails {
-	reply?: Reply;
-	note?: string;
+const shape = (r: EventPersonRow): InvitationRow => ({
+	id: r.id,
+	event_id: r.event_id,
+	name: r.name,
+	company: r.company,
+	job_title: r.job_title,
+	email: r.email,
+	phone: r.phone,
+	linkedin: r.linkedin,
+	reply: r.reply,
+	note: r.note,
+	replied_at: r.replied_at,
+	created_at: r.created_at,
+	updated_at: r.updated_at,
+	arrived_at: r.checked_in_at
+});
+
+/** The guest list: live rows, except walk-ins nobody has given a reply yet (they list apart). */
+function isGuest(r: EventPersonRow) {
+	return r.stage !== 'found' && !(r.source === 'walk_in' && r.reply === 'pending');
 }
 
 export function listInvitations(db: DB, eventId: string): InvitationRow[] {
-	return db
-		.prepare(`SELECT * FROM invitations WHERE event_id = ? ORDER BY id`)
-		.all(eventId) as InvitationRow[];
+	return listEventPeople(db, eventId).filter(isGuest).map(shape);
 }
 
 export function countInvitations(db: DB, eventId: string): number {
-	return (
-		db.prepare(`SELECT COUNT(*) AS n FROM invitations WHERE event_id = ?`).get(eventId) as {
-			n: number;
-		}
-	).n;
+	return listEventPeople(db, eventId).filter(isGuest).length;
 }
 
-type Identity = { name: string; company: string; email: string | null; linkedin?: string | null };
-
-/**
- * Two entries are the same guest when the email or LinkedIn profile matches, or the name does
- * at the same company.
- */
-function identities(guest: Identity): string[] {
-	const keys = [`name:${nameKey(guest.name)}@${companyKey(guest.company)}`];
-	if (guest.email) keys.push(`email:${guest.email}`);
-	if (guest.linkedin) keys.push(`linkedin:${guest.linkedin}`);
-	return keys;
-}
-
-/** Tells whether someone is already on an event's guest list. */
+/** Tells whether someone is already on an event, found or live. */
 export function guestListCheck(db: DB, eventId: string) {
-	const seen = new Set(listInvitations(db, eventId).flatMap(identities));
-	return (guest: Identity) => identities(guest).some((k) => seen.has(k));
+	return onEventCheck(db, eventId);
 }
 
 /** Adds everyone who isn't on the list yet; pasting the same list twice changes nothing. */
 export function addInvitations(db: DB, eventId: string, guests: GuestInput[], now = Date.now()) {
-	return db.transaction(() => {
-		const seen = new Set(listInvitations(db, eventId).flatMap(identities));
-		const insert = db.prepare(
-			`INSERT INTO invitations
-				(event_id, name, company, job_title, email, phone, linkedin, reply, note, replied_at,
-					created_at, updated_at)
-			VALUES (@eventId, @name, @company, @jobTitle, @email, @phone, @linkedin, @reply, @note,
-				@repliedAt, @now, @now)`
-		);
-		const added: string[] = [];
-		const duplicates: string[] = [];
-		for (const guest of guests) {
-			const keys = identities(guest);
-			if (keys.some((k) => seen.has(k))) {
-				duplicates.push(guest.name);
-				continue;
-			}
-			keys.forEach((k) => seen.add(k));
-			const reply = guest.reply ?? 'pending';
-			insert.run({
-				eventId,
-				name: guest.name,
-				company: guest.company,
-				jobTitle: guest.jobTitle,
-				email: guest.email,
-				phone: guest.phone,
-				linkedin: guest.linkedin ?? null,
-				reply,
-				note: guest.note ?? '',
-				repliedAt: reply === 'pending' ? null : now,
-				now
-			});
-			added.push(guest.name);
-		}
-		return { added, duplicates };
-	})();
+	const { added, duplicates, refused } = addShortlisted(
+		db,
+		eventId,
+		guests,
+		{ source: 'typed' },
+		now
+	);
+	return { added, duplicates: [...duplicates, ...refused.map((r) => r.name)] };
 }
 
 /** Someone who checked in without being invited, put on the list as attending. */
 export function addWalkIn(db: DB, eventId: string, checkinId: number, now = Date.now()) {
-	const person = db
-		.prepare(
-			`SELECT p.* FROM checkins c JOIN contacts p ON p.id = c.contact_id
-			WHERE c.id = ? AND c.event_id = ?`
-		)
-		.get(checkinId, eventId) as ContactRow | undefined;
-	if (!person) return null;
-	const guest: GuestInput = {
-		name: person.name,
-		company: person.company,
-		jobTitle: person.job_title,
-		email: person.email,
-		phone: person.phone,
-		reply: 'yes'
-	};
-	addInvitations(db, eventId, [guest], now);
-	return person.name;
+	const row = rowByCheckin(db, checkinId);
+	if (!row || row.event_id !== eventId) return null;
+	if (row.reply === 'pending') replyRow(db, eventId, row.id, 'yes', now);
+	return row.name;
 }
 
 export function setReply(db: DB, eventId: string, id: number, reply: Reply, now = Date.now()) {
-	db.prepare(
-		`UPDATE invitations SET
-			reply = @reply,
-			replied_at = CASE WHEN @reply = 'pending' THEN NULL
-				WHEN reply = @reply THEN replied_at ELSE @now END,
-			updated_at = @now
-		WHERE id = @id AND event_id = @eventId`
-	).run({ reply, now, id, eventId });
+	replyRow(db, eventId, id, reply, now);
 }
 
 export function setNote(db: DB, eventId: string, id: number, note: string, now = Date.now()) {
-	db.prepare(`UPDATE invitations SET note = ?, updated_at = ? WHERE id = ? AND event_id = ?`).run(
-		note,
-		now,
-		id,
-		eventId
-	);
+	noteRow(db, eventId, id, note, now);
 }
 
 export function updateInvitation(
@@ -153,38 +117,26 @@ export function updateInvitation(
 	details: GuestDetails,
 	now = Date.now()
 ) {
-	db.prepare(
-		`UPDATE invitations SET name = @name, company = @company, job_title = @jobTitle,
-			email = @email, phone = @phone, linkedin = @linkedin, updated_at = @now
-		WHERE id = @id AND event_id = @eventId`
-	).run({ ...details, linkedin: details.linkedin ?? null, now, id, eventId });
+	setDetails(db, eventId, id, details, now);
 }
 
 export function removeInvitation(db: DB, eventId: string, id: number) {
-	db.prepare(`DELETE FROM invitations WHERE id = ? AND event_id = ?`).run(id, eventId);
+	removeRow(db, eventId, id);
 }
 
-/** Renames every spelling of one company on the list, e.g. to fold "PT Batavia" into "Batavia Foods". */
+/** Renames every spelling of one company, e.g. to fold "PT Batavia" into "Batavia Foods". */
 export function renameCompany(
 	db: DB,
-	eventId: string,
+	_eventId: string,
 	fromKey: string,
 	to: string,
 	now = Date.now()
 ) {
-	const rows = db
-		.prepare(`SELECT id, company FROM invitations WHERE event_id = ?`)
-		.all(eventId) as {
-		id: number;
-		company: string;
-	}[];
-	const update = db.prepare(`UPDATE invitations SET company = ?, updated_at = ? WHERE id = ?`);
-	db.transaction(() => {
-		for (const row of rows) if (companyKey(row.company) === fromKey) update.run(to, now, row.id);
-	})();
+	// Companies are global now (D4), so the rename reaches every event and the pool.
+	renameCompanyByKey(db, fromKey, to, now);
 }
 
-function mostCommon(spellings: Map<string, number>): string {
+export function mostCommon(spellings: Map<string, number>): string {
 	let best = '';
 	let count = 0;
 	// Map order is first-seen order, so a tie goes to the spelling used first.
@@ -216,38 +168,25 @@ export function groupByCompany<T extends { company: string }>(guests: T[]): Comp
 		);
 }
 
-/** Company names to suggest, from the contact database and every guest list, one spelling each. */
+/** Company names to suggest, with how many people in the pool work there. */
 export function companySuggestions(db: DB) {
-	const rows = db
-		.prepare(
-			`SELECT company, 1 AS contact FROM contacts WHERE company <> ''
-			UNION ALL SELECT company, 0 FROM invitations WHERE company <> ''`
-		)
-		.all() as { company: string; contact: 0 | 1 }[];
-	const byKey = new Map<string, { spellings: Map<string, number>; contacts: number }>();
-	for (const { company, contact } of rows) {
-		const key = companyKey(company);
-		let entry = byKey.get(key);
-		if (!entry) byKey.set(key, (entry = { spellings: new Map(), contacts: 0 }));
-		entry.spellings.set(company, (entry.spellings.get(company) ?? 0) + 1);
-		entry.contacts += contact;
-	}
-	return [...byKey.values()]
-		.map((e) => ({ name: mostCommon(e.spellings), contacts: e.contacts }))
-		.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+	return companies(db);
 }
 
-/** Everyone in the contact database at one company, however they spelled it at check-in. */
-export function contactsAtCompany(db: DB, company: string) {
-	const key = companyKey(company);
-	if (!key) return [];
-	const rows = db
-		.prepare(
-			`SELECT id, name, email, phone, company, job_title FROM contacts
-			WHERE company <> '' ORDER BY name COLLATE NOCASE`
-		)
-		.all() as Pick<ContactRow, 'id' | 'name' | 'email' | 'phone' | 'company' | 'job_title'>[];
-	return rows.filter((c) => companyKey(c.company) === key);
+/** Everyone in the pool at one company, however they spelled it at check-in. */
+export function contactsAtCompany(db: DB, company: string): PersonRow[] {
+	return peopleAtCompany(db, company);
+}
+
+/** Check-ins that aren't on the list, as the page shows them. */
+export function walkIns(db: DB, eventId: string) {
+	return listWalkIns(db, eventId).map((r) => ({
+		checkinId: r.checkin_id!,
+		name: r.name,
+		company: r.company,
+		jobTitle: r.job_title,
+		checkedInAt: r.checked_in_at!
+	}));
 }
 
 type Person = { name: string; company: string; email: string | null; phone: string | null };
@@ -255,6 +194,7 @@ type Person = { name: string; company: string; email: string | null; phone: stri
 /**
  * Pairs invitees with their check-ins at the event. Email and mobile match exactly; a name
  * match only counts when the companies don't contradict it. Check-ins left over are walk-ins.
+ * Live rows carry `checkin_id` now; this remains for the migration and for loose pairing.
  */
 export function matchArrivals<
 	I extends Person & { id: number },

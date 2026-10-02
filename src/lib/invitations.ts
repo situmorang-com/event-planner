@@ -1,5 +1,5 @@
-import { mailtoHref } from '$lib/mailto';
-import { formatDate, formatTime } from '$lib/time';
+import { mailtoHref } from './mailto.ts';
+import { formatDate, formatTime } from './time.ts';
 
 export type Reply = 'pending' | 'yes' | 'maybe' | 'no';
 

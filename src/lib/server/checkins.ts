@@ -1,5 +1,13 @@
-import { randomUUID } from 'node:crypto';
-import type { DB } from './database';
+import type { DB } from './database.ts';
+import { linkCheckin, unlinkCheckin } from './event-people.ts';
+import {
+	createPerson,
+	findPerson,
+	setConsentFuture,
+	touchLastEvent,
+	updatePerson,
+	type PersonRow
+} from './people.ts';
 
 export type Method = 'form' | 'picker' | 'returning' | 'staff';
 export type Device = 'ios' | 'android' | 'desktop' | 'other';
@@ -12,20 +20,11 @@ export interface ContactInput {
 	jobTitle: string;
 }
 
-export interface ContactRow {
-	id: string;
-	name: string;
-	email: string | null;
-	phone: string | null;
-	company: string;
-	job_title: string;
-	created_at: number;
-	updated_at: number;
-}
+export type { PersonRow as ContactRow };
 
 export interface CheckinResult {
 	status: 'created' | 'existing';
-	contactId: string;
+	personId: string;
 	checkinId: number;
 	checkedInAt: number;
 	/** Arrival position within the event: "you're attendee #42". */
@@ -33,69 +32,52 @@ export interface CheckinResult {
 	isNewContact: boolean;
 }
 
+export interface CheckinMeta {
+	method: Method;
+	device: Device;
+	/** Box 1: attendance for this event. Staff adds record none. */
+	consent: boolean;
+	/** Box 2: future events (sticks to the person). */
+	consentFuture?: boolean;
+	/** Box 3: share with co-hosts (this event only). */
+	consentShare?: boolean;
+	by?: string;
+}
+
 /**
- * Email is the identity. A phone match only counts when it can't be a different person,
- * i.e. the stored contact has no email or the new submission has none.
+ * Finds or creates the person (§3), records the check-in once per event, and puts it on
+ * their event row, or a walk-in row when they weren't on the list (§4.7).
  */
-export function findContact(db: DB, input: Pick<ContactInput, 'email' | 'phone'>) {
-	if (input.email) {
-		const byEmail = db.prepare(`SELECT * FROM contacts WHERE email = ?`).get(input.email);
-		if (byEmail) return byEmail as ContactRow;
-	}
-	if (input.phone) {
-		const byPhone = db
-			.prepare(`SELECT * FROM contacts WHERE phone = ? ORDER BY updated_at DESC LIMIT 1`)
-			.get(input.phone) as ContactRow | undefined;
-		if (byPhone && (!byPhone.email || !input.email)) return byPhone;
-	}
-	return undefined;
-}
-
-/** Latest non-empty details win, so the database improves every time someone checks in. */
-export function upsertContact(db: DB, input: ContactInput, now = Date.now()) {
-	const existing = findContact(db, input);
-	if (existing) {
-		db.prepare(
-			`UPDATE contacts SET
-				name = @name,
-				email = COALESCE(@email, email),
-				phone = COALESCE(@phone, phone),
-				company = CASE WHEN @company <> '' THEN @company ELSE company END,
-				job_title = CASE WHEN @jobTitle <> '' THEN @jobTitle ELSE job_title END,
-				updated_at = @now
-			WHERE id = @id`
-		).run({ ...input, name: input.name || existing.name, now, id: existing.id });
-		return { id: existing.id, isNew: false };
-	}
-	const id = randomUUID();
-	db.prepare(
-		`INSERT INTO contacts (id, name, email, phone, company, job_title, created_at, updated_at)
-		VALUES (@id, @name, @email, @phone, @company, @jobTitle, @now, @now)`
-	).run({ ...input, id, now });
-	return { id, isNew: true };
-}
-
 export function checkIn(
 	db: DB,
 	eventId: string,
 	input: ContactInput,
-	meta: { method: Method; device: Device; consent: boolean },
+	meta: CheckinMeta,
 	now = Date.now()
 ): CheckinResult {
 	return db.transaction((): CheckinResult => {
-		const { id: contactId, isNew } = upsertContact(db, input, now);
+		// A staff add is the organizer's words, not the attendee's, so it ranks as typed.
+		const origin = meta.method === 'staff' ? 'typed' : 'checkin';
+		const hit = findPerson(db, input, eventId);
+		let personId: string;
+		if (hit) {
+			personId = hit.id;
+			updatePerson(db, personId, input, { origin }, now);
+		} else {
+			personId = createPerson(db, input, { origin, by: meta.by }, now);
+		}
+
 		const position = db.prepare(
 			`SELECT COUNT(*) AS n FROM checkins WHERE event_id = ? AND id <= ?`
 		);
-
 		const existing = db
-			.prepare(`SELECT id, checked_in_at FROM checkins WHERE event_id = ? AND contact_id = ?`)
-			.get(eventId, contactId) as { id: number; checked_in_at: number } | undefined;
+			.prepare(`SELECT id, checked_in_at FROM checkins WHERE event_id = ? AND person_id = ?`)
+			.get(eventId, personId) as { id: number; checked_in_at: number } | undefined;
 		if (existing) {
 			const { n } = position.get(eventId, existing.id) as { n: number };
 			return {
 				status: 'existing',
-				contactId,
+				personId,
 				checkinId: existing.id,
 				checkedInAt: existing.checked_in_at,
 				number: n,
@@ -103,31 +85,52 @@ export function checkIn(
 			};
 		}
 
+		const consentAt = meta.consent ? now : null;
 		const { lastInsertRowid } = db
 			.prepare(
-				`INSERT INTO checkins (event_id, contact_id, checked_in_at, method, device, consent_at)
+				`INSERT INTO checkins (event_id, person_id, checked_in_at, method, device, consent_at)
 				VALUES (?, ?, ?, ?, ?, ?)`
 			)
-			.run(eventId, contactId, now, meta.method, meta.device, meta.consent ? now : null);
-		const { n } = position.get(eventId, lastInsertRowid) as { n: number };
+			.run(eventId, personId, now, meta.method, meta.device, consentAt);
+		const checkinId = Number(lastInsertRowid);
+		linkCheckin(
+			db,
+			eventId,
+			personId,
+			checkinId,
+			{ consentAt, consentShareAt: meta.consentShare ? now : null, by: meta.by },
+			now
+		);
+		if (meta.consentFuture) setConsentFuture(db, personId, now, now);
+		touchLastEvent(db, personId, now);
+
+		const { n } = position.get(eventId, checkinId) as { n: number };
 		return {
 			status: 'created',
-			contactId,
-			checkinId: Number(lastInsertRowid),
+			personId,
+			checkinId,
 			checkedInAt: now,
 			number: n,
-			isNewContact: isNew
+			isNewContact: !hit
 		};
 	})();
 }
 
-export function removeCheckin(db: DB, eventId: string, checkinId: number) {
-	db.prepare(`DELETE FROM checkins WHERE id = ? AND event_id = ?`).run(checkinId, eventId);
+export function removeCheckin(db: DB, eventId: string, checkinId: number, now = Date.now()) {
+	db.transaction(() => {
+		const row = db
+			.prepare(`SELECT person_id FROM checkins WHERE id = ? AND event_id = ?`)
+			.get(checkinId, eventId) as { person_id: string } | undefined;
+		if (!row) return;
+		unlinkCheckin(db, checkinId, now);
+		db.prepare(`DELETE FROM checkins WHERE id = ?`).run(checkinId);
+		touchLastEvent(db, row.person_id, now);
+	})();
 }
 
 export interface AttendeeRow {
 	checkin_id: number;
-	contact_id: string;
+	person_id: string;
 	name: string;
 	email: string | null;
 	phone: string | null;
@@ -144,14 +147,16 @@ export interface AttendeeRow {
 export function listAttendees(db: DB, eventId: string): AttendeeRow[] {
 	return db
 		.prepare(
-			`SELECT c.id AS checkin_id, p.id AS contact_id, p.name, p.email, p.phone, p.company,
-				p.job_title, c.checked_in_at, c.method, c.device, c.consent_at,
+			`SELECT c.id AS checkin_id, p.id AS person_id, p.name, p.email, p.phone,
+				COALESCE(co.name, '') AS company, p.job_title, c.checked_in_at, c.method, c.device,
+				c.consent_at,
 				EXISTS (
 					SELECT 1 FROM checkins prev
-					WHERE prev.contact_id = c.contact_id AND prev.event_id <> c.event_id
+					WHERE prev.person_id = c.person_id AND prev.event_id <> c.event_id
 						AND prev.checked_in_at < c.checked_in_at
 				) AS is_returning
-			FROM checkins c JOIN contacts p ON p.id = c.contact_id
+			FROM checkins c JOIN people p ON p.id = c.person_id
+				LEFT JOIN companies co ON co.id = p.company_id
 			WHERE c.event_id = ?
 			ORDER BY c.checked_in_at DESC`
 		)
@@ -168,8 +173,9 @@ export interface RecentArrival {
 export function recentArrivals(db: DB, eventId: string, limit = 12): RecentArrival[] {
 	return db
 		.prepare(
-			`SELECT c.id, p.name, p.company, c.checked_in_at AS at
-			FROM checkins c JOIN contacts p ON p.id = c.contact_id
+			`SELECT c.id, p.name, COALESCE(co.name, '') AS company, c.checked_in_at AS at
+			FROM checkins c JOIN people p ON p.id = c.person_id
+				LEFT JOIN companies co ON co.id = p.company_id
 			WHERE c.event_id = ? ORDER BY c.checked_in_at DESC, c.id DESC LIMIT ?`
 		)
 		.all(eventId, limit) as RecentArrival[];
