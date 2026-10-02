@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { checkIn, removeCheckin } from './checkins';
-import { blockCompany, findCompany } from './companies';
+import { blockCompany, findCompany, renameCompany } from './companies';
+import { deleteContact } from './contacts';
 import { createDb, type DB } from './database';
+import { listEntries } from './do-not-contact';
 import {
 	addFound,
 	addShortlisted,
@@ -13,17 +15,21 @@ import {
 	hasEnded,
 	listEventPeople,
 	listWalkIns,
+	lockRow,
 	markInvited,
 	rowKeptUntil,
 	setReply,
+	shortlistAll,
 	shortlistFound,
+	skipAll,
 	skipRow,
+	unmarkInvited,
 	unskipRow,
 	type GuestInput
 } from './event-people';
 import { createEvent } from './events';
 import { getPerson } from './people';
-import { nextState, type StageState } from './stages';
+import { nextState, suggestedTouchKind, type StageState } from './stages';
 
 const guest = (name: string, extra: Partial<GuestInput> = {}): GuestInput => ({
 	name,
@@ -131,6 +137,122 @@ describe('stage transitions', () => {
 	});
 });
 
+describe('adding people', () => {
+	let db: DB;
+	let eventId: string;
+	const names = () => listEventPeople(db, eventId).map((r) => r.name);
+
+	beforeEach(() => {
+		db = createDb(':memory:');
+		eventId = createEvent(db, {
+			name: 'Launch',
+			venue: '',
+			startsAt: null,
+			timezone: 'Asia/Jakarta',
+			qrMode: 'static'
+		});
+	});
+
+	it('skips people already on the list, however their name or company is written', () => {
+		addShortlisted(
+			db,
+			eventId,
+			[guest('Hendra Gunawan'), guest('Rina Wijaya', { email: 'rina@batavia.co.id' })],
+			{ source: 'typed' }
+		);
+		const again = addShortlisted(
+			db,
+			eventId,
+			[
+				guest('Bapak Hendra Gunawan', { company: 'PT. Batavia Foods Tbk' }),
+				guest('R. Wijaya', { email: 'rina@batavia.co.id' }),
+				guest('Hendra Gunawan', { company: 'Selat Energy' })
+			],
+			{ source: 'typed' }
+		);
+		expect(again).toEqual({
+			added: ['Hendra Gunawan'],
+			duplicates: ['Bapak Hendra Gunawan', 'R. Wijaya'],
+			refused: []
+		});
+		expect(names()).toHaveLength(3);
+	});
+
+	it('knows someone by their LinkedIn profile', () => {
+		const linkedin = 'https://www.linkedin.com/in/rina-wijaya-4a1b2c';
+		addShortlisted(db, eventId, [guest('Rina Wijaya', { linkedin })], { source: 'typed' });
+		const again = addShortlisted(db, eventId, [guest('Rina W.', { company: 'Selat', linkedin })], {
+			source: 'typed'
+		});
+		expect(again.duplicates).toEqual(['Rina W.']);
+		expect(listEventPeople(db, eventId)[0].linkedin).toBe(linkedin);
+	});
+
+	it('only touches its own event', () => {
+		const other = createEvent(db, {
+			name: 'Other',
+			venue: '',
+			startsAt: null,
+			timezone: 'UTC',
+			qrMode: 'static'
+		});
+		addShortlisted(db, other, [guest('Rina Wijaya')], { source: 'typed' });
+		const [{ id }] = listEventPeople(db, other);
+		setReply(db, eventId, id, 'yes');
+		expect(listEventPeople(db, other)[0].reply).toBe('pending');
+	});
+
+	it('folds spellings of one company together and renames them as one', () => {
+		addShortlisted(
+			db,
+			eventId,
+			[
+				guest('Ana', { company: 'Batavia Foods' }),
+				guest('Budi', { company: 'PT Batavia Foods' }),
+				guest('Dewi', { company: '' })
+			],
+			{ source: 'typed' }
+		);
+		const rows = listEventPeople(db, eventId);
+		expect(rows.map((r) => r.company)).toEqual(['Batavia Foods', 'Batavia Foods', '']);
+		renameCompany(db, rows[0].company_id!, 'Batavia Foods Group');
+		expect(listEventPeople(db, eventId).map((r) => r.company)).toEqual([
+			'Batavia Foods Group',
+			'Batavia Foods Group',
+			''
+		]);
+	});
+
+	it('erases event rows along with the person they belong to', () => {
+		const other = createEvent(db, {
+			name: 'Other',
+			venue: '',
+			startsAt: null,
+			timezone: 'UTC',
+			qrMode: 'static'
+		});
+		const { personId } = checkIn(
+			db,
+			eventId,
+			{ name: 'Rina', email: 'rina@example.com', phone: null, company: '', jobTitle: '' },
+			meta
+		);
+		addShortlisted(
+			db,
+			eventId,
+			[guest('Rina Wijaya', { email: 'rina@example.com' }), guest('Andi')],
+			{ source: 'typed' }
+		);
+		addShortlisted(db, other, [guest('Rina Wijaya', { email: 'rina@example.com' })], {
+			source: 'typed'
+		});
+
+		deleteContact(db, personId);
+		expect(names()).toEqual(['Andi']);
+		expect(listEventPeople(db, other)).toEqual([]);
+	});
+});
+
 describe('nextState', () => {
 	const base: StageState = {
 		stage: 'checked_in',
@@ -206,6 +328,89 @@ describe('touches', () => {
 			last_contacted_at: null
 		});
 		expect(clearLatestTouch(db, eventId, id)).toBe(false);
+	});
+});
+
+describe('row verbs', () => {
+	let db: DB;
+	let eventId: string;
+
+	beforeEach(() => {
+		db = createDb(':memory:');
+		eventId = createEvent(db, {
+			name: 'Launch',
+			venue: '',
+			startsAt: null,
+			timezone: 'UTC',
+			qrMode: 'static'
+		});
+	});
+
+	it('suggests the invitation first, then what fits the answer', () => {
+		expect(suggestedTouchKind({ stage: 'shortlisted', reply: 'pending' })).toBe('invitation');
+		expect(suggestedTouchKind({ stage: 'invited', reply: 'pending' })).toBe('chase');
+		expect(suggestedTouchKind({ stage: 'replied', reply: 'yes' })).toBe('thanks_yes');
+		expect(suggestedTouchKind({ stage: 'replied', reply: 'maybe' })).toBe('followup_maybe');
+		expect(suggestedTouchKind({ stage: 'replied', reply: 'no' })).toBe('thanks_no');
+		expect(suggestedTouchKind({ stage: 'confirmed', reply: 'yes' })).toBe('reminder');
+	});
+
+	it('undoes a LinkedIn mark only while it is the latest touch', () => {
+		addShortlisted(db, eventId, [guest('Rina')], { source: 'typed' });
+		const id = listEventPeople(db, eventId)[0].id;
+		markInvited(db, eventId, id, 'linkedin', {}, 1_000);
+		expect(getEventPerson(db, eventId, id)).toMatchObject({
+			stage: 'invited',
+			invited_via: 'linkedin'
+		});
+		addTouch(db, eventId, id, { kind: 'chase', via: 'email' }, 2_000);
+		expect(unmarkInvited(db, eventId, id, 'linkedin')).toBe(false);
+		clearLatestTouch(db, eventId, id);
+		expect(unmarkInvited(db, eventId, id, 'linkedin')).toBe(true);
+		expect(getEventPerson(db, eventId, id)).toMatchObject({
+			stage: 'shortlisted',
+			invited_via: null
+		});
+	});
+
+	it("locks a live row's person everywhere, and lists a Found row's snapshot", () => {
+		addShortlisted(db, eventId, [guest('Rina', { email: 'rina@x.id' })], { source: 'typed' });
+		addFound(db, eventId, [guest('Found One', { phone: '+6281234567890' })], {
+			source: 'research'
+		});
+		const [live, found] = listEventPeople(db, eventId);
+		expect(lockRow(db, eventId, live.id, { reason: 'asked', by: 'Edmund' })).toBe(true);
+		expect(getPerson(db, live.person_id!)).toMatchObject({ locked_at: expect.any(Number) });
+		expect(lockRow(db, eventId, found.id, { reason: 'asked' })).toBe(true);
+		expect(getEventPerson(db, eventId, found.id)).toMatchObject({
+			stage: 'found',
+			skipped_at: expect.any(Number)
+		});
+		expect(
+			listEntries(db)
+				.map((e) => e.kind)
+				.sort()
+		).toEqual(['email', 'name_company', 'name_company', 'phone']);
+		expect(addShortlisted(db, eventId, [guest('Found One')], { source: 'typed' }).refused).toEqual([
+			{ name: 'Found One', reason: 'do not contact' }
+		]);
+		expect(lockRow(db, eventId, 999)).toBe(false);
+	});
+
+	it('adds or skips every Found row at one company at once', () => {
+		addFound(db, eventId, [guest('A'), guest('B'), guest('C', { company: 'Selat Energy' })], {
+			source: 'research'
+		});
+		const key = listEventPeople(db, eventId)[0].company_key;
+		skipRow(db, eventId, listEventPeople(db, eventId)[1].id);
+		expect(shortlistAll(db, eventId, key, { by: 'Sari' }).map((r) => r.status)).toEqual(['added']);
+		expect(listEventPeople(db, eventId).map((r) => [r.name, r.stage, r.added_by])).toEqual([
+			['A', 'shortlisted', 'Sari'],
+			['B', 'found', ''],
+			['C', 'found', '']
+		]);
+		expect(skipAll(db, eventId, 'selat energy')).toBe(1);
+		expect(skipAll(db, eventId, 'selat energy')).toBe(0);
 	});
 });
 

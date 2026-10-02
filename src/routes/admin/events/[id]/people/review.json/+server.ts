@@ -8,14 +8,16 @@ import type { RequestHandler } from './$types';
 
 /**
  * Splits typed or pasted lines into fields for the organizer to check before anything is
- * saved. Lines without a name come back too, named '', so they can be filled in.
+ * saved. Lines without a name come back too, named '', so they can be filled in. Numbers are
+ * read with the event's phone country (D14).
  */
 export const POST: RequestHandler = async ({ params, request }) => {
-	if (!getEvent(db, params.id)) error(404, 'Event not found');
+	const event = getEvent(db, params.id);
+	if (!event) error(404, 'Event not found');
 	const body = (await request.json().catch(() => ({}))) as { company?: unknown; names?: unknown };
 	const { guests, truncated } = parseGuestList(String(body.names ?? ''), {
 		company: cleanText(body.company, 120),
-		country: DEFAULT_PHONE_COUNTRY,
+		country: event.phone_country || DEFAULT_PHONE_COUNTRY,
 		keepNameless: true
 	});
 	return json({ guests, truncated }, { headers: { 'cache-control': 'no-store' } });

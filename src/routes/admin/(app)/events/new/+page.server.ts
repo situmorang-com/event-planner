@@ -1,8 +1,16 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
-import { parseEventForm } from '$lib/server/event-form';
+import { emptyEventForm, parseEventForm } from '$lib/server/event-form';
 import { createEvent } from '$lib/server/events';
-import type { Actions } from './$types';
+import { isCountry, phoneCountryDefault } from '$lib/server/settings';
+import type { Actions, PageServerLoad } from './$types';
+
+export const load: PageServerLoad = () => ({
+	values: emptyEventForm(
+		phoneCountryDefault(db, isCountry(DEFAULT_PHONE_COUNTRY) ? DEFAULT_PHONE_COUNTRY : 'ID')
+	)
+});
 
 export const actions: Actions = {
 	default: async ({ request }) => {

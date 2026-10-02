@@ -22,9 +22,20 @@
 		async ({ result, update }) => {
 			await update({ reset: false });
 			if (result.type === 'success') {
-				const { added, duplicates } = result.data as { added: number; duplicates: string[] };
-				note = added ? '' : `${duplicates[0] ?? 'They'} is already on the list.`;
-				if (added) value = '';
+				const { added, found, duplicates, refused } = result.data as {
+					added: number;
+					found: number;
+					duplicates: string[];
+					refused: { name: string; reason: string }[];
+				};
+				if (added || found) {
+					note = found ? 'Parked under To review.' : '';
+					value = '';
+				} else if (refused[0]) {
+					note = `${refused[0].name}: ${refused[0].reason}.`;
+				} else {
+					note = `${duplicates[0] ?? 'They'} is already on the list.`;
+				}
 			} else if (result.type === 'failure') {
 				note = String(result.data?.addError ?? '');
 			}

@@ -3,14 +3,7 @@ import { EMPTY_BRIEF, type Brief } from '../planning.ts';
 import { formatDateTime } from '../time.ts';
 import { ensureCompany } from './companies.ts';
 import type { DB } from './database.ts';
-import {
-	addFound,
-	listEventPeople,
-	shortlistFound,
-	skipRow,
-	unskipRow,
-	type EventPersonRow
-} from './event-people.ts';
+import { addFound, listEventPeople } from './event-people.ts';
 import type { EventRow } from './events.ts';
 import { cleanText } from './normalize.ts';
 
@@ -191,22 +184,6 @@ export function markResearched(db: DB, eventId: string, now = Date.now()) {
 
 /* ───────────────────────── Suggestions (Found rows from research) ───────────────────────── */
 
-export type SuggestionStatus = 'new' | 'dismissed';
-
-export interface SuggestionRow {
-	id: number;
-	event_id: string;
-	company: string;
-	name: string;
-	job_title: string;
-	linkedin: string | null;
-	source_url: string;
-	reason: string;
-	status: SuggestionStatus;
-	created_at: number;
-	decided_at: number | null;
-}
-
 export interface SuggestionInput {
 	company: string;
 	name: string;
@@ -214,53 +191,6 @@ export interface SuggestionInput {
 	linkedin: string | null;
 	sourceUrl: string;
 	reason: string;
-}
-
-const asSuggestion = (r: EventPersonRow): SuggestionRow => ({
-	id: r.id,
-	event_id: r.event_id,
-	company: r.company,
-	name: r.name,
-	job_title: r.job_title,
-	linkedin: r.linkedin,
-	source_url: r.source_url ?? '',
-	reason: r.reason ?? '',
-	status: r.skipped_at ? 'dismissed' : 'new',
-	created_at: r.created_at,
-	decided_at: r.skipped_at
-});
-
-/** Found rows the research brought in, open ones and skipped ones alike. */
-export function listSuggestions(db: DB, eventId: string): SuggestionRow[] {
-	return listEventPeople(db, eventId)
-		.filter((r) => r.stage === 'found' && r.source === 'research')
-		.sort(
-			(a, b) => a.company.localeCompare(b.company, 'en', { sensitivity: 'base' }) || a.id - b.id
-		)
-		.map(asSuggestion);
-}
-
-export function countNewSuggestions(db: DB, eventId: string): number {
-	return (
-		db
-			.prepare(
-				`SELECT COUNT(*) AS n FROM event_people
-				WHERE event_id = ? AND stage = 'found' AND skipped_at IS NULL`
-			)
-			.get(eventId) as { n: number }
-	).n;
-}
-
-/** Research finds that became people on the list. */
-export function countAcceptedSuggestions(db: DB, eventId: string): number {
-	return (
-		db
-			.prepare(
-				`SELECT COUNT(*) AS n FROM event_people
-				WHERE event_id = ? AND stage <> 'found' AND source = 'research'`
-			)
-			.get(eventId) as { n: number }
-	).n;
 }
 
 const httpUrl = (raw: unknown) => {
@@ -350,23 +280,6 @@ export function addSuggestions(db: DB, eventId: string, raw: unknown[], now = Da
 	}
 	const result = addFound(db, eventId, guests, { source: 'research' }, now);
 	return { added: result.added, skipped: skipped + result.skipped + result.refused.length };
-}
-
-export function setSuggestionStatus(
-	db: DB,
-	eventId: string,
-	id: number,
-	status: SuggestionStatus,
-	now = Date.now()
-) {
-	if (status === 'dismissed') skipRow(db, eventId, id, {}, now);
-	else unskipRow(db, eventId, id, now);
-}
-
-/** Puts a suggested person on the guest list (no reply yet). Returns their name, or null. */
-export function acceptSuggestion(db: DB, eventId: string, id: number, now = Date.now()) {
-	const result = shortlistFound(db, eventId, id, {}, now);
-	return result.status === 'added' ? result.name : null;
 }
 
 /* ───────────────────────── The research brief for claude -p ───────────────────────── */

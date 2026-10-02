@@ -71,10 +71,12 @@
 							)}{/if}
 					</span>
 				</div>
-				{#if event.invited}
-					<a class="rsvp" href="/admin/events/{event.id}/invitations">
+				{#if event.invited || event.target_count}
+					<a class="rsvp" href="/admin/events/{event.id}/people">
 						<MailCheck size={15} />
-						{event.attending.toLocaleString()} of {event.invited.toLocaleString()} invited are attending
+						Yes {event.attending.toLocaleString()}{#if event.target_count}
+							/ {event.target_count.toLocaleString()} target{/if}
+						<span class="muted">· Confirmed {event.confirmed.toLocaleString()}</span>
 					</a>
 				{/if}
 			</li>

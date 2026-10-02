@@ -2,7 +2,7 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { companyKey, nameKey } from '../invitations.ts';
 import type { DB, MigrateOptions } from './database.ts';
 import { shortId } from './ids.ts';
-import { matchArrivals, mostCommon } from './invitations.ts';
+import { matchArrivals } from './match-arrivals.ts';
 import {
 	countryFromPhone,
 	countryFromTimezone,
@@ -28,6 +28,14 @@ import {
  * foreign_key_check before the commit. A failure rolls everything back and the previous image
  * still runs on the file; the .pre-v2 copy is there if someone must roll back after a success.
  */
+
+/** The spelling a company was written in most often; a tie goes to the one seen first. */
+export function mostCommon(spellings: Map<string, number>): string {
+	let best = '';
+	let count = 0;
+	for (const [spelling, n] of spellings) if (n > count) [best, count] = [spelling, n];
+	return best;
+}
 
 type Contact = {
 	id: string;

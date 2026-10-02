@@ -5,10 +5,9 @@ import { publish } from '$lib/server/bus';
 import { checkIn, listAttendees, removeCheckin } from '$lib/server/checkins';
 import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
-import { countNewSuggestions } from '$lib/server/planning';
+import { countLive, countToReview } from '$lib/server/event-people';
 import { parseEventForm } from '$lib/server/event-form';
 import { deleteEvent, getEvent, setEventOpen, updateEvent } from '$lib/server/events';
-import { countInvitations } from '$lib/server/invitations';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { computeStats } from '$lib/server/stats';
 import { checkinUrl, publicBaseUrl } from '$lib/server/urls';
@@ -30,8 +29,8 @@ export const load: PageServerLoad = ({ params, url }) => {
 		event,
 		attendees,
 		stats: computeStats(attendees, { now, isOpen: !!event.is_open }),
-		invitations: countInvitations(db, event.id),
-		suggestions: countNewSuggestions(db, event.id),
+		people: countLive(db, event.id),
+		review: countToReview(db, event.id),
 		staticLink: checkinUrl(base, event.id),
 		reachable,
 		created: url.searchParams.has('created'),
@@ -41,7 +40,9 @@ export const load: PageServerLoad = ({ params, url }) => {
 			venue: event.venue,
 			startsAt: event.starts_at ? toLocalInput(event.starts_at, event.timezone) : '',
 			timezone: event.timezone,
-			qrMode: event.qr_mode
+			qrMode: event.qr_mode,
+			targetCount: event.target_count === null ? '' : String(event.target_count),
+			phoneCountry: event.phone_country
 		}
 	};
 };

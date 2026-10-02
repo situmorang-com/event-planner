@@ -10,12 +10,16 @@
 		name: string;
 		jobTitle: string;
 		email: string | null;
-		invited: boolean;
+		onList: boolean;
+		/** Not on the default list (§2.3): never replied, attended or registered. */
+		prospect: boolean;
 	}
 
 	interface AddResult {
 		added: number;
+		found: number;
 		duplicates: string[];
+		refused: { name: string; reason: string }[];
 		skipped: string[];
 		truncated: boolean;
 		company: string;
@@ -44,10 +48,18 @@
 
 	let { eventId, first = false, autofocus = false, onclose }: Props = $props();
 
+	/** Typed lists up to this size go straight onto the list; bigger pastes wait at To review. */
+	const FOUND_THRESHOLD = 10;
+	// Asked once per browser session: the answer stamps every typed person's origin (D16).
+	const ORIGIN_KEY = 'ep_origin_detail';
+
 	let company = $state('');
 	let names = $state('');
 	let people = $state<Person[]>([]);
 	let picked = $state<string[]>([]);
+	let prospects = $state(false);
+	let park = $state(false);
+	let originDetail = $state('');
 	let busy = $state(false);
 	let message = $state('');
 	let problem = $state('');
@@ -60,7 +72,23 @@
 	const PLACEHOLDER =
 		'Rina Wijaya\nAndi Pratama, IT Manager, andi@bataviafoods.co.id, 0812 3456 7890';
 
-	// Everyone the contact database knows at this company, looked up as the name is typed.
+	$effect(() => {
+		try {
+			originDetail = sessionStorage.getItem(ORIGIN_KEY) ?? '';
+		} catch {
+			// Private mode or blocked storage: the field simply starts empty.
+		}
+	});
+
+	function rememberOrigin() {
+		try {
+			sessionStorage.setItem(ORIGIN_KEY, originDetail.trim());
+		} catch {
+			// Nothing to do: the answer still travels with this submit.
+		}
+	}
+
+	// Everyone the pool knows at this company, looked up as the name is typed.
 	$effect(() => {
 		const q = company.trim();
 		void refresh;
@@ -72,11 +100,11 @@
 		const controller = new AbortController();
 		const timer = setTimeout(async () => {
 			try {
-				const url = `/admin/events/${eventId}/invitations/people.json?company=${encodeURIComponent(q)}`;
+				const url = `/admin/events/${eventId}/people/people.json?company=${encodeURIComponent(q)}`;
 				const res = await fetch(url, { signal: controller.signal });
 				if (!res.ok) return;
 				people = ((await res.json()) as { people: Person[] }).people;
-				picked = picked.filter((id) => people.some((p) => p.id === id && !p.invited));
+				picked = picked.filter((id) => people.some((p) => p.id === id && !p.onList));
 			} catch {
 				// Aborted by the next keystroke, or offline: keep what's showing.
 			}
@@ -87,11 +115,15 @@
 		};
 	});
 
-	const available = $derived(people.filter((p) => !p.invited));
+	const shownPeople = $derived(people.filter((p) => p.prospect === prospects));
+	const prospectCount = $derived(people.filter((p) => p.prospect).length);
+	const available = $derived(shownPeople.filter((p) => !p.onList));
 	const allPicked = $derived(available.length > 0 && available.every((p) => picked.includes(p.id)));
 
 	function toggleAll() {
-		picked = allPicked ? [] : available.map((p) => p.id);
+		picked = allPicked
+			? picked.filter((id) => !available.some((p) => p.id === id))
+			: [...new Set([...picked, ...available.map((p) => p.id)])];
 	}
 
 	function listNames(list: string[]) {
@@ -107,10 +139,13 @@
 			parts.push(
 				`Added ${plural(r.added, 'person', 'people')}${r.company ? ` from ${r.company}` : ''}.`
 			);
+		if (r.found) parts.push(`${plural(r.found, 'person waits', 'people wait')} under To review.`);
 		if (r.duplicates.length)
 			parts.push(
 				`${listNames(r.duplicates)} ${r.duplicates.length === 1 ? 'was' : 'were'} already on the list.`
 			);
+		if (r.refused.length)
+			parts.push(`Couldn’t add ${r.refused.map((x) => `${x.name} (${x.reason})`).join(', ')}.`);
 		if (r.skipped.length)
 			parts.push(
 				`Skipped ${plural(r.skipped.length, 'line', 'lines')} without a name. Use “Check each field” to fill them in.`
@@ -140,7 +175,7 @@
 		problem = '';
 		message = '';
 		try {
-			const res = await fetch(`/admin/events/${eventId}/invitations/review.json`, {
+			const res = await fetch(`/admin/events/${eventId}/people/review.json`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ company, names })
@@ -171,8 +206,17 @@
 	}
 
 	// Only the reviewed rows can be counted exactly; typed lines are split on the server.
-	const toAdd = $derived(entries ? entries.length + picked.length : null);
+	const typedLines = $derived(names.split(/\r?\n/).filter((l) => l.trim()).length);
+	const typedCount = $derived(entries ? entries.length : typedLines);
+	const toAdd = $derived(typedCount + picked.length);
 	const canAdd = $derived(entries ? !!toAdd : !!names.trim() || picked.length > 0);
+	// A big paste always waits for review, whatever the box says (D5).
+	const parking = $derived(park || typedCount > FOUND_THRESHOLD);
+	const buttonLabel = $derived.by(() => {
+		if (!toAdd) return 'Add to the list';
+		if (parking && !picked.length) return `Park ${toAdd} for review`;
+		return `Add ${toAdd} to the list`;
+	});
 
 	function maybeFocus(node: HTMLInputElement) {
 		if (autofocus) node.focus();
@@ -187,6 +231,7 @@
 		busy = true;
 		message = '';
 		problem = '';
+		rememberOrigin();
 		return async ({ result, update }) => {
 			await update({ reset: false });
 			busy = false;
@@ -204,11 +249,11 @@
 >
 	<div class="add-head">
 		<div>
-			<h2>{first ? 'Start your guest list' : 'Add people'}</h2>
+			<h2>{first ? 'Start the list' : 'Add people'}</h2>
 			<p class="muted">
 				{first
 					? 'List who you’re inviting, company by company, then record each reply as it comes in. On the day, everyone who checks in is ticked off.'
-					: 'Pick people from your contacts, type names, or paste rows from a spreadsheet.'}
+					: 'Pick people from the pool, type names, or paste rows from a spreadsheet.'}
 			</p>
 		</div>
 		<button type="button" class="btn btn-ghost btn-icon btn-sm" onclick={onclose} title="Close">
@@ -234,18 +279,31 @@
 		<fieldset class="contacts">
 			<div class="contacts-head">
 				<legend class="label">
-					In your contacts <span class="optional">· {people.length} at {company.trim()}</span>
+					Already known <span class="optional">· {people.length} at {company.trim()}</span>
 				</legend>
-				{#if available.length > 1}
-					<button type="button" class="btn btn-ghost btn-sm" onclick={toggleAll}>
-						{allPicked ? 'Clear' : 'Select all'}
-					</button>
-				{/if}
+				<div class="contacts-tools">
+					{#if prospectCount}
+						<button
+							type="button"
+							class="chip"
+							aria-pressed={prospects}
+							onclick={() => (prospects = !prospects)}
+							title="People found or typed before, who never replied or attended"
+						>
+							Prospects <span class="chip-count">{prospectCount}</span>
+						</button>
+					{/if}
+					{#if available.length > 1}
+						<button type="button" class="btn btn-ghost btn-sm" onclick={toggleAll}>
+							{allPicked ? 'Clear' : 'Select all'}
+						</button>
+					{/if}
+				</div>
 			</div>
 			<div class="picks">
-				{#each people as person (person.id)}
-					<label class="pick" class:done={person.invited}>
-						{#if person.invited}
+				{#each shownPeople as person (person.id)}
+					<label class="pick" class:done={person.onList}>
+						{#if person.onList}
 							<input type="checkbox" checked disabled />
 						{:else}
 							<input type="checkbox" name="contact" value={person.id} bind:group={picked} />
@@ -253,10 +311,14 @@
 						<span class="pick-text">
 							<span class="pick-name">{person.name}</span>
 							<span class="pick-meta">
-								{person.invited ? 'On the list' : person.jobTitle || person.email || ''}
+								{person.onList ? 'On the list' : person.jobTitle || person.email || ''}
 							</span>
 						</span>
 					</label>
+				{:else}
+					<p class="hint">
+						{prospects ? 'No prospects at this company.' : 'Only prospects here so far.'}
+					</p>
 				{/each}
 			</div>
 		</fieldset>
@@ -367,6 +429,31 @@
 		</div>
 	{/if}
 
+	{#if typedCount}
+		<div class="typed-options">
+			<label class="check">
+				<input type="checkbox" name="park" value="1" bind:checked={park} />
+				<span>
+					Park as Found: they wait under <strong>To review</strong> instead of joining the list now.
+					{#if typedCount > FOUND_THRESHOLD}Lists over {FOUND_THRESHOLD} rows always do.{/if}
+				</span>
+			</label>
+			<div class="field origin">
+				<label class="label" for="add-origin">
+					Where did you get their details? <span class="optional">(asked once)</span>
+				</label>
+				<input
+					class="input"
+					id="add-origin"
+					name="originDetail"
+					placeholder="Business cards from the expo, a partner’s list…"
+					maxlength="200"
+					bind:value={originDetail}
+				/>
+			</div>
+		</div>
+	{/if}
+
 	{#if message}<p class="banner banner-brand" role="status">{message}</p>{/if}
 	{#if problem}<p class="error-text" role="alert">{problem}</p>{/if}
 
@@ -381,7 +468,7 @@
 		{/if}
 		<button class="btn btn-primary" disabled={busy || !canAdd}>
 			{#if busy}<span class="spinner"></span>{/if}
-			{toAdd ? `Add ${toAdd} to guest list` : 'Add to guest list'}
+			{buttonLabel}
 		</button>
 	</div>
 </form>
@@ -428,11 +515,50 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 12px;
+		flex-wrap: wrap;
+		gap: 8px 12px;
 	}
 
 	.contacts-head legend {
 		padding: 0;
+	}
+
+	.contacts-tools {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		height: 32px;
+		padding: 0 12px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface);
+		color: var(--text-2);
+		font-size: 13.5px;
+		font-weight: 650;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.chip[aria-pressed='true'] {
+		background: var(--brand-soft);
+		border-color: color-mix(in oklab, var(--brand) 55%, transparent);
+		color: var(--brand-text);
+	}
+
+	.chip-count {
+		font-size: 12.5px;
+		font-weight: 700;
+		color: var(--muted);
+	}
+
+	.chip[aria-pressed='true'] .chip-count {
+		color: inherit;
 	}
 
 	.picks {
@@ -507,6 +633,22 @@
 		padding: 12px 14px;
 		line-height: 1.5;
 		resize: vertical;
+	}
+
+	.typed-options {
+		display: grid;
+		gap: 14px;
+		padding: 14px 16px;
+		border-radius: var(--radius);
+		background: var(--surface-2);
+	}
+
+	.origin {
+		max-width: 520px;
+	}
+
+	.origin .input {
+		height: 44px;
 	}
 
 	.add-actions {

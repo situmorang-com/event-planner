@@ -33,11 +33,11 @@ dev server it stays hidden and the autofill path is used instead.
 - **Finding people to invite.** Describe who an event is for, list target companies, and let
   `claude -p` suggest matching people from public sources for you to approve. See
   [Planning](#planning-finding-people-to-invite).
-- **Invitation planner.** Every event has a guest list, grouped by company. Add people from your
-  contacts, type names, or paste rows from a spreadsheet. Record each reply with one tap
-  (attending, tentative, declined) plus a note, and send a WhatsApp or email follow-up that fits
-  the reply. On the day, invitees are ticked off live as they check in, and walk-ins are listed
-  separately. See [Invitations](#invitations).
+- **People.** Every event has one list, grouped by company, that follows each person from a
+  research find to the door: found, shortlisted, invited, replied, confirmed, checked in. Add
+  people from the pool, type names, or paste rows from a spreadsheet; record each reply with one
+  tap plus a note; open a WhatsApp or email message that fits the reply, which stamps the
+  invitation. On the day, rows are ticked off live as people check in. See [People](#people).
 - **Contact database.** People are matched by email across every event, their details improve
   with each visit, and everything exports to CSV (Excel-safe, UTF-8).
 - **Staff tools.** Add someone by hand, remove a check-in, open or close the doors, and delete a
@@ -61,21 +61,27 @@ To see the dashboard with realistic data, run `npm run demo:seed`. It adds three
 about 60 check-ins with `@example.com` addresses, and two guest lists: one for the event under
 way, one for an upcoming dinner. Delete the `data/` folder to start fresh.
 
-## Invitations
+## People
 
-Open an event and switch to its **Invitations** tab.
+Open an event and switch to its **People** tab. The header shows Yes replies against the
+event's target (set it in the event settings) with the confirmed count beside it, then chips
+for each stage: To review · Shortlisted · Invited · Attending · Tentative · Declined · Confirmed
+· Checked in · No-show, plus **Mine** for the rows you own and a toggle for skipped rows. Before
+the event no chip is on; once it has ended, Checked in and No-show are.
 
-- **Adding people.** Type a company to see who from that company is already in your contacts,
-  and tick the ones to invite. Or type one person per line, with an optional job title, email or
-  mobile after the name (`Andi Pratama, IT Manager, andi@batavia.co.id`). Numbered lists pasted
-  from WhatsApp or Word work too. Adding someone who is already on the list is skipped and
-  reported.
+- **Adding people.** Type a company to see who from that company is already in the pool (people
+  who attended, replied or registered; a **Prospects** chip shows the rest), and tick the ones
+  to invite. Or type one person per line, with an optional job title, email or mobile after the
+  name (`Andi Pratama, IT Manager, andi@batavia.co.id`). Numbered lists pasted from WhatsApp or
+  Word work too. Up to ten typed rows go straight to **Shortlisted**; longer pastes, and anything
+  you **Park as Found**, wait under **To review** first. Adding someone already on the list is
+  skipped and reported; locked people and blocked companies are refused.
 - **Checking each field.** Press **Check each field** to see what you typed or pasted split into
   one card per person (name, company, job title, email, mobile, LinkedIn, reply, note). Fix
   anything, add or remove rows, then add them. Nothing is saved before that.
 - **LinkedIn links.** A profile link works on its own, one per line: the app reads the name from
   the link (`linkedin.com/in/rina-wijaya-4a1b2c` is "Rina Wijaya") and keeps the link on the
-  guest so you can open the profile and fill in the rest. It doesn't fetch the profile itself:
+  row so you can open the profile and fill in the rest. It doesn't fetch the profile itself:
   LinkedIn's terms forbid scraping and profiles sit behind a sign-in. When a link doesn't spell
   out a name ("rinaw88"), the review asks you to type it.
 - **Pasting a spreadsheet.** Include the header row and each column lands in the right place.
@@ -83,17 +89,33 @@ Open an event and switch to its **Invitations** tab.
   separate first-name and last-name columns work. A reply column (_Yes_, _Hadir_, _Tentative_,
   _Tidak hadir_…) sets each reply. Anything it can't read, such as "Yes, with a colleague", is
   kept word for word as a note.
-- **Replies.** Tap _Attending_, _Tentative_ or _Declined_; tap it again to clear it. Notes save
-  when you leave the field. The message button opens WhatsApp (for numbers in international
-  format) or email, with a text that fits the reply: an invitation, a confirmation, a follow-up
-  or a thank-you. Nothing is sent until you press send.
+- **To review.** What the research run found (see [Planning](#planning-finding-people-to-invite))
+  waits here with its source link and reason. **Add** makes the person real and shortlists them;
+  **Skip** hides the row (reversibly). A company header offers **Add all** and **Skip all**.
+  Found rows are deleted when the event starts, skipped ones 90 days later.
+- **Replies and messages.** Tap _Attending_, _Tentative_ or _Declined_; tap it again to clear
+  it. Notes save when you leave the field. The WhatsApp button (for numbers in international
+  format) and the email button open a message that fits the reply: an invitation, a
+  confirmation, a follow-up or a thank-you. Nothing is sent until you press send, but the tap is
+  recorded: the row moves to **Invited** and later taps show as _chased ×N_. **Invited via
+  LinkedIn** records an invitation sent elsewhere. Buttons stay hidden for people who may not be
+  contacted (locked, suppressed by a D365 flag, or past Malaysian attendees who never agreed to
+  hear about future events).
+- **Markers.** _Needs details_ (no email and no mobile), _chased ×N_, _locked_, _blocked
+  company_, _suppressed_, _no consent recorded_ (a staff add), _via LinkedIn_.
+- **Owners.** Each company has an owner, picked from the team names in settings, and a row can
+  override it; **Mine** shows the rows that are yours.
+- **Row menu.** Edit details, Remove from the event, **Don't contact again…** (locks the person
+  everywhere, with a reason, as hashed entries on the do-not-contact list), and **Merge into…**
+  when two records turn out to be one person.
 - **Companies.** "PT Batavia Foods Tbk" and "Batavia Foods" are one company. Rename a company to
-  merge spellings or fix a typo across the whole group.
-- **On the day.** A check-in ticks off its invitee by email, then mobile, then name. A name
-  counts when the companies don't contradict it, and titles and degrees are ignored, so
-  "Bapak Hendra Gunawan, S.E." on the list is the "Hendra Gunawan" who scans in. _Not arrived_
-  lists who said yes but hasn't come. _Walk-ins_ lists who came without an invitation, and one
-  tap adds them to the list.
+  merge spellings or fix a typo across every event.
+- **On the day.** A check-in lands on the person's row by email, then mobile, then LinkedIn,
+  then name. A name counts when the companies don't contradict it, and titles and degrees are
+  ignored, so "Bapak Hendra Gunawan, S.E." on the list is the "Hendra Gunawan" who scans in.
+  Someone who checks in without being on the list gets a row too. _No-show_ lists who said yes
+  or maybe but never came, once the event has ended.
+- **CSV.** The list exports from the People tab (locked people's channels are blanked).
 
 ## Planning: finding people to invite
 
@@ -109,9 +131,11 @@ The **Planning** tab helps you decide who to invite before the guest list exists
    back. Claude never sees the token and has no shell, so a web page that tries to hijack it has
    nothing to send. It sticks to public sources (company sites, news, search results) and work
    details only: no LinkedIn sign-in, no emails or phone numbers.
-4. **Suggested people.** Each suggestion shows the title, why it fits, and its source. **Add**
-   puts the person on the guest list; dismissing hides them. Neither is suggested again, and
-   neither is anyone already invited, so re-running only brings new people.
+4. **Review what it found.** Each find waits under **To review** on the People tab with its
+   title, why it fits, and its source. **Add** puts the person on the list; **Skip** hides them.
+   Neither is suggested again, and neither is anyone already on the list, so re-running only
+   brings new people. An event needs a date before research runs: finds are deleted when it
+   starts.
 
 The API behind step 3 is `GET /api/research/events/<id>/prompt` and
 `POST /api/research/events/<id>/suggestions`, both with `Authorization: Bearer <token>`.
@@ -159,8 +183,9 @@ network.
 - **Check-ins:** time, device type (iPhone, Android or other), method (form, contact card,
   one-tap or staff) and when consent was given.
 - **Entrance screen:** shows first name and last initial, nothing else.
-- **Invitations:** what the organizer enters on a guest list: name, company, job title, email,
-  mobile, LinkedIn profile link, reply and note. Deleting an event deletes its guest list.
+- **People on an event:** what the organizer enters or research finds: name, company, job
+  title, email, mobile, LinkedIn profile link, stage, reply, note, owner and the messages
+  recorded. Deleting an event deletes its rows; a person stays in the pool.
 - **Deleting a contact** on the Contacts page removes that person, their whole check-in history
   and any invitation under their email.
 - **Timestamps** in CSV exports are ISO 8601, in UTC.
@@ -173,7 +198,8 @@ src/
     qr.ts                     soft-cornered QR renderer (SVG, browser and server)
     time.ts, names.ts         event time zones, "Rina W."-style public names
     invitations.ts            replies, name and company matching keys, follow-up messages
-    components/               QR code, charts, event form, guest-list rows and forms
+    people.ts                 stages, chips and row markers shared by the People page
+    components/               QR code, charts, event form, People rows and add forms
     server/
       schema.ts, database.ts  schema (SQLite), versioned migrations run on start
       migrate-v2.ts           contacts/guest lists → people and event rows (with a .pre-v2 copy)
@@ -182,14 +208,15 @@ src/
       stages.ts               the stage transition table, the only place a stage changes
       do-not-contact.ts       hashed do-not-contact list and person locks
       checkins.ts             check-ins, linked to people and their event rows
-      invitations.ts          the guest-list view of event rows, company groups
+      people-page.ts          the People tab's view of an event and its add form
+      match-arrivals.ts       pairing a v1 guest list with check-ins (used by the migration)
       guest-list.ts           reading typed and pasted guest lists
       qr-token.ts             rotating QR tokens and the 30-minute scan pass
       auth.ts                 signed organizer session
       bus.ts                  in-process pub/sub behind the live stream
   routes/
     c/[id]/                   attendee check-in page (the QR target)
-    admin/(app)/              events, event dashboard, invitations, contacts
+    admin/(app)/              events, event dashboard, people, planning, contacts
     admin/events/[id]/        display (entrance screen), stream (SSE), exports, poster
 scripts/seed-demo.ts          demo data (npm run demo:seed)
 ```

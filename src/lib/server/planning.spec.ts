@@ -3,16 +3,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createToken, listTokens, revokeToken, verifyBearer } from './api-tokens';
 import { blockCompany } from './companies';
 import { createDb, type DB } from './database';
+import { addShortlisted, listEventPeople, shortlistFound, skipRow } from './event-people';
 import { createEvent, getEvent } from './events';
-import { addInvitations, listInvitations } from './invitations';
 import {
-	acceptSuggestion,
 	addSuggestions,
 	addTargets,
-	countAcceptedSuggestions,
 	extractSuggestions,
 	getBrief,
-	listSuggestions,
 	listTargets,
 	markResearched,
 	markResearchRequested,
@@ -20,7 +17,6 @@ import {
 	researchPrompt,
 	researchTargets,
 	saveBrief,
-	setSuggestionStatus,
 	setTargetResearch
 } from './planning';
 
@@ -34,9 +30,18 @@ const person = (name: string, extra: Record<string, unknown> = {}) => ({
 	...extra
 });
 
+const typed = (name: string, company = 'Batavia Foods') => ({
+	name,
+	company,
+	jobTitle: '',
+	email: null,
+	phone: null
+});
+
 describe('planning', () => {
 	let db: DB;
 	let eventId: string;
+	const found = () => listEventPeople(db, eventId).filter((r) => r.stage === 'found');
 
 	beforeEach(() => {
 		db = createDb(':memory:');
@@ -89,16 +94,8 @@ describe('planning', () => {
 		expect(extractSuggestions('nonsense')).toBeNull();
 	});
 
-	it('only adds people nobody has seen yet', () => {
-		addInvitations(db, eventId, [
-			{
-				name: 'Bapak Hendra Gunawan',
-				company: 'Batavia Foods',
-				jobTitle: '',
-				email: null,
-				phone: null
-			}
-		]);
+	it('only adds people nobody has seen yet, live or skipped', () => {
+		addShortlisted(db, eventId, [typed('Bapak Hendra Gunawan')], { source: 'typed' });
 		expect(
 			addSuggestions(db, eventId, [
 				person('Rina Wijaya', { linkedin: 'linkedin.com/in/rina-wijaya-4a1b2c' }),
@@ -108,11 +105,11 @@ describe('planning', () => {
 			])
 		).toEqual({ added: 2, skipped: 2 });
 
-		const [rina, andi] = listSuggestions(db, eventId);
+		const [rina, andi] = found();
 		expect(rina.linkedin).toBe('https://www.linkedin.com/in/rina-wijaya-4a1b2c');
 		expect(andi.source_url).toBe('');
 
-		setSuggestionStatus(db, eventId, andi.id, 'dismissed');
+		skipRow(db, eventId, andi.id);
 		const again = addSuggestions(db, eventId, [
 			person('R. Wijaya', {
 				company: 'Selat',
@@ -123,24 +120,25 @@ describe('planning', () => {
 		expect(again).toEqual({ added: 0, skipped: 2 });
 	});
 
-	it('puts an approved suggestion on the guest list, once', () => {
+	it('turns an approved find into a person on the list, once', () => {
 		addSuggestions(db, eventId, [
 			person('Rina Wijaya', { linkedin: 'https://www.linkedin.com/in/rina-wijaya-4a1b2c' })
 		]);
-		const [{ id }] = listSuggestions(db, eventId);
-		expect(acceptSuggestion(db, eventId, id)).toBe('Rina Wijaya');
-		expect(acceptSuggestion(db, eventId, id)).toBeNull();
-		expect(listInvitations(db, eventId)).toEqual([
+		const [{ id }] = found();
+		expect(shortlistFound(db, eventId, id)).toMatchObject({ status: 'added', name: 'Rina Wijaya' });
+		expect(shortlistFound(db, eventId, id)).toEqual({ status: 'missing' });
+		expect(listEventPeople(db, eventId)).toEqual([
 			expect.objectContaining({
 				name: 'Rina Wijaya',
 				company: 'Batavia Foods',
 				job_title: 'CFO',
 				linkedin: 'https://www.linkedin.com/in/rina-wijaya-4a1b2c',
-				reply: 'pending'
+				reply: 'pending',
+				stage: 'shortlisted',
+				source: 'research'
 			})
 		]);
-		expect(listSuggestions(db, eventId)).toEqual([]);
-		expect(countAcceptedSuggestions(db, eventId)).toBe(1);
+		expect(found()).toEqual([]);
 	});
 
 	it('briefs the agent with the event and the companies, counting known people without names', () => {
@@ -153,15 +151,9 @@ describe('planning', () => {
 			avoid: 'Competitors\nHendra Gunawan is already engaged by sales'
 		});
 		addTargets(db, eventId, [{ name: 'Batavia Foods', website: 'bataviafoods.co.id' }]);
-		addInvitations(db, eventId, [
-			{
-				name: 'Hendra Gunawan',
-				company: 'PT Batavia Foods',
-				jobTitle: '',
-				email: null,
-				phone: null
-			}
-		]);
+		addShortlisted(db, eventId, [typed('Hendra Gunawan', 'PT Batavia Foods')], {
+			source: 'typed'
+		});
 		addSuggestions(db, eventId, [person('Rina Wijaya')]);
 		const prompt = researchPrompt(db, getEvent(db, eventId)!);
 		expect(prompt).toContain('Purpose: Dynamics 365 Finance for manufacturers');
@@ -178,9 +170,7 @@ describe('planning', () => {
 	it('researches the companies that still need people, and never a blocked one', () => {
 		saveBrief(db, eventId, { ...getBrief(db, eventId), roles: 'CFO', perCompany: 1 });
 		addTargets(db, eventId, parseTargets('Batavia Foods\nSelat Energy\nKopi Kita'));
-		addInvitations(db, eventId, [
-			{ name: 'Hendra Gunawan', company: 'Batavia Foods', jobTitle: '', email: null, phone: null }
-		]);
+		addShortlisted(db, eventId, [typed('Hendra Gunawan')], { source: 'typed' });
 		const [batavia, kopi, selat] = listTargets(db, eventId);
 		blockCompany(db, kopi.company_id, { reason: 'competitor' });
 		expect(researchTargets(db, eventId, 1).map((t) => t.name)).toEqual(['Selat Energy']);

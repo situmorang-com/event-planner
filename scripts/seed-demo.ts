@@ -1,5 +1,5 @@
 // Fills the database with demo events, ~60 realistic check-ins, two guest lists and a few
-// research finds so the dashboard, entrance screen, invitations and planning pages have
+// research finds so the dashboard, entrance screen, People and Planning pages have
 // something to show. People use @example.com addresses.
 //
 //   npm run demo:seed            (uses DB_PATH or data/attendance.db)
@@ -318,6 +318,4 @@ addFound(
 );
 
 console.log(`Demo data added. Open /admin/events/${today} (and /admin/events/${today}/display).`);
-console.log(
-	`Guest lists: /admin/events/${today}/invitations and /admin/events/${dinner}/invitations.`
-);
+console.log(`People: /admin/events/${today}/people and /admin/events/${dinner}/people.`);

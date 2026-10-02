@@ -336,6 +336,64 @@ export function countryOf(
 	return person.country ?? countryFromPhone(person.phone) ?? countryFromTimezone(lastEventTimezone);
 }
 
+export type Channel = 'whatsapp' | 'email';
+
+type ContactPerson = Pick<
+	PersonRow,
+	| 'locked_at'
+	| 'd365_suppressed'
+	| 'd365_no_email'
+	| 'd365_no_phone'
+	| 'is_customer'
+	| 'origin'
+	| 'consent_future_at'
+	| 'created_at'
+	| 'country'
+	| 'phone'
+>;
+
+/** §2.3 legacy: checked in before the consent boxes existed and never ticked "future events". */
+export function isLegacy(
+	person: Pick<ContactPerson, 'origin' | 'consent_future_at' | 'created_at'>,
+	consentBoxesSince: number | null
+): boolean {
+	return (
+		person.origin === 'checkin' &&
+		!person.consent_future_at &&
+		person.created_at < (consentBoxesSince ?? Infinity)
+	);
+}
+
+export type ContactBlock = 'locked' | 'suppressed' | 'channel refused' | 'not contactable';
+
+/**
+ * Why a channel is closed to this person, or null when they may be messaged on it (§2.3): a
+ * lock or a D365 suppression closes everything, a D365 flag closes its channel, and a legacy
+ * attendee outside Indonesia who is not a customer waits until they register (D15).
+ */
+export function contactBlock(
+	person: ContactPerson,
+	channel: Channel,
+	consentBoxesSince: number | null
+): ContactBlock | null {
+	if (person.locked_at) return 'locked';
+	if (person.d365_suppressed) return 'suppressed';
+	if (channel === 'email' ? person.d365_no_email : person.d365_no_phone) return 'channel refused';
+	if (
+		isLegacy(person, consentBoxesSince) &&
+		(countryOf(person) ?? 'MY') === 'MY' &&
+		!person.is_customer
+	)
+		return 'not contactable';
+	return null;
+}
+
+export const contactable = (
+	person: ContactPerson,
+	channel: Channel,
+	consentBoxesSince: number | null
+) => contactBlock(person, channel, consentBoxesSince) === null;
+
 export const DAY = 86_400_000;
 
 function addMonths(ts: number, months: number) {
@@ -438,13 +496,29 @@ export function countPeople(db: DB, prospects = false): number {
 	).n;
 }
 
-/** Everyone in the pool at one company, however they spelled it. */
-export function peopleAtCompany(db: DB, company: string): PersonRow[] {
+/** Everyone in the pool at one company, however they spelled it, flagged default or prospect. */
+export function peopleAtCompany(db: DB, company: string): (PersonRow & { is_default: 0 | 1 })[] {
 	const key = companyKey(company);
 	if (!key) return [];
 	return db
-		.prepare(`${PERSON_SELECT} WHERE co.key = ? ORDER BY p.name COLLATE NOCASE`)
-		.all(key) as PersonRow[];
+		.prepare(
+			`${PERSON_SELECT.replace('FROM people', `, ${DEFAULT_LIST} AS is_default FROM people`)}
+			WHERE co.key = ? ORDER BY p.name COLLATE NOCASE`
+		)
+		.all(key) as (PersonRow & { is_default: 0 | 1 })[];
+}
+
+/** A quick pool lookup by name, email or company, for picking a merge survivor. */
+export function searchPeople(db: DB, q: string, limit = 20): PersonRow[] {
+	const search = q.trim();
+	if (!search) return [];
+	return db
+		.prepare(
+			`${PERSON_SELECT} WHERE p.name LIKE @like ESCAPE '\\' OR p.email LIKE @like ESCAPE '\\'
+				OR co.name LIKE @like ESCAPE '\\'
+			ORDER BY p.name COLLATE NOCASE LIMIT @limit`
+		)
+		.all({ like: likePattern(search), limit }) as PersonRow[];
 }
 
 /* ───────────────────────── Deletion and merge ───────────────────────── */

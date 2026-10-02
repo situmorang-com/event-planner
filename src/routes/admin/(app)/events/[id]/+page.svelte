@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import ArrivalsChart from '$lib/components/ArrivalsChart.svelte';
@@ -140,8 +141,8 @@
 	eventId={event.id}
 	current="checkins"
 	checkins={stats.total}
-	invitations={data.invitations}
-	suggestions={data.suggestions}
+	people={data.people}
+	review={data.review}
 />
 
 {#if data.created}
@@ -431,7 +432,7 @@
 	{/if}
 </section>
 
-<details class="card settings">
+<details class="card settings" id="settings" open={page.url.hash === '#settings'}>
 	<summary><Settings size={18} /> Event settings</summary>
 	<form
 		method="POST"

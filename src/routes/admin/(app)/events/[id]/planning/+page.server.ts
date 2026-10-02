@@ -1,23 +1,18 @@
 import { error, fail } from '@sveltejs/kit';
-import { companyKey } from '$lib/invitations';
 import { DEPARTMENTS, SENIORITY, type Brief } from '$lib/planning';
 import { createToken, listTokens, revokeToken } from '$lib/server/api-tokens';
 import { countCheckins } from '$lib/server/checkins';
 import { db } from '$lib/server/db';
+import { countLive, countToReview, listEventPeople } from '$lib/server/event-people';
 import { getEvent } from '$lib/server/events';
-import { listInvitations } from '$lib/server/invitations';
 import { cleanText } from '$lib/server/normalize';
 import {
-	acceptSuggestion,
 	addTargets,
-	countAcceptedSuggestions,
 	getBrief,
-	listSuggestions,
 	listTargets,
 	parseTargets,
 	removeTarget,
 	saveBrief,
-	setSuggestionStatus,
 	setTargetFocus
 } from '$lib/server/planning';
 import { publicBaseUrl } from '$lib/server/urls';
@@ -36,19 +31,14 @@ const idOf = (form: FormData, field = 'id') => {
 
 export const load: PageServerLoad = ({ params, url }) => {
 	const event = requireEvent(params.id);
-	const invitations = listInvitations(db, event.id);
-	const suggestions = listSuggestions(db, event.id);
+	const rows = listEventPeople(db, event.id);
 
-	const invited = new Map<string, number>();
-	for (const i of invitations) {
-		const key = companyKey(i.company);
-		invited.set(key, (invited.get(key) ?? 0) + 1);
-	}
-	const fresh = suggestions.filter((s) => s.status === 'new');
+	// Per company: who is on the list, and who research found that nobody has looked at yet.
+	const live = new Map<string, number>();
 	const waiting = new Map<string, number>();
-	for (const s of fresh) {
-		const key = companyKey(s.company);
-		waiting.set(key, (waiting.get(key) ?? 0) + 1);
+	for (const r of rows) {
+		const counts = r.stage === 'found' ? (r.skipped_at ? null : waiting) : live;
+		counts?.set(r.company_key, (counts.get(r.company_key) ?? 0) + 1);
 	}
 
 	return {
@@ -59,24 +49,18 @@ export const load: PageServerLoad = ({ params, url }) => {
 			name: t.name,
 			website: t.website,
 			focus: t.focus,
-			invited: invited.get(companyKey(t.name)) ?? 0,
-			suggested: waiting.get(companyKey(t.name)) ?? 0
+			live: live.get(t.key) ?? 0,
+			waiting: waiting.get(t.key) ?? 0
 		})),
-		suggestions: fresh.map((s) => ({
-			id: s.id,
-			company: s.company,
-			name: s.name,
-			jobTitle: s.job_title,
-			linkedin: s.linkedin,
-			sourceUrl: s.source_url,
-			reason: s.reason
-		})),
-		dismissed: suggestions.filter((s) => s.status === 'dismissed').length,
-		accepted: countAcceptedSuggestions(db, event.id),
+		toReview: countToReview(db, event.id),
+		accepted: rows.filter((r) => r.stage !== 'found' && r.source === 'research').length,
 		tokens: listTokens(db),
 		base: publicBaseUrl(url).base,
-		checkins: countCheckins(db, event.id),
-		invitations: invitations.length
+		tabs: {
+			checkins: countCheckins(db, event.id),
+			people: countLive(db, event.id),
+			review: countToReview(db, event.id)
+		}
 	};
 };
 
@@ -130,24 +114,6 @@ export const actions: Actions = {
 		const id = idOf(await request.formData());
 		if (id) removeTarget(db, event.id, id);
 		return { targetRemoved: id };
-	},
-
-	accept: async ({ params, request }) => {
-		const event = requireEvent(params.id);
-		const form = await request.formData();
-		const ids = form
-			.getAll('id')
-			.map(Number)
-			.filter((n) => Number.isSafeInteger(n) && n > 0);
-		const names = ids.map((id) => acceptSuggestion(db, event.id, id)).filter(Boolean);
-		return { accepted: names.length };
-	},
-
-	dismiss: async ({ params, request }) => {
-		const event = requireEvent(params.id);
-		const id = idOf(await request.formData());
-		if (id) setSuggestionStatus(db, event.id, id, 'dismissed');
-		return { dismissedId: id };
 	},
 
 	createToken: async ({ request }) => {

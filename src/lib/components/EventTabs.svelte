@@ -1,29 +1,26 @@
 <script lang="ts">
 	interface Props {
 		eventId: string;
-		current: 'checkins' | 'invitations' | 'planning';
+		current: 'checkins' | 'people' | 'planning';
 		checkins: number;
-		invitations: number;
-		/** Suggested people waiting for a decision. */
-		suggestions: number;
+		/** Live rows: on the list past Found and not skipped (§4.1). */
+		people: number;
+		/** Found rows waiting for a decision; shown as a dot, not a number. */
+		review: number;
 	}
 
-	let { eventId, current, checkins, invitations, suggestions }: Props = $props();
+	let { eventId, current, checkins, people, review }: Props = $props();
 
 	const tabs = $derived([
 		{ key: 'checkins', label: 'Check-ins', href: `/admin/events/${eventId}`, count: checkins },
 		{
-			key: 'invitations',
-			label: 'Invitations',
-			href: `/admin/events/${eventId}/invitations`,
-			count: invitations
+			key: 'people',
+			label: 'People',
+			href: `/admin/events/${eventId}/people`,
+			count: people,
+			dot: review > 0 ? `${review} to review` : null
 		},
-		{
-			key: 'planning',
-			label: 'Planning',
-			href: `/admin/events/${eventId}/planning`,
-			count: suggestions
-		}
+		{ key: 'planning', label: 'Planning', href: `/admin/events/${eventId}/planning` }
 	]);
 </script>
 
@@ -31,7 +28,11 @@
 	{#each tabs as tab (tab.key)}
 		<a href={tab.href} aria-current={tab.key === current ? 'page' : undefined}>
 			{tab.label}
-			<span class="count">{tab.count.toLocaleString()}</span>
+			{#if tab.count !== undefined}
+				<span class="count">{tab.count.toLocaleString()}</span>
+			{/if}
+			{#if tab.dot}<span class="dot" title={tab.dot}><span class="sr-only">{tab.dot}</span></span
+				>{/if}
 		</a>
 	{/each}
 </nav>
@@ -93,5 +94,12 @@
 	a[aria-current='page'] .count {
 		background: var(--brand-soft);
 		color: var(--brand-text);
+	}
+
+	.dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--warn);
 	}
 </style>

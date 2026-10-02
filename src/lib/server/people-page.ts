@@ -1,0 +1,261 @@
+// The People page's view of an event (§4.2) and what its add form sends, kept out of the
+// route so the shaping and the ≤10 / park / pool rules can be tested on a memory database.
+import { isReply, linkedinProfile } from '../invitations.ts';
+import { chipCounts, type Chip, type PeopleRow } from '../people.ts';
+import type { DB } from './database.ts';
+import {
+	addFound,
+	addShortlisted,
+	hasEnded,
+	listEventPeople,
+	type EventPersonRow,
+	type GuestInput,
+	type Refusal
+} from './event-people.ts';
+import type { EventRow } from './events.ts';
+import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
+import { contactBlock, type PersonRow } from './people.ts';
+import { consentBoxesSince } from './settings.ts';
+
+/** Rows at one company; "No company" sorts last. */
+export interface CompanyGroup {
+	key: string;
+	id: string | null;
+	name: string;
+	owner: string | null;
+	blocked: boolean;
+	rows: PeopleRow[];
+}
+
+export interface PeopleView {
+	rows: PeopleRow[];
+	groups: CompanyGroup[];
+	counts: Record<Chip, number>;
+	ended: boolean;
+	/** Yes replies against the target, with confirmations beside it (D8). */
+	progress: { yes: number; confirmed: number; target: number | null };
+}
+
+export function toView(row: EventPersonRow, since: number | null): PeopleRow {
+	// A Found row has no person yet, so nothing can be closed to it except its company.
+	const person =
+		row.person_id === null
+			? null
+			: {
+					locked_at: row.locked_at,
+					d365_suppressed: row.d365_suppressed ?? 0,
+					d365_no_email: row.d365_no_email ?? 0,
+					d365_no_phone: row.d365_no_phone ?? 0,
+					is_customer: row.is_customer ?? 0,
+					origin: row.origin ?? 'typed',
+					consent_future_at: row.consent_future_at,
+					created_at: row.person_created_at ?? 0,
+					country: row.country,
+					phone: row.phone
+				};
+	const whatsapp = person ? contactBlock(person, 'whatsapp', since) : null;
+	const email = person ? contactBlock(person, 'email', since) : null;
+	return {
+		id: row.id,
+		person_id: row.person_id,
+		company_id: row.company_id,
+		name: row.name,
+		job_title: row.job_title,
+		email: row.email,
+		phone: row.phone,
+		linkedin: row.linkedin,
+		company: row.company,
+		company_key: row.company_key,
+		source_url: row.source_url,
+		reason: row.reason,
+		stage: row.stage,
+		skipped_at: row.skipped_at,
+		source: row.source,
+		reply: row.reply,
+		replied_at: row.replied_at,
+		invited_at: row.invited_at,
+		invited_via: row.invited_via,
+		last_contacted_at: row.last_contacted_at,
+		confirmed_at: row.confirmed_at,
+		checkin_id: row.checkin_id,
+		checked_in_at: row.checked_in_at,
+		consent_event_at: row.consent_event_at,
+		owner: row.owner,
+		company_owner: row.company_owner,
+		note: row.note,
+		locked_at: row.locked_at,
+		blocked_at: row.blocked_at,
+		suppressed: !!row.d365_suppressed,
+		chase_count: row.chase_count,
+		touch_count: row.touch_count,
+		contact: {
+			whatsapp: !!person && whatsapp === null && !row.blocked_at,
+			email: !!person && email === null && !row.blocked_at,
+			reason: whatsapp && email ? whatsapp : null
+		}
+	};
+}
+
+export function groupRows(rows: PeopleRow[]): CompanyGroup[] {
+	const groups = new Map<string, CompanyGroup>();
+	for (const row of rows) {
+		let group = groups.get(row.company_key);
+		if (!group)
+			groups.set(
+				row.company_key,
+				(group = {
+					key: row.company_key,
+					id: row.company_id,
+					name: row.company,
+					owner: row.company_owner,
+					blocked: !!row.blocked_at,
+					rows: []
+				})
+			);
+		group.rows.push(row);
+	}
+	return [...groups.values()].sort((a, b) =>
+		!a.key ? 1 : !b.key ? -1 : a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
+	);
+}
+
+export function peopleView(db: DB, event: EventRow, now = Date.now()): PeopleView {
+	const since = consentBoxesSince(db);
+	const rows = listEventPeople(db, event.id).map((r) => toView(r, since));
+	const live = rows.filter((r) => r.stage !== 'found');
+	return {
+		rows,
+		groups: groupRows(rows),
+		counts: chipCounts(rows, hasEnded(event, now)),
+		ended: hasEnded(event, now),
+		progress: {
+			yes: live.filter((r) => r.reply === 'yes').length,
+			confirmed: live.filter((r) => r.confirmed_at !== null).length,
+			target: event.target_count
+		}
+	};
+}
+
+/* ───────────────────────── The add form ───────────────────────── */
+
+/** Typed lists up to this size are shortlisted at once; bigger pastes wait at Found (D5). */
+export const FOUND_THRESHOLD = 10;
+
+/**
+ * Rows checked field by field in the add form, as JSON. Every field is cleaned again here;
+ * returns the first problem as a message instead when a row can't be saved.
+ */
+export function reviewedGuests(
+	raw: string,
+	company: string,
+	country: string
+): GuestInput[] | string {
+	let rows: unknown;
+	try {
+		rows = JSON.parse(raw);
+	} catch {
+		return 'Those rows didn’t arrive intact. Please try again.';
+	}
+	if (!Array.isArray(rows)) return 'Those rows didn’t arrive intact. Please try again.';
+	const guests: GuestInput[] = [];
+	for (const [i, row] of rows.slice(0, 1000).entries()) {
+		const r = (row ?? {}) as Record<string, unknown>;
+		const email = normalizeEmail(r.email);
+		const linkedinText = cleanText(r.linkedin, 300);
+		const guest: GuestInput = {
+			name: cleanText(r.name, 100),
+			company: cleanText(r.company, 120) || company,
+			jobTitle: cleanText(r.jobTitle, 120),
+			email,
+			phone: normalizePhone(r.phone, country),
+			linkedin: linkedinProfile(linkedinText),
+			reply: isReply(r.reply) ? r.reply : 'pending',
+			note: cleanText(r.note, 300)
+		};
+		const which = `Row ${i + 1}${guest.name ? ` (${guest.name})` : ''}`;
+		if (!guest.name) return `${which} needs a name.`;
+		if (email && !isValidEmail(email)) return `${which}: check the email.`;
+		if (linkedinText && !guest.linkedin)
+			return `${which}: that isn’t a LinkedIn profile link (linkedin.com/in/…).`;
+		guests.push(guest);
+	}
+	return guests;
+}
+
+export interface AddRequest {
+	/** Typed, pasted or reviewed rows. */
+	typed: GuestInput[];
+	/** People picked from the pool. */
+	picked: PersonRow[];
+	/** The company typed in the form; a pick keeps its own when this is empty. */
+	company: string;
+	/** "Park as Found": typed rows wait for review instead of going live. */
+	park: boolean;
+	/** The one-time "where did you get their details" answer for typed rows (D16). */
+	originDetail?: string;
+}
+
+export interface AddSummary {
+	added: number;
+	found: number;
+	duplicates: string[];
+	refused: Refusal[];
+}
+
+/**
+ * Typed rows up to the threshold go straight to Shortlisted; parked ones and bigger pastes
+ * land at Found with their snapshot (D5). Pool picks are always shortlisted: they are people
+ * already.
+ */
+export function addPeople(
+	db: DB,
+	eventId: string,
+	req: AddRequest,
+	{ by = '' } = {},
+	now = Date.now()
+): AddSummary {
+	return db.transaction((): AddSummary => {
+		const summary: AddSummary = { added: 0, found: 0, duplicates: [], refused: [] };
+		if (req.picked.length) {
+			const picks: GuestInput[] = req.picked.map((p) => ({
+				name: p.name,
+				company: req.company || p.company,
+				jobTitle: p.job_title,
+				email: p.email,
+				phone: p.phone,
+				linkedin: p.linkedin
+			}));
+			const r = addShortlisted(db, eventId, picks, { source: 'pool', by }, now);
+			summary.added += r.added.length;
+			summary.duplicates.push(...r.duplicates);
+			summary.refused.push(...r.refused);
+		}
+		if (req.typed.length) {
+			const bigPaste = req.typed.length > FOUND_THRESHOLD;
+			if (req.park || bigPaste) {
+				const r = addFound(
+					db,
+					eventId,
+					req.typed,
+					{ source: bigPaste ? 'paste' : 'typed', by, originDetail: req.originDetail },
+					now
+				);
+				summary.found += r.added;
+				summary.refused.push(...r.refused);
+				if (r.skipped) summary.duplicates.push(`${r.skipped} already on the list`);
+			} else {
+				const r = addShortlisted(
+					db,
+					eventId,
+					req.typed,
+					{ source: 'typed', by, originDetail: req.originDetail },
+					now
+				);
+				summary.added += r.added.length;
+				summary.duplicates.push(...r.duplicates);
+				summary.refused.push(...r.refused);
+			}
+		}
+		return summary;
+	})();
+}

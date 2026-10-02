@@ -27,6 +27,13 @@ export function formatDate(ts: number, timeZone: string): string {
 	);
 }
 
+/** "2 Oct": for markers and chips, where the weekday and year would only add noise. */
+export function formatDay(ts: number, timeZone: string): string {
+	return tidy(
+		new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short' }).format(ts)
+	);
+}
+
 export function formatDateTime(ts: number, timeZone: string): string {
 	return `${formatDate(ts, timeZone)} · ${formatTime(ts, timeZone)}`;
 }

@@ -4,7 +4,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import type { PageProps } from './$types';
 
-	let { form }: PageProps = $props();
+	let { data, form }: PageProps = $props();
 	let busy = $state(false);
 </script>
 
@@ -30,10 +30,7 @@
 		<p class="muted">You can change any of this later.</p>
 	</div>
 
-	<EventFields
-		values={form?.values ?? { name: '', venue: '', startsAt: '', timezone: '', qrMode: 'rotating' }}
-		errors={form?.errors}
-	/>
+	<EventFields values={form?.values ?? data.values} errors={form?.errors} />
 
 	<div class="actions">
 		<a class="btn btn-ghost" href="/admin">Cancel</a>

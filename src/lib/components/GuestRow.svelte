@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import {
-		followUpLink,
-		followUpMessage,
-		greetingName,
-		REPLY_LABEL,
-		type Guest,
-		type Reply
-	} from '$lib/invitations';
+	import { followUpLink, followUpMessage, greetingName, REPLY_LABEL } from '$lib/invitations';
 	import { initials } from '$lib/names';
-	import { formatTime } from '$lib/time';
+	import { effectiveOwner, markers, STAGE_LABEL, type PeopleRow, type Reply } from '$lib/people';
+	import { formatDay, formatTime } from '$lib/time';
+	import Ban from '@lucide/svelte/icons/ban';
 	import Check from '@lucide/svelte/icons/check';
 	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Mail from '@lucide/svelte/icons/mail';
+	import Merge from '@lucide/svelte/icons/merge';
 	import MessageCircle from '@lucide/svelte/icons/message-circle';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Undo2 from '@lucide/svelte/icons/undo-2';
+	import UserPlus from '@lucide/svelte/icons/user-plus';
 	import X from '@lucide/svelte/icons/x';
 
 	interface EditValues {
@@ -27,21 +27,36 @@
 		linkedin: string;
 	}
 
+	interface Candidate {
+		id: string;
+		name: string;
+		company: string;
+		email: string | null;
+	}
+
 	interface Props {
-		guest: Guest;
-		/** What to show, which may run ahead of `guest.reply` while a change is saving. */
+		row: PeopleRow;
+		/** What to show, which may run ahead of `row.reply` while a change is saving. */
 		reply: Reply;
-		event: { name: string; venue: string; starts_at: number | null; timezone: string };
-		/** Set after a failed save of this guest's details. */
+		event: { id: string; name: string; venue: string; starts_at: number | null; timezone: string };
+		/** Team names to pick an owner from; empty hides the control. */
+		team: string[];
+		/** Set after a failed save of this row's details. */
 		errors?: Record<string, string | undefined>;
 		values?: EditValues | null;
 		/** Called as a reply is sent; returns a function to call once it has saved. */
 		onreply: (reply: Reply) => () => void;
+		/** Called as a message link opens, so the page can fetch the stage it moved to. */
+		ontouch: () => void;
 	}
 
-	let { guest, reply, event, errors = {}, values = null, onreply }: Props = $props();
+	let { row, reply, event, team, errors = {}, values = null, onreply, ontouch }: Props = $props();
 
 	let editing = $state(false);
+	let merging = $state(false);
+	let menu = $state<HTMLDetailsElement | null>(null);
+	let candidates = $state<Candidate[]>([]);
+	let candidateQuery = $state('');
 
 	const CHOICES = [
 		{ reply: 'yes', icon: Check },
@@ -57,20 +72,27 @@
 		no: 'Thank'
 	};
 
-	const details = $derived([guest.job_title, guest.email, guest.phone].filter(Boolean));
-	const first = $derived(greetingName(guest.name));
-	const link = $derived(followUpLink(guest, event.name, followUpMessage(reply, guest.name, event)));
-	const linkLabel = $derived(
-		link && `${PURPOSE[reply]} ${first} ${link.via === 'whatsapp' ? 'on WhatsApp' : 'by email'}`
+	const found = $derived(row.stage === 'found');
+	const details = $derived([row.job_title, row.email, row.phone].filter(Boolean));
+	const first = $derived(greetingName(row.name));
+	const text = $derived(followUpMessage(reply, row.name, event));
+	const whatsapp = $derived(
+		row.contact.whatsapp ? followUpLink({ email: null, phone: row.phone }, event.name, text) : null
 	);
+	const email = $derived(
+		row.contact.email ? followUpLink({ email: row.email, phone: null }, event.name, text) : null
+	);
+	const owner = $derived(effectiveOwner(row));
+	const marks = $derived(markers(row, (ts) => formatDay(ts, event.timezone)));
+	const viaLinkedin = $derived(row.invited_via === 'linkedin');
 	const fields = $derived<EditValues>(
 		values ?? {
-			name: guest.name,
-			company: guest.company,
-			jobTitle: guest.job_title,
-			email: guest.email ?? '',
-			phone: guest.phone ?? '',
-			linkedin: guest.linkedin ?? ''
+			name: row.name,
+			company: row.company,
+			jobTitle: row.job_title,
+			email: row.email ?? '',
+			phone: row.phone ?? '',
+			linkedin: row.linkedin ?? ''
 		}
 	);
 
@@ -80,13 +102,20 @@
 	}
 
 	function closeOnEscape(e: KeyboardEvent) {
-		if (e.key === 'Escape') editing = false;
+		if (e.key === 'Escape') {
+			editing = false;
+			merging = false;
+		}
+	}
+
+	function closeMenu() {
+		if (menu) menu.open = false;
 	}
 
 	// Saved on leaving the field (Enter leaves it too), and only when it actually changed.
 	function saveNote(e: FocusEvent & { currentTarget: HTMLInputElement }) {
 		const input = e.currentTarget;
-		if (input.value.replace(/\s+/g, ' ').trim() !== guest.note) input.form?.requestSubmit();
+		if (input.value.replace(/\s+/g, ' ').trim() !== row.note) input.form?.requestSubmit();
 	}
 
 	function noteKeys(e: KeyboardEvent & { currentTarget: HTMLInputElement }) {
@@ -94,36 +123,66 @@
 			e.preventDefault();
 			e.currentTarget.blur();
 		} else if (e.key === 'Escape') {
-			e.currentTarget.value = guest.note;
+			e.currentTarget.value = row.note;
 			e.currentTarget.blur();
 		}
 	}
+
+	// The link opens in WhatsApp or mail as usual; the beacon records the touch in parallel
+	// so the stage moves without anything waiting on the server (§7, D9).
+	function recordTouch(via: 'whatsapp' | 'email') {
+		const data = new FormData();
+		data.set('id', String(row.id));
+		data.set('via', via);
+		navigator.sendBeacon(`${location.pathname}?/touch`, data);
+		ontouch();
+	}
+
+	// Survivor search for "Merge into…": the pool, minus this person.
+	$effect(() => {
+		const q = candidateQuery.trim();
+		if (!merging || q.length < 2) {
+			candidates = [];
+			return;
+		}
+		const controller = new AbortController();
+		const timer = setTimeout(async () => {
+			try {
+				const url = `/admin/events/${event.id}/people/people.json?q=${encodeURIComponent(q)}`;
+				const res = await fetch(url, { signal: controller.signal });
+				if (!res.ok) return;
+				const { people } = (await res.json()) as { people: Candidate[] };
+				candidates = people.filter((p) => p.id !== row.person_id);
+			} catch {
+				// Aborted by the next keystroke, or offline: keep what's showing.
+			}
+		}, 200);
+		return () => {
+			clearTimeout(timer);
+			controller.abort();
+		};
+	});
 </script>
 
-<li class="row" class:editing>
+<li class="row" class:editing={editing || merging} class:found class:skipped={!!row.skipped_at}>
 	{#if editing}
 		<form
 			class="edit"
 			method="POST"
 			action="?/update"
-			use:enhance={({ action, cancel }) => {
-				if (action.search.includes('remove') && !confirm(`Remove ${guest.name} from the list?`)) {
-					cancel();
-					return;
-				}
-				return async ({ result, update }) => {
+			use:enhance={() =>
+				async ({ result, update }) => {
 					await update({ reset: false });
 					if (result.type === 'success') editing = false;
-				};
-			}}
+				}}
 		>
-			<input type="hidden" name="id" value={guest.id} />
+			<input type="hidden" name="id" value={row.id} />
 			<div class="edit-grid">
 				<div class="field">
-					<label class="label" for="name-{guest.id}">Name</label>
+					<label class="label" for="name-{row.id}">Name</label>
 					<input
 						class="input"
-						id="name-{guest.id}"
+						id="name-{row.id}"
 						name="name"
 						onkeydown={closeOnEscape}
 						value={fields.name}
@@ -134,20 +193,20 @@
 					{#if errors.name}<p class="error-text">{errors.name}</p>{/if}
 				</div>
 				<div class="field">
-					<label class="label" for="title-{guest.id}">Job title</label>
+					<label class="label" for="title-{row.id}">Job title</label>
 					<input
 						class="input"
-						id="title-{guest.id}"
+						id="title-{row.id}"
 						name="jobTitle"
 						onkeydown={closeOnEscape}
 						value={fields.jobTitle}
 					/>
 				</div>
 				<div class="field">
-					<label class="label" for="company-{guest.id}">Company</label>
+					<label class="label" for="company-{row.id}">Company</label>
 					<input
 						class="input"
-						id="company-{guest.id}"
+						id="company-{row.id}"
 						name="company"
 						onkeydown={closeOnEscape}
 						list="company-options"
@@ -156,10 +215,10 @@
 					/>
 				</div>
 				<div class="field">
-					<label class="label" for="email-{guest.id}">Email</label>
+					<label class="label" for="email-{row.id}">Email</label>
 					<input
 						class="input"
-						id="email-{guest.id}"
+						id="email-{row.id}"
 						name="email"
 						onkeydown={closeOnEscape}
 						type="email"
@@ -169,10 +228,10 @@
 					{#if errors.email}<p class="error-text">{errors.email}</p>{/if}
 				</div>
 				<div class="field">
-					<label class="label" for="phone-{guest.id}">Mobile</label>
+					<label class="label" for="phone-{row.id}">Mobile</label>
 					<input
 						class="input"
-						id="phone-{guest.id}"
+						id="phone-{row.id}"
 						name="phone"
 						onkeydown={closeOnEscape}
 						type="tel"
@@ -180,10 +239,10 @@
 					/>
 				</div>
 				<div class="field">
-					<label class="label" for="linkedin-{guest.id}">LinkedIn</label>
+					<label class="label" for="linkedin-{row.id}">LinkedIn</label>
 					<input
 						class="input"
-						id="linkedin-{guest.id}"
+						id="linkedin-{row.id}"
 						name="linkedin"
 						onkeydown={closeOnEscape}
 						placeholder="linkedin.com/in/…"
@@ -194,9 +253,6 @@
 				</div>
 			</div>
 			<div class="edit-actions">
-				<button class="btn btn-danger btn-sm" formaction="?/remove" formnovalidate>
-					<Trash2 size={15} /> Remove
-				</button>
 				<span class="spacer"></span>
 				<button type="button" class="btn btn-ghost btn-sm" onclick={() => (editing = false)}>
 					Cancel
@@ -204,108 +260,331 @@
 				<button class="btn btn-primary btn-sm">Save</button>
 			</div>
 		</form>
-	{:else}
-		<div class="person">
-			<span class="avatar" aria-hidden="true">{initials(guest.name)}</span>
-			<div class="who">
-				<p class="name-line">
-					<span class="person-name">{guest.name}</span>
-					{#if guest.arrived_at}
-						<span class="pill pill-good tiny">
-							<Check size={12} strokeWidth={3} /> Checked in {formatTime(
-								guest.arrived_at,
-								event.timezone
-							)}
-						</span>
-					{/if}
-				</p>
-				{#if details.length || guest.linkedin}
-					<p class="details">
-						{details.join(' · ')}{details.length && guest.linkedin
-							? ' · '
-							: ''}{#if guest.linkedin}<a
-								href={guest.linkedin}
-								target="_blank"
-								rel="noreferrer"
-								title="Open {first}’s LinkedIn profile">LinkedIn</a
-							>{/if}
-					</p>
-				{/if}
-			</div>
-		</div>
-
+	{:else if merging}
 		<form
-			class="note-form"
+			class="edit"
 			method="POST"
-			action="?/note"
-			use:enhance={() =>
-				async ({ update }) =>
-					update({ reset: false })}
-		>
-			<input type="hidden" name="id" value={guest.id} />
-			<input
-				class="note"
-				name="note"
-				value={guest.note}
-				placeholder="Add a note"
-				aria-label="Note about {guest.name}"
-				maxlength="300"
-				autocomplete="off"
-				onkeydown={noteKeys}
-				onblur={saveNote}
-			/>
-		</form>
-
-		<form
-			class="reply-form"
-			method="POST"
-			action="?/reply"
-			use:enhance={({ formData }) => {
-				const settle = onreply(formData.get('reply') as Reply);
-				return async ({ update }) => {
+			action="?/merge"
+			use:enhance={({ formData, cancel }) => {
+				const who = candidates.find((c) => c.id === formData.get('survivor'));
+				if (
+					!who ||
+					!confirm(`Merge ${row.name} into ${who.name}? ${row.name}’s record is deleted.`)
+				)
+					cancel();
+				return async ({ result, update }) => {
 					await update({ reset: false });
-					settle();
+					if (result.type === 'success') merging = false;
 				};
 			}}
 		>
-			<input type="hidden" name="id" value={guest.id} />
-			<div class="reply" role="group" aria-label="Reply from {guest.name}">
-				{#each CHOICES as choice (choice.reply)}
-					{@const on = reply === choice.reply}
-					<button
-						class="choice {choice.reply}"
-						name="reply"
-						value={on ? 'pending' : choice.reply}
-						aria-pressed={on}
-						title={on ? 'Click again to clear the reply' : undefined}
-					>
-						<choice.icon size={16} />
-						<span>{REPLY_LABEL[choice.reply]}</span>
-					</button>
-				{/each}
+			<input type="hidden" name="id" value={row.id} />
+			<div class="field">
+				<label class="label" for="merge-{row.id}">
+					Merge {row.name} into… <span class="optional">(the other record stays)</span>
+				</label>
+				<input
+					class="input"
+					id="merge-{row.id}"
+					placeholder="Search by name, email or company"
+					autocomplete="off"
+					bind:value={candidateQuery}
+					onkeydown={closeOnEscape}
+					use:focus
+				/>
+			</div>
+			{#if candidates.length}
+				<div class="candidates">
+					{#each candidates as c (c.id)}
+						<label class="candidate">
+							<input type="radio" name="survivor" value={c.id} required />
+							<span class="candidate-name">{c.name}</span>
+							<span class="candidate-meta">{[c.company, c.email].filter(Boolean).join(' · ')}</span>
+						</label>
+					{/each}
+				</div>
+			{:else if candidateQuery.trim().length >= 2}
+				<p class="hint">No one else matches.</p>
+			{/if}
+			<div class="edit-actions">
+				<span class="spacer"></span>
+				<button type="button" class="btn btn-ghost btn-sm" onclick={() => (merging = false)}>
+					Cancel
+				</button>
+				<button class="btn btn-primary btn-sm" disabled={!candidates.length}>
+					<Merge size={15} /> Merge
+				</button>
 			</div>
 		</form>
+	{:else}
+		<div class="person">
+			<span class="avatar" aria-hidden="true">{initials(row.name)}</span>
+			<div class="who">
+				<div class="name-line">
+					<span class="person-name">{row.name}</span>
+					{#if row.stage === 'checked_in'}
+						<span class="pill pill-good tiny">
+							<Check size={12} strokeWidth={3} /> Checked in{#if row.checked_in_at}
+								{formatTime(row.checked_in_at, event.timezone)}{/if}
+						</span>
+					{:else if row.skipped_at}
+						<span class="pill tiny">Skipped</span>
+					{:else if row.stage === 'confirmed'}
+						<span class="pill pill-good tiny">Confirmed</span>
+					{:else if row.stage === 'invited'}
+						<span class="pill pill-brand tiny">Invited</span>
+					{:else if !found}
+						<span class="pill tiny">{STAGE_LABEL[row.stage]}</span>
+					{/if}
+					{#each marks as m (m.key)}
+						{#if m.key === 'chased'}
+							<form
+								method="POST"
+								action="?/untouch"
+								use:enhance={({ cancel }) => {
+									if (!confirm(`Undo the last message recorded for ${row.name}?`)) cancel();
+								}}
+							>
+								<input type="hidden" name="id" value={row.id} />
+								<button class="pill tiny marker muted-tone" title="Undo the latest touch">
+									{m.label}
+									<Undo2 size={11} />
+								</button>
+							</form>
+						{:else}
+							<span class="pill tiny marker {m.tone}-tone">{m.label}</span>
+						{/if}
+					{/each}
+				</div>
+				{#if details.length || row.linkedin || (found && row.source_url)}
+					<p class="details">
+						{details.join(' · ')}{#if row.linkedin}{details.length ? ' · ' : ''}<a
+								href={row.linkedin}
+								target="_blank"
+								rel="noreferrer"
+								title="Open {first}’s LinkedIn profile">LinkedIn</a
+							>{/if}{#if found && row.source_url}{details.length || row.linkedin ? ' · ' : ''}<a
+								href={row.source_url}
+								target="_blank"
+								rel="noreferrer"
+								>Source: {new URL(row.source_url).hostname.replace(/^www\./, '')}
+								<ExternalLink size={11} /></a
+							>{/if}
+					</p>
+				{/if}
+				{#if found && row.reason}<p class="reason">{row.reason}</p>{/if}
+			</div>
+		</div>
+
+		{#if found}
+			<div class="decide">
+				{#if row.skipped_at}
+					<form method="POST" action="?/unskip" use:enhance>
+						<input type="hidden" name="id" value={row.id} />
+						<button class="btn btn-ghost btn-sm"><Undo2 size={15} /> Unskip</button>
+					</form>
+				{:else}
+					<form method="POST" action="?/shortlist" use:enhance>
+						<input type="hidden" name="id" value={row.id} />
+						<button class="btn btn-soft btn-sm" disabled={!!row.blocked_at || row.suppressed}>
+							<UserPlus size={15} /> Add
+						</button>
+					</form>
+					<form method="POST" action="?/skip" use:enhance>
+						<input type="hidden" name="id" value={row.id} />
+						<button class="btn btn-ghost btn-sm">Skip</button>
+					</form>
+				{/if}
+			</div>
+		{:else}
+			<form
+				class="note-form"
+				method="POST"
+				action="?/note"
+				use:enhance={() =>
+					async ({ update }) =>
+						update({ reset: false })}
+			>
+				<input type="hidden" name="id" value={row.id} />
+				<input
+					class="note"
+					name="note"
+					value={row.note}
+					placeholder="Add a note"
+					aria-label="Note about {row.name}"
+					maxlength="300"
+					autocomplete="off"
+					onkeydown={noteKeys}
+					onblur={saveNote}
+				/>
+			</form>
+
+			<form
+				class="reply-form"
+				method="POST"
+				action="?/reply"
+				use:enhance={({ formData }) => {
+					const settle = onreply(formData.get('reply') as Reply);
+					return async ({ update }) => {
+						await update({ reset: false });
+						settle();
+					};
+				}}
+			>
+				<input type="hidden" name="id" value={row.id} />
+				<div class="reply" role="group" aria-label="Reply from {row.name}">
+					{#each CHOICES as choice (choice.reply)}
+						{@const on = reply === choice.reply}
+						<button
+							class="choice {choice.reply}"
+							name="reply"
+							value={on ? 'pending' : choice.reply}
+							aria-pressed={on}
+							title={on ? 'Click again to clear the reply' : undefined}
+						>
+							<choice.icon size={16} />
+							<span>{REPLY_LABEL[choice.reply]}</span>
+						</button>
+					{/each}
+				</div>
+			</form>
+		{/if}
 
 		<div class="actions">
-			{#if link}
+			{#if !found && team.length}
+				<form
+					class="owner-form"
+					method="POST"
+					action="?/owner"
+					use:enhance={() =>
+						async ({ update }) =>
+							update({ reset: false })}
+				>
+					<input type="hidden" name="id" value={row.id} />
+					<label class="owner" title={owner ? `Owner: ${owner}` : 'No owner yet'}>
+						<span class="owner-avatar" class:unset={!owner} aria-hidden="true">
+							{owner ? initials(owner) : '?'}
+						</span>
+						<span class="sr-only">Owner of {row.name}</span>
+						<select
+							class="owner-select"
+							name="owner"
+							value={row.owner ?? ''}
+							onchange={(e) => e.currentTarget.form?.requestSubmit()}
+						>
+							<option value="">
+								{row.company_owner ? `${row.company_owner} (company)` : 'No owner'}
+							</option>
+							{#each team as name (name)}<option value={name}>{name}</option>{/each}
+						</select>
+					</label>
+				</form>
+			{/if}
+			{#if whatsapp}
 				<a
 					class="btn btn-ghost btn-icon btn-sm"
-					href={link.href}
+					href={whatsapp.href}
 					target="_blank"
 					rel="noreferrer"
-					title={linkLabel}
+					title="{PURPOSE[reply]} {first} on WhatsApp"
+					onclick={() => recordTouch('whatsapp')}
 				>
-					{#if link.via === 'whatsapp'}<MessageCircle size={17} />{:else}<Mail size={17} />{/if}
-					<span class="sr-only">{linkLabel}</span>
+					<MessageCircle size={17} />
+					<span class="sr-only">{PURPOSE[reply]} {first} on WhatsApp</span>
 				</a>
 			{/if}
-			<button
-				class="btn btn-ghost btn-icon btn-sm"
-				onclick={() => (editing = true)}
-				title="Edit details"
-			>
-				<Pencil size={16} /><span class="sr-only">Edit {guest.name}</span>
-			</button>
+			{#if email}
+				<a
+					class="btn btn-ghost btn-icon btn-sm"
+					href={email.href}
+					target="_blank"
+					rel="noreferrer"
+					title="{PURPOSE[reply]} {first} by email"
+					onclick={() => recordTouch('email')}
+				>
+					<Mail size={17} />
+					<span class="sr-only">{PURPOSE[reply]} {first} by email</span>
+				</a>
+			{/if}
+			{#if !found && row.stage !== 'checked_in' && (row.stage === 'shortlisted' || viaLinkedin)}
+				<form method="POST" action="?/invited" use:enhance>
+					<input type="hidden" name="id" value={row.id} />
+					<input type="hidden" name="on" value={viaLinkedin ? '0' : '1'} />
+					<button
+						class="btn btn-ghost btn-sm linkedin"
+						aria-pressed={viaLinkedin}
+						title={viaLinkedin
+							? 'Recorded as invited on LinkedIn; click to undo'
+							: 'Record that you invited them on LinkedIn'}
+					>
+						<span class="in" aria-hidden="true">in</span>
+						<span class="linkedin-label"
+							>{viaLinkedin ? 'Via LinkedIn' : 'Invited via LinkedIn'}</span
+						>
+					</button>
+				</form>
+			{/if}
+			<details class="menu" bind:this={menu}>
+				<summary class="btn btn-ghost btn-icon btn-sm" title="More">
+					<Ellipsis size={17} /><span class="sr-only">More for {row.name}</span>
+				</summary>
+				<div class="menu-list">
+					<button
+						type="button"
+						class="menu-item"
+						onclick={() => {
+							closeMenu();
+							editing = true;
+						}}
+					>
+						<Pencil size={15} /> Edit
+					</button>
+					{#if row.person_id}
+						<button
+							type="button"
+							class="menu-item"
+							onclick={() => {
+								closeMenu();
+								merging = true;
+							}}
+						>
+							<Merge size={15} /> Merge into…
+						</button>
+					{/if}
+					{#if !row.locked_at}
+						<form
+							method="POST"
+							action="?/lock"
+							use:enhance={({ formData, cancel }) => {
+								const reason = prompt(
+									`Don’t contact ${row.name} again. Why? (kept with the entry)`,
+									''
+								);
+								if (reason === null) {
+									cancel();
+									return;
+								}
+								formData.set('reason', reason);
+								closeMenu();
+							}}
+						>
+							<input type="hidden" name="id" value={row.id} />
+							<button class="menu-item"><Ban size={15} /> Don’t contact again…</button>
+						</form>
+					{/if}
+					<form
+						method="POST"
+						action="?/remove"
+						use:enhance={({ cancel }) => {
+							if (!confirm(`Remove ${row.name} from this event?`)) cancel();
+							closeMenu();
+						}}
+					>
+						<input type="hidden" name="id" value={row.id} />
+						<button class="menu-item danger"><Trash2 size={15} /> Remove</button>
+					</form>
+				</div>
+			</details>
 		</div>
 	{/if}
 </li>
@@ -313,14 +592,22 @@
 <style>
 	.row {
 		display: grid;
-		/* Fixed-width actions, so rows with and without a message button line up. */
-		grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto 76px;
+		grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto auto;
 		grid-template-areas: 'person note reply actions';
 		align-items: center;
 		gap: 8px 14px;
 		padding: 10px 16px 10px 20px;
 		border-top: 1px solid var(--border);
 		transition: background-color 0.15s ease;
+	}
+
+	.row.found {
+		grid-template-columns: minmax(0, 1fr) auto auto;
+		grid-template-areas: 'person decide actions';
+	}
+
+	.row.skipped {
+		opacity: 0.6;
 	}
 
 	.row:hover:not(.editing) {
@@ -355,6 +642,11 @@
 		font-weight: 750;
 	}
 
+	.found .avatar {
+		background: var(--surface-3);
+		color: var(--text-2);
+	}
+
 	.who {
 		min-width: 0;
 	}
@@ -376,7 +668,32 @@
 		font-size: 12px;
 	}
 
-	.details {
+	.marker {
+		font-weight: 600;
+	}
+
+	.marker.warn-tone {
+		background: var(--warn-soft);
+		color: var(--warn);
+	}
+
+	.marker.bad-tone {
+		background: var(--bad-soft);
+		color: var(--bad);
+	}
+
+	.marker.brand-tone {
+		background: var(--brand-soft);
+		color: var(--brand-text);
+	}
+
+	button.marker {
+		border: 0;
+		cursor: pointer;
+	}
+
+	.details,
+	.reason {
 		font-size: 13.5px;
 		color: var(--muted);
 		overflow: hidden;
@@ -384,13 +701,27 @@
 		white-space: nowrap;
 	}
 
+	.reason {
+		color: var(--text-2);
+		white-space: normal;
+	}
+
 	.details a {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
 		color: inherit;
 		font-weight: 600;
 	}
 
 	.details a:hover {
 		color: var(--brand-text);
+	}
+
+	.decide {
+		grid-area: decide;
+		display: flex;
+		gap: 4px;
 	}
 
 	.note-form {
@@ -490,8 +821,124 @@
 	.actions {
 		grid-area: actions;
 		display: flex;
+		align-items: center;
 		justify-content: flex-end;
 		gap: 2px;
+	}
+
+	.owner {
+		position: relative;
+		display: inline-grid;
+		place-items: center;
+		width: 36px;
+		height: 36px;
+		cursor: pointer;
+	}
+
+	.owner-avatar {
+		display: grid;
+		place-items: center;
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		background: var(--surface-3);
+		color: var(--text-2);
+		font-size: 11px;
+		font-weight: 750;
+	}
+
+	.owner-avatar.unset {
+		background: transparent;
+		border: 1.5px dashed var(--border-strong);
+		color: var(--muted);
+	}
+
+	/* The select sits on top of the avatar, invisible, so a tap opens the native picker. */
+	.owner-select {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		cursor: pointer;
+	}
+
+	.linkedin {
+		--h: 32px;
+		gap: 6px;
+		padding: 0 8px;
+		font-size: 13px;
+	}
+
+	.linkedin[aria-pressed='true'] {
+		background: var(--brand-soft);
+		color: var(--brand-text);
+	}
+
+	.in {
+		display: grid;
+		place-items: center;
+		height: 18px;
+		padding: 0 3px;
+		border-radius: 4px;
+		border: 1.5px solid currentColor;
+		font-size: 11px;
+		font-weight: 800;
+		line-height: 1;
+	}
+
+	.menu {
+		position: relative;
+	}
+
+	.menu summary {
+		list-style: none;
+	}
+
+	.menu summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.menu[open] summary {
+		background: var(--surface-2);
+	}
+
+	.menu-list {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 4px);
+		z-index: 10;
+		display: grid;
+		min-width: 200px;
+		padding: 6px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--surface);
+		box-shadow: var(--shadow-lg);
+	}
+
+	.menu-item {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		height: 38px;
+		padding: 0 10px;
+		border: 0;
+		border-radius: 8px;
+		background: transparent;
+		color: var(--text);
+		font-size: 14px;
+		font-weight: 600;
+		text-align: left;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.menu-item:hover {
+		background: var(--surface-2);
+	}
+
+	.menu-item.danger {
+		color: var(--bad);
 	}
 
 	.edit {
@@ -520,14 +967,60 @@
 		flex: 1;
 	}
 
+	.candidates {
+		display: grid;
+		gap: 6px;
+		max-height: 240px;
+		overflow-y: auto;
+	}
+
+	.candidate {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 2px 10px;
+		align-items: center;
+		padding: 8px 12px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border-strong);
+		background: var(--surface);
+		cursor: pointer;
+	}
+
+	.candidate:has(input:checked) {
+		border-color: var(--brand);
+		background: var(--brand-soft);
+	}
+
+	.candidate input {
+		grid-row: span 2;
+		margin: 0;
+		accent-color: var(--brand);
+	}
+
+	.candidate-name {
+		font-weight: 650;
+	}
+
+	.candidate-meta {
+		font-size: 13px;
+		color: var(--muted);
+	}
+
 	@media (max-width: 900px) {
 		.row {
-			grid-template-columns: minmax(0, 1fr) 76px;
+			grid-template-columns: minmax(0, 1fr) auto;
 			grid-template-areas:
 				'person actions'
 				'reply reply'
 				'note note';
 			padding: 14px 16px;
+		}
+
+		.row.found {
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-areas:
+				'person actions'
+				'decide decide';
 		}
 
 		.choice {
@@ -536,6 +1029,10 @@
 
 		.note {
 			background: var(--surface-2);
+		}
+
+		.linkedin-label {
+			display: none;
 		}
 	}
 

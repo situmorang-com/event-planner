@@ -1,8 +1,9 @@
 import { companyKey, nameKey } from '../invitations.ts';
+import { CHIPS, chipCounts, matchesChip, type Chip, type ChipRow, type Source } from '../people.ts';
 import { logActivity } from './activity-log.ts';
 import { ensureCompany, findCompany, isBlocked } from './companies.ts';
 import type { DB } from './database.ts';
-import { check as doNotContact } from './do-not-contact.ts';
+import { addEntry, check as doNotContact, lockPerson, type DncSource } from './do-not-contact.ts';
 import {
 	createPerson,
 	DAY,
@@ -13,6 +14,7 @@ import {
 	type Origin,
 	type PersonRow
 } from './people.ts';
+import type { Country } from './settings.ts';
 import {
 	applyChange,
 	type ConfirmedVia,
@@ -23,8 +25,7 @@ import {
 	type Via
 } from './stages.ts';
 
-export type Source =
-	'typed' | 'paste' | 'd365' | 'pool' | 'research' | 'self_registered' | 'walk_in' | 'copied';
+export type { Source };
 
 /** One person on one event, with the person's current details (or the snapshot while found). */
 export interface EventPersonRow {
@@ -76,6 +77,8 @@ export interface EventPersonRow {
 	d365_no_phone: 0 | 1 | null;
 	is_customer: 0 | 1 | null;
 	consent_future_at: number | null;
+	country: Country | null;
+	person_created_at: number | null;
 	blocked_at: number | null;
 	touch_count: number;
 	chase_count: number;
@@ -141,30 +144,8 @@ export function effectiveOwner(row: Pick<EventPersonRow, 'owner' | 'company_owne
 
 /* ───────────────────────── Chips (§4.2) ───────────────────────── */
 
-export type Chip =
-	| 'review'
-	| 'shortlisted'
-	| 'invited'
-	| 'yes'
-	| 'maybe'
-	| 'no'
-	| 'confirmed'
-	| 'checked_in'
-	| 'no_show'
-	| 'skipped';
-
-export const CHIPS: Chip[] = [
-	'review',
-	'shortlisted',
-	'invited',
-	'yes',
-	'maybe',
-	'no',
-	'confirmed',
-	'checked_in',
-	'no_show',
-	'skipped'
-];
+// The chip rules are shared with the page (lib/people.ts); the event's end is decided here.
+export { CHIPS, chipCounts, matchesChip, type Chip, type ChipRow };
 
 type EventTimes = { starts_at: number | null; ends_at: number | null };
 
@@ -177,44 +158,6 @@ export function eventEnd(event: EventTimes): number | null {
 export function hasEnded(event: EventTimes, now = Date.now()): boolean {
 	const end = eventEnd(event);
 	return end !== null && now >= end;
-}
-
-type ChipRow = Pick<
-	EventPersonRow,
-	'stage' | 'skipped_at' | 'reply' | 'confirmed_at' | 'checkin_id'
->;
-
-export function matchesChip(row: ChipRow, chip: Chip, ended: boolean): boolean {
-	switch (chip) {
-		case 'review':
-			return row.stage === 'found' && row.skipped_at === null;
-		case 'skipped':
-			return row.skipped_at !== null;
-		case 'shortlisted':
-		case 'invited':
-		case 'confirmed':
-		case 'checked_in':
-			return row.stage === chip;
-		case 'yes':
-		case 'maybe':
-		case 'no':
-			return row.reply === chip && (row.stage === 'replied' || row.stage === 'confirmed');
-		case 'no_show':
-			return (
-				ended &&
-				(row.reply === 'yes' || row.reply === 'maybe' || row.confirmed_at !== null) &&
-				row.checkin_id === null &&
-				row.stage !== 'checked_in' &&
-				row.stage !== 'found'
-			);
-	}
-}
-
-export function chipCounts(rows: ChipRow[], ended: boolean): Record<Chip, number> {
-	const counts = Object.fromEntries(CHIPS.map((c) => [c, 0])) as Record<Chip, number>;
-	for (const row of rows)
-		for (const chip of CHIPS) if (matchesChip(row, chip, ended)) counts[chip]++;
-	return counts;
 }
 
 /** When the planning jobs (§5.4) delete a Found row; null for live rows. */
@@ -572,6 +515,67 @@ export function unskipRow(db: DB, eventId: string, id: number, now = Date.now())
 	return owned(db, eventId, id) !== null && !!applyChange(db, id, { type: 'unskip' }, now);
 }
 
+/** Found rows waiting at one company: what "Add all" and "Skip all" act on. */
+function foundAt(db: DB, eventId: string, companyKey: string): number[] {
+	return listEventPeople(db, eventId)
+		.filter((r) => r.stage === 'found' && r.skipped_at === null && r.company_key === companyKey)
+		.map((r) => r.id);
+}
+
+export function shortlistAll(
+	db: DB,
+	eventId: string,
+	companyKey: string,
+	{ by = '' } = {},
+	now = Date.now()
+): ShortlistResult[] {
+	return db.transaction(() =>
+		foundAt(db, eventId, companyKey).map((id) => shortlistFound(db, eventId, id, { by }, now))
+	)();
+}
+
+export function skipAll(
+	db: DB,
+	eventId: string,
+	companyKey: string,
+	{ by = '' } = {},
+	now = Date.now()
+): number {
+	return db.transaction(
+		() =>
+			foundAt(db, eventId, companyKey).filter((id) => skipRow(db, eventId, id, { by }, now)).length
+	)();
+}
+
+/**
+ * "Don't contact again" from a row: a live row locks its person everywhere (D13); a Found row
+ * has no person yet, so its snapshot's channels are listed and the row is skipped.
+ */
+export function lockRow(
+	db: DB,
+	eventId: string,
+	id: number,
+	{ reason = '', by = '', source = 'staff' as DncSource } = {},
+	now = Date.now()
+): boolean {
+	return db.transaction(() => {
+		const row = getEventPerson(db, eventId, id);
+		if (!row) return false;
+		if (row.person_id) return lockPerson(db, row.person_id, { reason, source, by }, now);
+		const entry = { reason, source, by };
+		if (row.email) addEntry(db, { kind: 'email', value: row.email, ...entry }, now);
+		if (row.phone) addEntry(db, { kind: 'phone', value: row.phone, ...entry }, now);
+		addEntry(db, { kind: 'name_company', value: row.name, company: row.company, ...entry }, now);
+		applyChange(db, id, { type: 'skip', by }, now);
+		logActivity(
+			db,
+			{ eventId, kind: 'lock', who: by, what: { eventPersonId: id }, rowCount: 1 },
+			now
+		);
+		return true;
+	})();
+}
+
 /** Remove: the row goes, the person stays in the pool. Logged by id. */
 export function removeRow(db: DB, eventId: string, id: number, { by = '' } = {}, now = Date.now()) {
 	return db.transaction(() => {
@@ -723,6 +727,15 @@ export function markInvited(
 	now = Date.now()
 ) {
 	return addTouch(db, eventId, id, { kind: 'invitation', via, by }, now);
+}
+
+/** The "Invited via LinkedIn" toggle going off: only its own touch may be undone. */
+export function unmarkInvited(db: DB, eventId: string, id: number, via: Via, now = Date.now()) {
+	return db.transaction(() => {
+		const latest = listTouches(db, id).at(-1);
+		if (!latest || latest.kind !== 'invitation' || latest.via !== via) return false;
+		return clearLatestTouch(db, eventId, id, now);
+	})();
 }
 
 /** The "chased ×N" pill: the latest touch was a mistake. Dates are recomputed from the rest. */

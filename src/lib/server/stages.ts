@@ -1,3 +1,4 @@
+import type { Reply, Stage, Via } from '../people.ts';
 import type { DB } from './database.ts';
 
 /*
@@ -6,9 +7,7 @@ import type { DB } from './database.ts';
  * the transition table lives in one function and can be tested without a database.
  */
 
-export type Stage = 'found' | 'shortlisted' | 'invited' | 'replied' | 'confirmed' | 'checked_in';
-export type Reply = 'pending' | 'yes' | 'maybe' | 'no';
-export type Via = 'whatsapp' | 'email' | 'linkedin' | 'other';
+export type { Reply, Stage, Via } from '../people.ts';
 export type TouchKind =
 	| 'invitation'
 	| 'chase'
@@ -62,6 +61,24 @@ export type StageChange =
 	/** After a touch was deleted: what the remaining touches say. */
 	| { type: 'recount'; touches: Touch[] }
 	| { type: 'lock' };
+
+/**
+ * What a message tapped now is for (§7): the invitation until they have one, then a chase or
+ * the follow-up that fits their answer. The messaging phase lets the row's menu override it.
+ */
+export function suggestedTouchKind(row: Pick<StageState, 'stage' | 'reply'>): TouchKind {
+	if (row.stage === 'shortlisted') return 'invitation';
+	switch (row.reply) {
+		case 'yes':
+			return row.stage === 'confirmed' ? 'reminder' : 'thanks_yes';
+		case 'maybe':
+			return 'followup_maybe';
+		case 'no':
+			return 'thanks_no';
+		default:
+			return 'chase';
+	}
+}
 
 const none = { confirmed_at: null, confirmed_via: null } as const;
 

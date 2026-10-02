@@ -4,7 +4,15 @@
 	import Printer from '@lucide/svelte/icons/printer';
 
 	interface Props {
-		values: { name: string; venue: string; startsAt: string; timezone: string; qrMode: string };
+		values: {
+			name: string;
+			venue: string;
+			startsAt: string;
+			timezone: string;
+			qrMode: string;
+			targetCount: string;
+			phoneCountry: string;
+		};
 		errors?: Record<string, string | undefined>;
 	}
 
@@ -65,6 +73,35 @@
 		</div>
 	</div>
 	<input type="hidden" name="timezone" value={timezone} />
+
+	<div class="row">
+		<div class="field">
+			<label class="label" for="targetCount">Target <span class="optional">(optional)</span></label>
+			<input
+				class="input"
+				id="targetCount"
+				name="targetCount"
+				type="number"
+				min="0"
+				step="1"
+				inputmode="numeric"
+				value={values.targetCount}
+				placeholder="40"
+				aria-invalid={errors.targetCount ? 'true' : undefined}
+			/>
+			{#if errors.targetCount}<p class="error-text">{errors.targetCount}</p>{:else}<p class="hint">
+					How many Yes replies you’re aiming for. The People tab counts up to it.
+				</p>{/if}
+		</div>
+		<div class="field">
+			<label class="label" for="phoneCountry">Phone country</label>
+			<select class="input" id="phoneCountry" name="phoneCountry" value={values.phoneCountry}>
+				<option value="ID">Indonesia (+62)</option>
+				<option value="MY">Malaysia (+60)</option>
+			</select>
+			<p class="hint">Reads local numbers like 0812… and picks the language of messages.</p>
+		</div>
+	</div>
 
 	<fieldset>
 		<legend class="label">How will people scan?</legend>

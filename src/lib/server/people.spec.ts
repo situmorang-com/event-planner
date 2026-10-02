@@ -5,6 +5,7 @@ import { createDb, type DB } from './database';
 import { addShortlisted, findRow, listEventPeople, listTouches, markInvited } from './event-people';
 import { createEvent } from './events';
 import {
+	contactBlock,
 	countryOf,
 	createPerson,
 	findPerson,
@@ -12,8 +13,11 @@ import {
 	keptUntil,
 	listPeople,
 	mergeInto,
+	peopleAtCompany,
+	searchPeople,
 	updatePerson,
-	type PersonDetails
+	type PersonDetails,
+	type PersonRow
 } from './people';
 
 const newEvent = (db: DB, name = 'Launch') =>
@@ -324,5 +328,81 @@ describe('retention and country', () => {
 				.sort()
 		).toEqual(['Andi', 'Rina']);
 		expect(listPeople(db, { prospects: true }).map((p) => p.name)).toEqual(['Budi']);
+	});
+});
+
+describe('contactable', () => {
+	const base: Pick<
+		PersonRow,
+		| 'locked_at'
+		| 'd365_suppressed'
+		| 'd365_no_email'
+		| 'd365_no_phone'
+		| 'is_customer'
+		| 'origin'
+		| 'consent_future_at'
+		| 'created_at'
+		| 'country'
+		| 'phone'
+	> = {
+		locked_at: null,
+		d365_suppressed: 0,
+		d365_no_email: 0,
+		d365_no_phone: 0,
+		is_customer: 0,
+		origin: 'typed',
+		consent_future_at: null,
+		created_at: 1_000,
+		country: null,
+		phone: null
+	};
+	const since = 5_000;
+
+	it('closes everything for a lock or a D365 suppression, one channel for a D365 flag', () => {
+		expect(contactBlock(base, 'email', since)).toBeNull();
+		expect(contactBlock({ ...base, locked_at: 1 }, 'whatsapp', since)).toBe('locked');
+		expect(contactBlock({ ...base, d365_suppressed: 1 }, 'email', since)).toBe('suppressed');
+		expect(contactBlock({ ...base, d365_no_email: 1 }, 'email', since)).toBe('channel refused');
+		expect(contactBlock({ ...base, d365_no_email: 1 }, 'whatsapp', since)).toBeNull();
+		expect(contactBlock({ ...base, d365_no_phone: 1 }, 'whatsapp', since)).toBe('channel refused');
+	});
+
+	it('holds legacy attendees outside Indonesia until they tick a box or become customers', () => {
+		const legacy = { ...base, origin: 'checkin' as const };
+		expect(contactBlock(legacy, 'email', since)).toBe('not contactable');
+		expect(contactBlock({ ...legacy, phone: '+60123' }, 'email', since)).toBe('not contactable');
+		expect(contactBlock({ ...legacy, phone: '+62812' }, 'email', since)).toBeNull();
+		expect(contactBlock({ ...legacy, country: 'ID' }, 'email', since)).toBeNull();
+		expect(contactBlock({ ...legacy, is_customer: 1 }, 'email', since)).toBeNull();
+		expect(contactBlock({ ...legacy, consent_future_at: 9 }, 'email', since)).toBeNull();
+		// Checked in after the boxes shipped without ticking "future events": a choice, not legacy.
+		expect(contactBlock({ ...legacy, created_at: 6_000 }, 'email', since)).toBeNull();
+	});
+});
+
+describe('pool lookups', () => {
+	it('tells the default list from prospects at a company, and searches the whole pool', () => {
+		const db = createDb(':memory:');
+		const eventId = newEvent(db);
+		createPerson(db, { name: 'Rina Wijaya', company: 'PT Batavia Foods' }, { origin: 'research' });
+		checkIn(
+			db,
+			eventId,
+			{
+				name: 'Andi Pratama',
+				email: 'andi@batavia.co.id',
+				phone: null,
+				company: 'Batavia Foods',
+				jobTitle: ''
+			},
+			{ method: 'form', device: 'ios', consent: true }
+		);
+		expect(peopleAtCompany(db, 'Batavia Foods Tbk').map((p) => [p.name, p.is_default])).toEqual([
+			['Andi Pratama', 1],
+			['Rina Wijaya', 0]
+		]);
+		expect(searchPeople(db, 'wij').map((p) => p.name)).toEqual(['Rina Wijaya']);
+		expect(searchPeople(db, 'batavia').map((p) => p.name)).toEqual(['Andi Pratama', 'Rina Wijaya']);
+		expect(searchPeople(db, '  ')).toEqual([]);
 	});
 });
