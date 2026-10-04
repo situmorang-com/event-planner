@@ -10,6 +10,7 @@
 	} from '$lib/planning';
 	import { formatDate, formatDateTime } from '$lib/time';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import Check from '@lucide/svelte/icons/check';
 	import Copy from '@lucide/svelte/icons/copy';
@@ -32,6 +33,9 @@
 
 	let briefSaved = $state(false);
 	let invitationSaved = $state(false);
+	let chaseSaved = $state(false);
+	// svelte-ignore state_referenced_locally
+	let useDefaults = $state(!data.chase.own);
 	let copied = $state<string | null>(null);
 
 	// The agent gets web tools only and never the token: curl fetches its brief and posts its answer.
@@ -504,6 +508,67 @@
 			</div>
 		</form>
 	</section>
+
+	<!-- Chase rules (D20): this event's own over the settings defaults. -->
+	<section class="card step" id="chase">
+		<div class="step-head">
+			<span class="step-number"><CalendarClock size={15} /></span>
+			<div>
+				<h2>Chase rules</h2>
+				<p class="muted">
+					When people on this list become due: a chase so many working days after the last message,
+					until the cap for that person is reached or the event is too close; a reminder shortly
+					before for everyone attending. The <a href="/admin/settings#chase">defaults</a>
+					apply unless this event sets its own.
+				</p>
+			</div>
+		</div>
+		<form
+			class="brief"
+			method="POST"
+			action="?/chase"
+			use:enhance={() => {
+				chaseSaved = false;
+				return async ({ result, update }) => {
+					await update({ reset: false });
+					chaseSaved = result.type === 'success';
+				};
+			}}
+			oninput={() => (chaseSaved = false)}
+		>
+			<label class="chip use-defaults">
+				<input type="checkbox" name="useDefaults" value="1" bind:checked={useDefaults} />
+				Use the defaults
+			</label>
+			<div class="chase-grid" class:dimmed={useDefaults}>
+				{#each data.chase.fields as f (f.key)}
+					<div class="field">
+						<label class="label" for="chase-{f.key}">{f.label}</label>
+						<div class="chase-input">
+							<input
+								class="input"
+								id="chase-{f.key}"
+								name={f.key}
+								type="number"
+								min="0"
+								max={f.max}
+								step="1"
+								required
+								disabled={useDefaults}
+								value={useDefaults ? data.chase.defaults[f.key] : data.chase.values[f.key]}
+							/>
+							{#if f.unit}<span class="muted small">{f.unit}</span>{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+			{#if form && 'chaseError' in form}<p class="error-text">{form.chaseError}</p>{/if}
+			<div class="actions">
+				{#if chaseSaved}<span class="saved"><Check size={16} /> Saved</span>{/if}
+				<button class="btn btn-primary">Save chase rules</button>
+			</div>
+		</form>
+	</section>
 {/if}
 
 <style>
@@ -625,6 +690,30 @@
 		display: grid;
 		grid-template-columns: 220px 1fr;
 		gap: 16px;
+	}
+
+	.use-defaults {
+		justify-self: start;
+	}
+
+	.chase-grid {
+		display: grid;
+		gap: 12px;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	}
+
+	.chase-grid.dimmed {
+		opacity: 0.55;
+	}
+
+	.chase-input {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.chase-input .input {
+		width: 90px;
 	}
 
 	.textarea {

@@ -1,5 +1,6 @@
 import type { MessageKind, Reply, Stage, Via } from '../people.ts';
 import type { DB } from './database.ts';
+import { recomputeRow } from './next-action.ts';
 
 /*
  * The one place that changes an event row's stage (§5.3). Every verb elsewhere describes what
@@ -238,7 +239,10 @@ export function getStageState(db: DB, rowId: number): (StageState & { id: number
 		.get(rowId) as (StageState & { id: number }) | undefined;
 }
 
-/** Applies a change to one row. Returns the new state, or null when it didn't apply. */
+/**
+ * Applies a change to one row and recomputes what it is due next (§5.2). Returns the new
+ * state, or null when the change didn't apply.
+ */
 export function applyChange(
 	db: DB,
 	rowId: number,
@@ -256,5 +260,6 @@ export function applyChange(
 			WHERE id = @id`
 		).run({ ...next, now, id: rowId });
 	}
+	recomputeRow(db, rowId, now);
 	return { ...row, ...next };
 }

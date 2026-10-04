@@ -27,6 +27,28 @@ export type MessageKind =
 	| 'thanks_no'
 	| 'legacy_notice';
 
+export const KIND_LABEL: Record<MessageKind, string> = {
+	invitation: 'Invitation',
+	chase: 'Chase',
+	reminder: 'Reminder',
+	thanks_yes: 'Thanks (attending)',
+	followup_maybe: 'Follow-up (tentative)',
+	thanks_no: 'Thanks (declined)',
+	legacy_notice: 'Legacy notice'
+};
+
+/** The kinds a row's message menu offers (§7); the legacy notice is the jobs' own. */
+export const MENU_KINDS: MessageKind[] = [
+	'invitation',
+	'chase',
+	'reminder',
+	'thanks_yes',
+	'followup_maybe',
+	'thanks_no'
+];
+
+export type NextActionKind = 'chase' | 'reminder';
+
 /** The message a row's buttons open (§7), rendered on the server for the row's language. */
 export interface RowMessage {
 	kind: MessageKind;
@@ -177,6 +199,48 @@ export interface PeopleRow extends ChipRow {
 	needs_review: boolean;
 	/** The row's personal registration link (§7); null while found or before the event has a date. */
 	registration_link: string | null;
+	/** What the chase rules say is next (D20, §5.2), or the organizer's own date when overridden. */
+	next_action_at: number | null;
+	next_action_kind: NextActionKind | null;
+	next_action_overridden: boolean;
+	/** The kind the message menu preselects: the next action's, else what the stage calls for. */
+	suggested_kind: MessageKind;
+}
+
+/** Today in the event's zone, as the page measures "due" and "overdue" against it. */
+export interface Today {
+	start: number;
+	end: number;
+}
+
+type DueRow = Pick<PeopleRow, 'stage' | 'skipped_at' | 'next_action_at'>;
+
+/** Due today or earlier (§5.2): the Due chip, the card count and the phone's default list. */
+export function isDue(row: DueRow, today: Today): boolean {
+	return (
+		isLive(row) &&
+		row.skipped_at === null &&
+		row.next_action_at !== null &&
+		row.next_action_at <= today.end
+	);
+}
+
+export function isOverdue(row: DueRow, today: Today): boolean {
+	return isDue(row, today) && row.next_action_at! < today.start;
+}
+
+/** "Chase · due Tue 7 Oct", "Reminder · due today", "Chase · overdue since Fri 2 Oct". */
+export function nextActionLabel(
+	row: Pick<PeopleRow, 'next_action_at' | 'next_action_kind'>,
+	today: Today,
+	day: (ts: number) => string
+): string | null {
+	if (row.next_action_at === null || !row.next_action_kind) return null;
+	const kind = row.next_action_kind === 'chase' ? 'Chase' : 'Reminder';
+	const at = row.next_action_at;
+	if (at < today.start) return `${kind} · overdue since ${day(at)}`;
+	if (at <= today.end) return `${kind} · due today`;
+	return `${kind} · due ${day(at)}`;
 }
 
 export const isLive = (row: Pick<PeopleRow, 'stage'>) => row.stage !== 'found';

@@ -4,13 +4,20 @@
 	import { initials } from '$lib/names';
 	import {
 		effectiveOwner,
+		isOverdue,
+		KIND_LABEL,
 		markers,
+		MENU_KINDS,
+		nextActionLabel,
 		STAGE_LABEL,
+		type MessageKind,
 		type PeopleRow,
 		type Reply,
-		type RowMessage
+		type RowMessage,
+		type Today
 	} from '$lib/people';
-	import { formatDay, formatTime } from '$lib/time';
+	import { formatDay, formatDueDay, formatTime, localDate } from '$lib/time';
+	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Check from '@lucide/svelte/icons/check';
 	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
@@ -48,8 +55,12 @@
 		/** What to show, which may run ahead of `row.reply` while a change is saving. */
 		reply: Reply;
 		event: { id: string; timezone: string };
+		/** Today in the event's zone, for "due today" and "overdue" (§4.2). */
+		today: Today;
 		/** Team names to pick an owner from; empty hides the control. */
 		team: string[];
+		/** On a flat list (the phone's due view) the company goes on the details line. */
+		showCompany?: boolean;
 		/** Set after a failed save of this row's details. */
 		errors?: Record<string, string | undefined>;
 		values?: EditValues | null;
@@ -59,10 +70,22 @@
 		ontouch: () => void;
 	}
 
-	let { row, reply, event, team, errors = {}, values = null, onreply, ontouch }: Props = $props();
+	let {
+		row,
+		reply,
+		event,
+		today,
+		team,
+		showCompany = false,
+		errors = {},
+		values = null,
+		onreply,
+		ontouch
+	}: Props = $props();
 
 	let editing = $state(false);
 	let merging = $state(false);
+	let settingDue = $state(false);
 	let copied = $state(false);
 	let menu = $state<HTMLDetailsElement | null>(null);
 	let candidates = $state<Candidate[]>([]);
@@ -86,11 +109,49 @@
 	};
 
 	const found = $derived(row.stage === 'found');
-	const details = $derived([row.job_title, row.email, row.phone].filter(Boolean));
+	const details = $derived(
+		[showCompany ? row.company : '', row.job_title, row.email, row.phone].filter(Boolean)
+	);
 	const first = $derived(greetingName(row.name));
-	// Rendered on the server for the row's language, with the opt-out line already on it.
-	const message = $derived(row.message);
-	const purpose = $derived(message ? PURPOSE[message.kind] : 'Message');
+
+	// The message menu (§7): the page carries the suggested kind's text, rendered on the server
+	// for the row's language with the opt-out line on it; another kind is fetched when picked.
+	let chosen = $state<MessageKind | null>(null);
+	let fetched = $state<RowMessage | null>(null);
+	const kind = $derived(chosen ?? row.suggested_kind);
+	const message = $derived(
+		kind === row.suggested_kind ? row.message : fetched?.kind === kind ? fetched : null
+	);
+	const purpose = $derived(PURPOSE[kind]);
+	const loading = $derived(chosen !== null && message === null && !!row.message);
+
+	$effect(() => {
+		if (chosen === null || chosen === row.suggested_kind) return;
+		const want = chosen;
+		const controller = new AbortController();
+		(async () => {
+			try {
+				const url = `/admin/events/${event.id}/people/message.json?id=${row.id}&kind=${want}`;
+				const res = await fetch(url, { signal: controller.signal });
+				if (!res.ok) return;
+				const { message } = (await res.json()) as { message: RowMessage | null };
+				if (message) fetched = message;
+			} catch {
+				// Aborted by another pick, or offline: the buttons wait.
+			}
+		})();
+		return () => controller.abort();
+	});
+
+	// What the rules say is next (D20), and whether that is the organizer's own date.
+	const dueLabel = $derived(nextActionLabel(row, today, (ts) => formatDueDay(ts, event.timezone)));
+	const overdue = $derived(isOverdue(row, today));
+	const dueToday = $derived(
+		row.next_action_at !== null && !overdue && row.next_action_at <= today.end
+	);
+	const canHaveDue = $derived(
+		!found && row.stage !== 'checked_in' && !row.skipped_at && !row.locked_at
+	);
 	const owner = $derived(effectiveOwner(row));
 	const marks = $derived(markers(row, (ts) => formatDay(ts, event.timezone)));
 	const viaLinkedin = $derived(row.invited_via === 'linkedin');
@@ -114,6 +175,7 @@
 		if (e.key === 'Escape') {
 			editing = false;
 			merging = false;
+			settingDue = false;
 		}
 	}
 
@@ -153,12 +215,15 @@
 	}
 
 	// The link opens in WhatsApp or mail as usual; the beacon records the touch in parallel
-	// so the stage moves without anything waiting on the server (§7, D9).
+	// so the stage moves without anything waiting on the server (§7, D9). It carries the kind
+	// picked in the menu; the next suggestion starts fresh once the page data returns.
 	function recordTouch(via: 'whatsapp' | 'email') {
 		const data = new FormData();
 		data.set('id', String(row.id));
 		data.set('via', via);
+		data.set('kind', kind);
 		navigator.sendBeacon(`${location.pathname}?/touch`, data);
+		chosen = null;
 		ontouch();
 	}
 
@@ -397,6 +462,63 @@
 					</p>
 				{/if}
 				{#if found && row.reason}<p class="reason">{row.reason}</p>{/if}
+				{#if settingDue}
+					<!-- The organizer's own date (§4.2): kept until cleared, whatever the rules say. -->
+					<form
+						class="due-form"
+						method="POST"
+						action="?/due"
+						use:enhance={() =>
+							async ({ result, update }) => {
+								await update({ reset: false });
+								if (result.type === 'success') settingDue = false;
+							}}
+					>
+						<input type="hidden" name="id" value={row.id} />
+						<label class="sr-only" for="due-{row.id}">Due date for {row.name}</label>
+						<input
+							class="input due-input"
+							id="due-{row.id}"
+							type="date"
+							name="date"
+							value={row.next_action_at === null
+								? ''
+								: localDate(row.next_action_at, event.timezone)}
+							onkeydown={closeOnEscape}
+							use:focus
+						/>
+						<button class="btn btn-primary btn-sm">Save</button>
+						{#if row.next_action_overridden}
+							<button
+								class="btn btn-ghost btn-sm"
+								name="clear"
+								value="1"
+								title="Back to the date the chase rules compute"
+							>
+								Use the rules
+							</button>
+						{/if}
+						<button type="button" class="btn btn-ghost btn-sm" onclick={() => (settingDue = false)}>
+							Cancel
+						</button>
+					</form>
+				{:else if dueLabel && canHaveDue}
+					<button
+						type="button"
+						class="due"
+						class:overdue
+						class:today={dueToday}
+						class:own={row.next_action_overridden}
+						title={row.next_action_overridden
+							? 'Your own date; click to change or clear it'
+							: 'From the chase rules; click to set your own date'}
+						onclick={() => (settingDue = true)}
+					>
+						<CalendarClock size={13} />
+						{dueLabel}{#if row.next_action_overridden}
+							· set by hand{/if}
+					</button>
+				{/if}
 			</div>
 		</div>
 
@@ -504,6 +626,24 @@
 					</label>
 				</form>
 			{/if}
+			{#if !found && !row.skipped_at && row.message}
+				<!-- Which message the buttons open (§7); the rules' suggestion is picked already. -->
+				<label class="kind" title="Which message to send">
+					<span class="sr-only">Message for {row.name}</span>
+					<select
+						class="kind-select"
+						value={kind}
+						onchange={(e) => (chosen = e.currentTarget.value as MessageKind)}
+					>
+						{#each MENU_KINDS as k (k)}
+							<option value={k}>{KIND_LABEL[k]}{k === row.suggested_kind ? ' ·' : ''}</option>
+						{/each}
+					</select>
+				</label>
+			{/if}
+			{#if loading}
+				<span class="hint-text">…</span>
+			{/if}
 			{#if message?.whatsapp}
 				<a
 					class="btn btn-ghost btn-icon btn-sm"
@@ -578,6 +718,18 @@
 					>
 						<Pencil size={15} /> Edit
 					</button>
+					{#if canHaveDue}
+						<button
+							type="button"
+							class="menu-item"
+							onclick={() => {
+								closeMenu();
+								settingDue = true;
+							}}
+						>
+							<CalendarClock size={15} /> Due date…
+						</button>
+					{/if}
 					{#if row.person_id}
 						<button
 							type="button"
@@ -780,6 +932,71 @@
 
 	.details a:hover {
 		color: var(--brand-text);
+	}
+
+	.due {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		margin-top: 3px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		font: inherit;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-2);
+		cursor: pointer;
+	}
+
+	.due:hover {
+		color: var(--brand-text);
+	}
+
+	.due.today {
+		color: var(--brand-text);
+	}
+
+	.due.overdue {
+		color: var(--bad);
+	}
+
+	.due.own {
+		text-decoration: underline dotted;
+		text-underline-offset: 3px;
+	}
+
+	.due-form {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		margin-top: 6px;
+	}
+
+	.due-input {
+		height: 34px;
+		width: auto;
+		font-size: 14px;
+	}
+
+	.kind {
+		display: inline-flex;
+		align-items: center;
+		height: 32px;
+	}
+
+	.kind-select {
+		height: 32px;
+		max-width: 150px;
+		padding: 0 6px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface);
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-2);
+		text-overflow: ellipsis;
 	}
 
 	.decide {
@@ -1116,6 +1333,10 @@
 
 		.linkedin-label {
 			display: none;
+		}
+
+		.kind-select {
+			max-width: 120px;
 		}
 	}
 

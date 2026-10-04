@@ -3,6 +3,7 @@ import { CHIPS, chipCounts, matchesChip, type Chip, type ChipRow, type Source } 
 import { logActivity } from './activity-log.ts';
 import { ensureCompany, findCompany, isBlocked, noteCompanyOwner } from './companies.ts';
 import type { DB } from './database.ts';
+import { recomputeRow } from './next-action.ts';
 import { addEntry, check as doNotContact, lockPerson, type DncSource } from './do-not-contact.ts';
 import {
 	createPerson,
@@ -627,6 +628,7 @@ export function setNote(db: DB, eventId: string, id: number, note: string, now =
 		id,
 		eventId
 	);
+	recomputeRow(db, id, now);
 }
 
 /** NULL means "the company's owner". */
@@ -643,6 +645,7 @@ export function setOwner(
 		id,
 		eventId
 	);
+	recomputeRow(db, id, now);
 }
 
 export interface Details {
@@ -706,6 +709,8 @@ export function setDetails(
 			now
 		});
 	}
+	// A channel added or removed changes whether they can be chased.
+	recomputeRow(db, id, now);
 	return 'saved';
 }
 
@@ -726,6 +731,7 @@ export function unflagRow(db: DB, eventId: string, id: number, { by = '' } = {},
 			{ eventId, kind: 'unlock', who: by, what: { personId: row.person_id }, rowCount: 1 },
 			now
 		);
+		recomputeRow(db, id, now);
 		return true;
 	})();
 }

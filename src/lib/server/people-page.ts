@@ -1,7 +1,15 @@
 // The People page's view of an event (§4.2) and what its add form sends, kept out of the
 // route so the shaping and the ≤10 / park / pool rules can be tested on a memory database.
 import { isReply, linkedinProfile } from '../invitations.ts';
-import { chipCounts, type Chip, type PeopleRow, type RowMessage } from '../people.ts';
+import {
+	chipCounts,
+	isDue,
+	type Chip,
+	type PeopleRow,
+	type RowMessage,
+	type Today
+} from '../people.ts';
+import { endOfDay, startOfDay } from '../time.ts';
 import type { DB } from './database.ts';
 import {
 	addFound,
@@ -20,6 +28,7 @@ import { contactPerson, registrationUrl, rowMessage, type MessagingEnv } from '.
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
 import { contactBlock, type PersonRow } from './people.ts';
 import { consentBoxesSince, type Country } from './settings.ts';
+import { suggestedTouchKind } from './stages.ts';
 
 /** Rows at one company; "No company" sorts last. */
 export interface CompanyGroup {
@@ -41,6 +50,10 @@ export interface PeopleView {
 	ended: boolean;
 	/** Yes replies against the target, with confirmations beside it (D8). */
 	progress: { yes: number; confirmed: number; target: number | null };
+	/** Today in the event's zone, so the page can tell due from overdue (§4.2). */
+	today: Today;
+	/** Rows due today or earlier (D20). */
+	due: number;
 }
 
 export function toView(
@@ -97,7 +110,11 @@ export function toView(
 		},
 		message,
 		needs_review: !!row.needs_review,
-		registration_link: registrationLink
+		registration_link: registrationLink,
+		next_action_at: row.next_action_at,
+		next_action_kind: row.next_action_kind,
+		next_action_overridden: !!row.next_action_overridden,
+		suggested_kind: row.next_action_kind ?? suggestedTouchKind(row)
 	};
 }
 
@@ -150,6 +167,7 @@ export function peopleView(
 	);
 	// A row skipped by "not me" is nobody's reply (D8).
 	const live = rows.filter((r) => r.stage !== 'found' && !r.skipped_at);
+	const today = { start: startOfDay(now, event.timezone), end: endOfDay(now, event.timezone) };
 	return {
 		rows,
 		groups: groupRows(rows),
@@ -159,7 +177,9 @@ export function peopleView(
 			yes: live.filter((r) => r.reply === 'yes').length,
 			confirmed: live.filter((r) => r.confirmed_at !== null).length,
 			target: event.target_count
-		}
+		},
+		today,
+		due: rows.filter((r) => isDue(r, today)).length
 	};
 }
 

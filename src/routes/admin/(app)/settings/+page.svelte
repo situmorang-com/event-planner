@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { timeAgo } from '$lib/time';
+	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import Check from '@lucide/svelte/icons/check';
 	import Copy from '@lucide/svelte/icons/copy';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -201,6 +202,57 @@
 		<button class="btn btn-secondary">Save</button>
 		{#if form && 'phoneSaved' in form}<span class="saved"><Check size={16} /> Saved</span>{/if}
 		{#if form && 'phoneError' in form}<p class="error-text">{form.phoneError}</p>{/if}
+	</form>
+</section>
+
+<!-- Chase defaults -->
+<section class="card block" id="chase">
+	<div class="block-head">
+		<span class="block-icon"><CalendarClock size={18} /></span>
+		<div>
+			<h2>Chase defaults</h2>
+			<p class="muted">
+				When a row becomes due (D20): a chase so many working days after the last message, until the
+				cap for that person is reached or the event is too close; a reminder for everyone attending
+				shortly before. Working days are Monday to Friday in the event’s time zone. An event can set
+				its own rules on its Planning tab.
+			</p>
+		</div>
+	</div>
+	<form
+		class="chase"
+		method="POST"
+		action="?/chase"
+		use:enhance={() =>
+			async ({ update }) =>
+				update({ reset: false })}
+	>
+		<div class="chase-grid">
+			{#each data.chase.fields as f (f.key)}
+				<div class="field">
+					<label class="label" for="chase-{f.key}">{f.label}</label>
+					<div class="chase-input">
+						<input
+							class="input"
+							id="chase-{f.key}"
+							name={f.key}
+							type="number"
+							min="0"
+							max={f.max}
+							step="1"
+							required
+							value={data.chase.values[f.key]}
+						/>
+						{#if f.unit}<span class="muted small">{f.unit}</span>{/if}
+					</div>
+				</div>
+			{/each}
+		</div>
+		<div class="actions">
+			{#if form && 'chaseError' in form}<p class="error-text">{form.chaseError}</p>{/if}
+			{#if form && 'chaseSaved' in form}<span class="saved"><Check size={16} /> Saved</span>{/if}
+			<button class="btn btn-primary">Save chase defaults</button>
+		</div>
 	</form>
 </section>
 
@@ -613,6 +665,28 @@
 		display: grid;
 		gap: 12px;
 		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	}
+
+	.chase {
+		display: grid;
+		gap: 14px;
+	}
+
+	.chase-grid {
+		display: grid;
+		gap: 12px;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	}
+
+	.chase-input {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.chase-input .input {
+		width: 90px;
+		height: 40px;
 	}
 
 	.languages {

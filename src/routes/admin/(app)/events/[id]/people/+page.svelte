@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import AddGuests from '$lib/components/AddGuests.svelte';
 	import EventTabs from '$lib/components/EventTabs.svelte';
 	import GuestRow from '$lib/components/GuestRow.svelte';
@@ -11,6 +12,7 @@
 		CHIPS,
 		chipCounts,
 		effectiveOwner,
+		isDue,
 		matchesChip,
 		type Chip,
 		type PeopleRow,
@@ -19,6 +21,8 @@
 	import { formatDateTime } from '$lib/time';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Ban from '@lucide/svelte/icons/ban';
+	import Building2 from '@lucide/svelte/icons/building-2';
+	import ListOrdered from '@lucide/svelte/icons/list-ordered';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 	import Check from '@lucide/svelte/icons/check';
@@ -38,6 +42,7 @@
 	const rows = $derived(view?.rows ?? []);
 	const live = $derived(rows.filter((r) => r.stage !== 'found'));
 	const ended = $derived(view?.ended ?? false);
+	const today = $derived(view?.today ?? { start: 0, end: 0 });
 
 	// An empty list opens straight onto the form that fills it.
 	// svelte-ignore state_referenced_locally
@@ -48,8 +53,20 @@
 	// svelte-ignore state_referenced_locally
 	let chips = $state<Chip[]>(data.view?.ended ? ['checked_in', 'no_show'] : []);
 	let mine = $state(false);
+	let due = $state(false);
+	// One list sorted by what is due, or the company groups (§4.2). The phone starts on the
+	// list of what is yours and due (D19) once a name is picked; a laptop keeps the groups.
+	let flat = $state(false);
 	let showSkipped = $state(false);
 	let renaming = $state<string | null>(null);
+
+	onMount(() => {
+		if (data.me && data.view && matchMedia('(max-width: 900px)').matches) {
+			mine = true;
+			due = true;
+			flat = true;
+		}
+	});
 
 	// On the day the list is live: each arrival ticks its row off without a reload.
 	$effect(() => {
@@ -105,19 +122,25 @@
 
 	const counts = $derived(chipCounts(rows.map(settled), ended));
 	const shownChips = $derived(CHIPS.filter((c) => c !== 'skipped' || showSkipped));
+	const dueRows = $derived(rows.filter((r) => isDue(r, today)));
+	const mineRows = $derived(
+		rows.filter((r) => r.stage !== 'found' && !r.skipped_at && effectiveOwner(r) === data.me)
+	);
+	const mineDue = $derived(mineRows.filter((r) => isDue(r, today)).length);
 
 	function toggleChip(chip: Chip) {
 		chips = chips.includes(chip) ? chips.filter((c) => c !== chip) : [...chips, chip];
 	}
 
 	const q = $derived(query.trim().toLowerCase());
-	const filtering = $derived(chips.length > 0 || mine || q !== '');
+	const filtering = $derived(chips.length > 0 || mine || due || q !== '');
 
 	function shows(r: PeopleRow) {
 		const row = settled(r);
 		if (row.skipped_at && !showSkipped) return false;
 		if (chips.length && !chips.some((c) => matchesChip(row, c, ended))) return false;
 		if (mine && effectiveOwner(row) !== data.me) return false;
+		if (due && !isDue(row, today)) return false;
 		return (
 			!q ||
 			[row.name, row.company, row.job_title, row.email, row.phone, row.note].some((v) =>
@@ -134,6 +157,17 @@
 				waiting: group.rows.filter((r) => r.stage === 'found' && !r.skipped_at).length
 			}))
 			.filter((group) => group.shown.length)
+	);
+
+	// The flat list: soonest due first, then whoever has no date, each by name.
+	const listed = $derived(
+		rows
+			.filter(shows)
+			.sort(
+				(a, b) =>
+					(a.next_action_at ?? Infinity) - (b.next_action_at ?? Infinity) ||
+					a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
+			)
 	);
 
 	const progress = $derived(view?.progress ?? { yes: 0, confirmed: 0, target: null });
@@ -356,6 +390,12 @@
 					onclick={() => (mine = !mine)}
 				>
 					Mine
+					{#if data.me}
+						<span class="chip-count">
+							{mineRows.length.toLocaleString()}{#if mineDue}
+								· {mineDue.toLocaleString()} due{/if}
+						</span>
+					{/if}
 				</button>
 				{#each shownChips as chip (chip)}
 					<button class="chip" aria-pressed={chips.includes(chip)} onclick={() => toggleChip(chip)}>
@@ -363,191 +403,246 @@
 						<span class="chip-count">{counts[chip].toLocaleString()}</span>
 					</button>
 				{/each}
+				<button
+					class="chip"
+					aria-pressed={due}
+					title="Chases and reminders due today or earlier"
+					onclick={() => (due = !due)}
+				>
+					Due
+					<span class="chip-count">{dueRows.length.toLocaleString()}</span>
+				</button>
 				<label class="chip toggle">
 					<input type="checkbox" bind:checked={showSkipped} />
 					Show skipped
 				</label>
 			</div>
+			<div class="layout" role="group" aria-label="Layout">
+				<button
+					class="btn btn-ghost btn-icon btn-sm"
+					aria-pressed={!flat}
+					title="By company"
+					onclick={() => (flat = false)}
+				>
+					<Building2 size={17} /><span class="sr-only">By company</span>
+				</button>
+				<button
+					class="btn btn-ghost btn-icon btn-sm"
+					aria-pressed={flat}
+					title="One list, soonest due first"
+					onclick={() => (flat = true)}
+				>
+					<ListOrdered size={17} /><span class="sr-only">One list, soonest due first</span>
+				</button>
+			</div>
 		</div>
 
 		{#if problem}<p class="banner banner-warn" role="alert">{problem}</p>{/if}
 
-		{#each groups as group (group.key)}
-			<section class="card group" class:blocked={group.blocked}>
-				<header class="group-head">
-					{#if renaming === group.key && group.id}
-						<form
-							class="rename"
-							method="POST"
-							action="?/rename"
-							use:enhance={() =>
-								async ({ result, update }) => {
-									await update({ reset: false });
-									if (result.type === 'success') renaming = null;
-								}}
-						>
-							<input type="hidden" name="company" value={group.id} />
-							<input
-								class="input"
-								name="to"
-								value={group.name}
-								required
-								aria-label="Company name"
-								use:focusSelect
-								onkeydown={(e) => e.key === 'Escape' && (renaming = null)}
+		{#if flat}
+			{#if listed.length}
+				<section class="card group">
+					<ul class="guests">
+						{#each listed as row (row.id)}
+							<GuestRow
+								{row}
+								reply={replyOf(row)}
+								{event}
+								{today}
+								team={data.team}
+								showCompany
+								errors={editErrors?.editId === row.id ? editErrors.editErrors : undefined}
+								values={editErrors?.editId === row.id ? editErrors.editValues : null}
+								onreply={(reply) => beginReply(row.id, reply)}
+								ontouch={afterTouch}
 							/>
-							<button class="btn btn-primary btn-sm">Save</button>
-							<button type="button" class="btn btn-ghost btn-sm" onclick={() => (renaming = null)}>
-								Cancel
-							</button>
-						</form>
-					{:else}
-						<div class="group-title">
-							<h2>{group.name || 'No company'}</h2>
-							{#if group.id}
+						{/each}
+					</ul>
+				</section>
+			{/if}
+		{:else}
+			{#each groups as group (group.key)}
+				<section class="card group" class:blocked={group.blocked}>
+					<header class="group-head">
+						{#if renaming === group.key && group.id}
+							<form
+								class="rename"
+								method="POST"
+								action="?/rename"
+								use:enhance={() =>
+									async ({ result, update }) => {
+										await update({ reset: false });
+										if (result.type === 'success') renaming = null;
+									}}
+							>
+								<input type="hidden" name="company" value={group.id} />
+								<input
+									class="input"
+									name="to"
+									value={group.name}
+									required
+									aria-label="Company name"
+									use:focusSelect
+									onkeydown={(e) => e.key === 'Escape' && (renaming = null)}
+								/>
+								<button class="btn btn-primary btn-sm">Save</button>
 								<button
-									class="btn btn-ghost btn-icon btn-sm rename-btn"
-									onclick={() => (renaming = group.key)}
-									title="Rename company"
+									type="button"
+									class="btn btn-ghost btn-sm"
+									onclick={() => (renaming = null)}
 								>
-									<Pencil size={14} /><span class="sr-only">Rename {group.name}</span>
+									Cancel
 								</button>
-							{/if}
-							{#if group.blocked}
-								<span class="pill pill-warn" title={group.blocked_reason || 'Blocked company'}
-									>Blocked</span
+							</form>
+						{:else}
+							<div class="group-title">
+								<h2>{group.name || 'No company'}</h2>
+								{#if group.id}
+									<button
+										class="btn btn-ghost btn-icon btn-sm rename-btn"
+										onclick={() => (renaming = group.key)}
+										title="Rename company"
+									>
+										<Pencil size={14} /><span class="sr-only">Rename {group.name}</span>
+									</button>
+								{/if}
+								{#if group.blocked}
+									<span class="pill pill-warn" title={group.blocked_reason || 'Blocked company'}
+										>Blocked</span
+									>
+								{/if}
+							</div>
+							<p class="group-meta muted">{groupSummary(group)}</p>
+						{/if}
+						<div class="group-tools">
+							{#if group.id}
+								<!-- The company's phone country (D14): how its local numbers are read, and the language
+							     its people are written to in. Empty follows the event. -->
+								<form
+									class="country-form"
+									method="POST"
+									action="?/companyCountry"
+									use:enhance={() =>
+										async ({ update }) =>
+											update({ reset: false })}
 								>
+									<input type="hidden" name="company" value={group.id} />
+									<label class="country">
+										<span class="sr-only">Phone country for {group.name}</span>
+										<select
+											class="owner-select"
+											name="country"
+											value={group.phone_country ?? ''}
+											title="Phone country: reads local numbers and picks the message language"
+											onchange={(e) => e.currentTarget.form?.requestSubmit()}
+										>
+											<option value="">Event’s country</option>
+											<option value="ID">+62 Indonesia</option>
+											<option value="MY">+60 Malaysia</option>
+										</select>
+									</label>
+								</form>
+							{/if}
+							{#if group.id && data.team.length}
+								<form
+									class="owner-form"
+									method="POST"
+									action="?/companyOwner"
+									use:enhance={() =>
+										async ({ update }) =>
+											update({ reset: false })}
+								>
+									<input type="hidden" name="company" value={group.id} />
+									<label class="owner">
+										<span class="sr-only">Owner of {group.name}</span>
+										<select
+											class="owner-select"
+											name="owner"
+											value={group.owner ?? ''}
+											onchange={(e) => e.currentTarget.form?.requestSubmit()}
+										>
+											<option value="">No owner</option>
+											{#each data.team as name (name)}<option value={name}>{name}</option>{/each}
+										</select>
+									</label>
+								</form>
+							{/if}
+							{#if group.id}
+								{#if group.blocked}
+									<form
+										method="POST"
+										action="?/unblock"
+										use:enhance={({ cancel }) => {
+											if (!confirm(`Unblock ${group.name}? People there can be added again.`))
+												cancel();
+										}}
+									>
+										<input type="hidden" name="company" value={group.id} />
+										<button class="btn btn-ghost btn-sm">Unblock</button>
+									</form>
+								{:else}
+									<form
+										method="POST"
+										action="?/block"
+										use:enhance={({ formData, cancel }) => {
+											const reason = prompt(
+												`Block ${group.name}: nobody there can be added, researched or messaged. Why?`,
+												''
+											);
+											if (reason === null) {
+												cancel();
+												return;
+											}
+											formData.set('reason', reason);
+										}}
+									>
+										<input type="hidden" name="company" value={group.id} />
+										<button class="btn btn-ghost btn-sm" title="Block company">
+											<Ban size={14} /> Block…
+										</button>
+									</form>
+								{/if}
+							{/if}
+							{#if group.waiting > 1}
+								<form method="POST" action="?/addAll" use:enhance>
+									<input type="hidden" name="companyKey" value={group.key} />
+									<button class="btn btn-soft btn-sm"
+										><UserPlus size={15} /> Add all {group.waiting}</button
+									>
+								</form>
+								<form method="POST" action="?/skipAll" use:enhance>
+									<input type="hidden" name="companyKey" value={group.key} />
+									<button class="btn btn-ghost btn-sm">Skip all</button>
+								</form>
 							{/if}
 						</div>
-						<p class="group-meta muted">{groupSummary(group)}</p>
-					{/if}
-					<div class="group-tools">
-						{#if group.id}
-							<!-- The company's phone country (D14): how its local numbers are read, and the language
-							     its people are written to in. Empty follows the event. -->
-							<form
-								class="country-form"
-								method="POST"
-								action="?/companyCountry"
-								use:enhance={() =>
-									async ({ update }) =>
-										update({ reset: false })}
-							>
-								<input type="hidden" name="company" value={group.id} />
-								<label class="country">
-									<span class="sr-only">Phone country for {group.name}</span>
-									<select
-										class="owner-select"
-										name="country"
-										value={group.phone_country ?? ''}
-										title="Phone country: reads local numbers and picks the message language"
-										onchange={(e) => e.currentTarget.form?.requestSubmit()}
-									>
-										<option value="">Event’s country</option>
-										<option value="ID">+62 Indonesia</option>
-										<option value="MY">+60 Malaysia</option>
-									</select>
-								</label>
-							</form>
-						{/if}
-						{#if group.id && data.team.length}
-							<form
-								class="owner-form"
-								method="POST"
-								action="?/companyOwner"
-								use:enhance={() =>
-									async ({ update }) =>
-										update({ reset: false })}
-							>
-								<input type="hidden" name="company" value={group.id} />
-								<label class="owner">
-									<span class="sr-only">Owner of {group.name}</span>
-									<select
-										class="owner-select"
-										name="owner"
-										value={group.owner ?? ''}
-										onchange={(e) => e.currentTarget.form?.requestSubmit()}
-									>
-										<option value="">No owner</option>
-										{#each data.team as name (name)}<option value={name}>{name}</option>{/each}
-									</select>
-								</label>
-							</form>
-						{/if}
-						{#if group.id}
-							{#if group.blocked}
-								<form
-									method="POST"
-									action="?/unblock"
-									use:enhance={({ cancel }) => {
-										if (!confirm(`Unblock ${group.name}? People there can be added again.`))
-											cancel();
-									}}
-								>
-									<input type="hidden" name="company" value={group.id} />
-									<button class="btn btn-ghost btn-sm">Unblock</button>
-								</form>
-							{:else}
-								<form
-									method="POST"
-									action="?/block"
-									use:enhance={({ formData, cancel }) => {
-										const reason = prompt(
-											`Block ${group.name}: nobody there can be added, researched or messaged. Why?`,
-											''
-										);
-										if (reason === null) {
-											cancel();
-											return;
-										}
-										formData.set('reason', reason);
-									}}
-								>
-									<input type="hidden" name="company" value={group.id} />
-									<button class="btn btn-ghost btn-sm" title="Block company">
-										<Ban size={14} /> Block…
-									</button>
-								</form>
-							{/if}
-						{/if}
-						{#if group.waiting > 1}
-							<form method="POST" action="?/addAll" use:enhance>
-								<input type="hidden" name="companyKey" value={group.key} />
-								<button class="btn btn-soft btn-sm"
-									><UserPlus size={15} /> Add all {group.waiting}</button
-								>
-							</form>
-							<form method="POST" action="?/skipAll" use:enhance>
-								<input type="hidden" name="companyKey" value={group.key} />
-								<button class="btn btn-ghost btn-sm">Skip all</button>
-							</form>
-						{/if}
-					</div>
-				</header>
-				<ul class="guests">
-					{#each group.shown as row (row.id)}
-						<GuestRow
-							{row}
-							reply={replyOf(row)}
-							{event}
-							team={data.team}
-							errors={editErrors?.editId === row.id ? editErrors.editErrors : undefined}
-							values={editErrors?.editId === row.id ? editErrors.editValues : null}
-							onreply={(reply) => beginReply(row.id, reply)}
-							ontouch={afterTouch}
-						/>
-					{/each}
-				</ul>
-				{#if !filtering}<QuickAdd company={group.name} />{/if}
-			</section>
-		{/each}
+					</header>
+					<ul class="guests">
+						{#each group.shown as row (row.id)}
+							<GuestRow
+								{row}
+								reply={replyOf(row)}
+								{event}
+								{today}
+								team={data.team}
+								errors={editErrors?.editId === row.id ? editErrors.editErrors : undefined}
+								values={editErrors?.editId === row.id ? editErrors.editValues : null}
+								onreply={(reply) => beginReply(row.id, reply)}
+								ontouch={afterTouch}
+							/>
+						{/each}
+					</ul>
+					{#if !filtering}<QuickAdd company={group.name} />{/if}
+				</section>
+			{/each}
+		{/if}
 
-		{#if filtering && !groups.length}
+		{#if filtering && !(flat ? listed.length : groups.length)}
 			<div class="card no-match">
 				<p class="muted">
 					{q ? `No one matches “${query.trim()}”` : 'No one here'}{chips.length
 						? ` under ${chips.map((c) => CHIP_LABEL[c]).join(', ')}`
-						: ''}{mine ? ' of yours' : ''}.
+						: ''}{due ? ' due today' : ''}{mine ? ' of yours' : ''}.
 				</p>
 				<button
 					class="btn btn-secondary btn-sm"
@@ -555,6 +650,7 @@
 						query = '';
 						chips = [];
 						mine = false;
+						due = false;
 					}}>Show everyone</button
 				>
 			</div>
@@ -771,6 +867,17 @@
 		font-weight: 700;
 		color: var(--muted);
 		font-variant-numeric: tabular-nums;
+	}
+
+	.layout {
+		display: flex;
+		gap: 2px;
+		margin-left: auto;
+	}
+
+	.layout .btn[aria-pressed='true'] {
+		background: var(--brand-soft);
+		color: var(--brand-text);
 	}
 
 	.chip[aria-pressed='true'] .chip-count {

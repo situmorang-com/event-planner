@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { createToken, listTokens, revokeToken } from '$lib/server/api-tokens';
+import { CHASE_FIELDS, chaseFormValues, parseChaseForm } from '$lib/server/chase-form';
 import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
 import { blockByHand, listEntries, removeEntry, type DncKind } from '$lib/server/do-not-contact';
@@ -18,12 +19,15 @@ import {
 	setTemplate,
 	type MessageKind
 } from '$lib/server/message-templates';
+import { recomputeAll } from '$lib/server/next-action';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import {
 	addTeamName,
+	chaseDefaults,
 	isCountry,
 	phoneCountryDefault,
 	removeTeamName,
+	setChaseDefaults,
 	setPhoneCountryDefault
 } from '$lib/server/settings';
 import type { Actions, PageServerLoad } from './$types';
@@ -55,6 +59,7 @@ export const load: PageServerLoad = ({ url }) => {
 	return {
 		tokens: listTokens(db),
 		phoneCountry: phoneCountryDefault(db, envCountry()),
+		chase: { fields: CHASE_FIELDS, values: chaseFormValues(chaseDefaults(db)) },
 		blocked: listEntries(db, showRemoved),
 		showRemoved,
 		messages: {
@@ -97,6 +102,15 @@ export const actions: Actions = {
 		if (!isCountry(country)) return fail(400, { phoneError: 'Pick Indonesia or Malaysia.' });
 		setPhoneCountryDefault(db, country);
 		return { phoneSaved: country };
+	},
+
+	// The chase defaults (§5.1); every event without its own override follows them at once.
+	chase: async ({ request }) => {
+		const rules = parseChaseForm(await request.formData());
+		if (typeof rules === 'string') return fail(400, { chaseError: rules });
+		setChaseDefaults(db, rules);
+		recomputeAll(db);
+		return { chaseSaved: true };
 	},
 
 	// One language's bodies at a time (§4.4). A blank cell goes back to the built-in wording; the

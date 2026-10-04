@@ -1,4 +1,4 @@
-import type { MessageKind } from '../people.ts';
+import { KIND_LABEL, type MessageKind } from '../people.ts';
 import type { DB } from './database.ts';
 import type { Language } from './events.ts';
 import { TABLES } from './schema.ts';
@@ -11,6 +11,7 @@ import { TABLES } from './schema.ts';
  */
 
 export type { MessageKind };
+export { KIND_LABEL };
 
 export const MESSAGE_KINDS: MessageKind[] = [
 	'invitation',
@@ -25,16 +26,6 @@ export const MESSAGE_KINDS: MessageKind[] = [
 export const LANGUAGES: Language[] = ['id', 'en', 'ms'];
 
 export const isLanguage = (v: unknown): v is Language => LANGUAGES.includes(v as Language);
-
-export const KIND_LABEL: Record<MessageKind, string> = {
-	invitation: 'Invitation',
-	chase: 'Chase',
-	reminder: 'Reminder',
-	thanks_yes: 'Thanks (attending)',
-	followup_maybe: 'Follow-up (tentative)',
-	thanks_no: 'Thanks (declined)',
-	legacy_notice: 'Legacy notice'
-};
 
 export const LANGUAGE_LABEL: Record<Language, string> = {
 	id: 'Indonesian',

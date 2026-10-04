@@ -124,21 +124,48 @@ export function setChaseDefaults(db: DB, rules: ChaseRules) {
 
 /** Reads stored chase rules; anything missing or malformed falls back to the defaults. */
 export function parseChaseRules(json: string | null): ChaseRules | null {
+	const override = parseChaseOverride(json);
+	return override ? mergeChaseRules(CHASE_DEFAULTS, override) : null;
+}
+
+/** A per-event override (D20): only the fields it names, so the defaults fill the rest. */
+export interface ChaseOverride {
+	chaseAfterWorkingDays?: number;
+	stopDaysBeforeEvent?: number;
+	reminderDaysBefore?: number;
+	maxTouches?: { relationship?: number; none?: number };
+}
+
+/** The fields an event's `chase_rules` JSON carries; null when it carries nothing readable. */
+export function parseChaseOverride(json: string | null): ChaseOverride | null {
 	if (!json) return null;
 	try {
-		const v = JSON.parse(json) as Partial<ChaseRules>;
+		const v = JSON.parse(json) as Record<string, unknown>;
 		if (!v || typeof v !== 'object') return null;
-		const n = (x: unknown, d: number) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
-		return {
-			chaseAfterWorkingDays: n(v.chaseAfterWorkingDays, CHASE_DEFAULTS.chaseAfterWorkingDays),
-			stopDaysBeforeEvent: n(v.stopDaysBeforeEvent, CHASE_DEFAULTS.stopDaysBeforeEvent),
-			reminderDaysBefore: n(v.reminderDaysBefore, CHASE_DEFAULTS.reminderDaysBefore),
-			maxTouches: {
-				relationship: n(v.maxTouches?.relationship, CHASE_DEFAULTS.maxTouches.relationship),
-				none: n(v.maxTouches?.none, CHASE_DEFAULTS.maxTouches.none)
-			}
+		const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined);
+		const touches = (v.maxTouches ?? {}) as Record<string, unknown>;
+		const override: ChaseOverride = {
+			chaseAfterWorkingDays: n(v.chaseAfterWorkingDays),
+			stopDaysBeforeEvent: n(v.stopDaysBeforeEvent),
+			reminderDaysBefore: n(v.reminderDaysBefore)
 		};
+		if (touches && typeof touches === 'object')
+			override.maxTouches = { relationship: n(touches.relationship), none: n(touches.none) };
+		return override;
 	} catch {
 		return null;
 	}
+}
+
+/** The event's own values over the defaults, field by field (§5.1). */
+export function mergeChaseRules(base: ChaseRules, override: ChaseOverride | null): ChaseRules {
+	return {
+		chaseAfterWorkingDays: override?.chaseAfterWorkingDays ?? base.chaseAfterWorkingDays,
+		stopDaysBeforeEvent: override?.stopDaysBeforeEvent ?? base.stopDaysBeforeEvent,
+		reminderDaysBefore: override?.reminderDaysBefore ?? base.reminderDaysBefore,
+		maxTouches: {
+			relationship: override?.maxTouches?.relationship ?? base.maxTouches.relationship,
+			none: override?.maxTouches?.none ?? base.maxTouches.none
+		}
+	};
 }

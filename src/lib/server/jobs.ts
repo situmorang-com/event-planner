@@ -3,6 +3,7 @@
 import { logActivity } from './activity-log.ts';
 import type { DB } from './database.ts';
 import { getEvent, type EventRow } from './events.ts';
+import { recomputeEvent } from './next-action.ts';
 
 /**
  * Event start (D17): once the event has begun, Found rows nobody approved are deleted. Skipped
@@ -30,9 +31,13 @@ export function runEventStart(db: DB, eventId: string, now = Date.now()): number
 }
 
 /**
- * What an event page calls as it loads: the start job if it is due. Returns the event as it
- * is afterwards, so the page renders the purged state rather than the one it read first.
+ * What an event page calls as it loads: the start job if it is due, then the next-action
+ * pass, since "due" and "the event has begun" move with the clock and not with a write
+ * (§5.2). Returns the event as it is afterwards, so the page renders the purged state
+ * rather than the one it read first.
  */
 export function eventPageLoad(db: DB, event: EventRow, now = Date.now()): EventRow {
-	return runEventStart(db, event.id, now) === null ? event : (getEvent(db, event.id) ?? event);
+	const started = runEventStart(db, event.id, now);
+	recomputeEvent(db, event.id, now);
+	return started === null ? event : (getEvent(db, event.id) ?? event);
 }

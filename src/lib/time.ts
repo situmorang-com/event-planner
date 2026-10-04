@@ -27,6 +27,20 @@ export function formatDate(ts: number, timeZone: string): string {
 	);
 }
 
+/** "Tue 7 Oct": for due dates, where the weekday matters and the year never does. */
+export function formatDueDay(ts: number, timeZone: string): string {
+	return tidy(
+		new Intl.DateTimeFormat('en-GB', {
+			timeZone,
+			weekday: 'short',
+			day: 'numeric',
+			month: 'short'
+		})
+			.format(ts)
+			.replace(',', '')
+	);
+}
+
 /** "2 Oct": for markers and chips, where the weekday and year would only add noise. */
 export function formatDay(ts: number, timeZone: string): string {
 	return tidy(
@@ -84,6 +98,32 @@ export function fromLocalInput(value: string, timeZone: string): number | null {
 export function toLocalInput(ts: number, timeZone: string): string {
 	const d = new Date(ts + zoneOffsetMs(ts, timeZone));
 	return d.toISOString().slice(0, 16);
+}
+
+/** The calendar date of `ts` in `timeZone`, as "YYYY-MM-DD". */
+export function localDate(ts: number, timeZone: string): string {
+	const parts = new Intl.DateTimeFormat('en-CA', {
+		timeZone,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).formatToParts(ts);
+	const get = (type: string) => parts.find((p) => p.type === type)?.value;
+	return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/** Midnight at the start of `ts`'s day in `timeZone`. */
+export function startOfDay(ts: number, timeZone: string): number {
+	return fromLocalInput(`${localDate(ts, timeZone)}T00:00`, timeZone)!;
+}
+
+/** The last millisecond of `ts`'s day in `timeZone`: what "due today" is measured against. */
+export function endOfDay(ts: number, timeZone: string): number {
+	// The next day's midnight, found by date arithmetic so a DST change can't skip a day.
+	const date = localDate(ts, timeZone);
+	const next = new Date(`${date}T00:00:00Z`);
+	next.setUTCDate(next.getUTCDate() + 1);
+	return fromLocalInput(`${next.toISOString().slice(0, 10)}T00:00`, timeZone)! - 1;
 }
 
 export function isValidTimeZone(tz: string): boolean {

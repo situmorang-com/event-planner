@@ -1,5 +1,6 @@
 import type { DB } from './database.ts';
 import { shortId } from './ids.ts';
+import { recomputeEvent } from './next-action.ts';
 import type { ChaseRules } from './settings.ts';
 import type { Country } from './settings.ts';
 
@@ -101,8 +102,8 @@ export function createEvent(db: DB, input: EventInput, now = Date.now()): string
 	return id;
 }
 
-/** The settings form; fields it doesn't carry keep their values. */
-export function updateEvent(db: DB, id: string, input: EventInput) {
+/** The settings form; fields it doesn't carry keep their values. Due dates follow the date. */
+export function updateEvent(db: DB, id: string, input: EventInput, now = Date.now()) {
 	db.prepare(
 		`UPDATE events SET name = @name, venue = @venue, starts_at = @startsAt, timezone = @timezone,
 			qr_mode = @qrMode,
@@ -126,6 +127,16 @@ export function updateEvent(db: DB, id: string, input: EventInput) {
 		keepText: input.invitationText === undefined ? 1 : 0,
 		keepRules: input.chaseRules === undefined ? 1 : 0
 	});
+	recomputeEvent(db, id, now);
+}
+
+/** The per-event chase override (D20) from the Planning tab; null follows the settings. */
+export function setChaseRules(db: DB, id: string, rules: ChaseRules | null, now = Date.now()) {
+	db.prepare(`UPDATE events SET chase_rules = ? WHERE id = ?`).run(
+		rules ? JSON.stringify(rules) : null,
+		id
+	);
+	recomputeEvent(db, id, now);
 }
 
 /** The per-event invitation wording (D21), from the Planning tab; empty means the template. */

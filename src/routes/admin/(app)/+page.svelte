@@ -6,6 +6,7 @@
 	import Calendar from '@lucide/svelte/icons/calendar';
 	import ScanLine from '@lucide/svelte/icons/scan-line';
 	import MailCheck from '@lucide/svelte/icons/mail-check';
+	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -77,6 +78,12 @@
 						Yes {event.attending.toLocaleString()}{#if event.target_count}
 							/ {event.target_count.toLocaleString()} target{/if}
 						<span class="muted">· Confirmed {event.confirmed.toLocaleString()}</span>
+					</a>
+				{/if}
+				{#if event.due}
+					<a class="rsvp due" href="/admin/events/{event.id}/people">
+						<CalendarClock size={15} />
+						Due today {event.due.toLocaleString()}
 					</a>
 				{/if}
 			</li>
@@ -184,6 +191,10 @@
 	}
 
 	.rsvp:hover {
+		color: var(--brand-text);
+	}
+
+	.rsvp.due {
 		color: var(--brand-text);
 	}
 

@@ -1,5 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import { isReply, linkedinProfile } from '$lib/invitations';
+import { MENU_KINDS, type MessageKind } from '$lib/people';
+import { fromLocalInput } from '$lib/time';
 import { logActivity } from '$lib/server/activity-log';
 import { countCheckins } from '$lib/server/checkins';
 import {
@@ -38,6 +40,7 @@ import { parseGuestList } from '$lib/server/guest-list';
 import { eventPageLoad } from '$lib/server/jobs';
 import { countryResolver } from '$lib/server/messaging';
 import { messagingEnv } from '$lib/server/messaging-env';
+import { recomputeEvent, setNextActionOverride } from '$lib/server/next-action';
 import { genericRegistrationUrl } from '$lib/server/registration-token';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { getPeople, mergeInto } from '$lib/server/people';
@@ -59,6 +62,7 @@ function rowId(form: FormData, field = 'id'): number | null {
 
 const VIAS: Via[] = ['whatsapp', 'email', 'linkedin', 'other'];
 const isVia = (v: unknown): v is Via => VIAS.includes(v as Via);
+const isMenuKind = (v: unknown): v is MessageKind => MENU_KINDS.includes(v as MessageKind);
 
 /** A team name from the form, or null for "the company's owner" / nobody. */
 function ownerFrom(form: FormData): string | null {
@@ -262,6 +266,8 @@ export const actions: Actions = {
 		const id = cleanText((await request.formData()).get('company'), 20);
 		if (!id) return fail(400, { blockError: 'That company is gone.' });
 		unblockCompany(db, id);
+		// Blocking cleared the company's due dates; unblocking brings them back.
+		recomputeEvent(db, event.id);
 		logActivity(db, {
 			eventId: event.id,
 			kind: 'unlock',
@@ -328,21 +334,37 @@ export const actions: Actions = {
 		return { skippedAll: skipAll(db, event.id, key, { by: locals.who }) };
 	},
 
-	// Sent with navigator.sendBeacon as a message link opens (§7), so nothing waits on it.
+	// Sent with navigator.sendBeacon as a message link opens (§7), so nothing waits on it. The
+	// kind is the one picked in the row's message menu, else what the stage calls for.
 	touch: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = rowId(form);
 		const via = form.get('via');
+		const kind = form.get('kind');
 		if (id === null || !isVia(via)) return fail(400, { touchError: true });
 		const state = getStageState(db, id);
 		if (!state) return fail(404, { touchError: true });
 		addTouch(db, event.id, id, {
-			kind: suggestedTouchKind(state),
+			kind: isMenuKind(kind) ? kind : suggestedTouchKind(state),
 			via,
 			by: locals.who
 		});
 		return { touched: id };
+	},
+
+	// The organizer's own due date (§4.2): a day in the event's zone, taken as 9 am there.
+	// An empty date clears the override and the rules' date comes back.
+	due: async ({ params, request }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		const id = rowId(form);
+		const date = form.get('clear') === '1' ? '' : String(form.get('date') ?? '').trim();
+		if (id === null) return fail(400, { dueError: 'That row is gone.' });
+		const at = date ? fromLocalInput(`${date}T09:00`, event.timezone) : null;
+		if (date && at === null) return fail(400, { dueError: 'That date doesn’t look right.' });
+		setNextActionOverride(db, event.id, id, at);
+		return { dueSet: id };
 	},
 
 	untouch: async ({ params, request }) => {

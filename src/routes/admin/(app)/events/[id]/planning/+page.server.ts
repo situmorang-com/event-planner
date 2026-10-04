@@ -1,9 +1,10 @@
 import { error, fail } from '@sveltejs/kit';
 import { DEPARTMENTS, SENIORITY, type Brief } from '$lib/planning';
+import { CHASE_FIELDS, chaseFormValues, parseChaseForm } from '$lib/server/chase-form';
 import { countCheckins } from '$lib/server/checkins';
 import { db } from '$lib/server/db';
 import { countLive, countToReview, listEventPeople } from '$lib/server/event-people';
-import { getEvent, setInvitationText } from '$lib/server/events';
+import { getEvent, setChaseRules, setInvitationText } from '$lib/server/events';
 import { eventPageLoad } from '$lib/server/jobs';
 import { languageFor } from '$lib/server/messaging';
 import {
@@ -13,6 +14,7 @@ import {
 	LANGUAGE_LABEL,
 	PLACEHOLDERS
 } from '$lib/server/message-templates';
+import { rulesFor } from '$lib/server/next-action';
 import { cleanText } from '$lib/server/normalize';
 import {
 	addTargets,
@@ -26,6 +28,7 @@ import {
 	setTargetFocus,
 	setTargetResearch
 } from '$lib/server/planning';
+import { chaseDefaults } from '$lib/server/settings';
 import { publicBaseUrl } from '$lib/server/urls';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -92,6 +95,13 @@ export const load: PageServerLoad = ({ params, url }) => {
 			languageLabel: LANGUAGE_LABEL[languageFor(event)],
 			fallback: DEFAULT_TEMPLATES.invitation[languageFor(event)],
 			placeholders: PLACEHOLDERS
+		},
+		// The chase rules this event runs on (D20): its own, or the settings defaults.
+		chase: {
+			fields: CHASE_FIELDS,
+			own: event.chase_rules !== null,
+			values: chaseFormValues(rulesFor(db, event)),
+			defaults: chaseFormValues(chaseDefaults(db))
 		},
 		base: publicBaseUrl(url).base,
 		now,
@@ -166,6 +176,20 @@ export const actions: Actions = {
 		if (containsAppendedLine(text)) return fail(400, { invitationError: APPENDED_LINE_ERROR });
 		setInvitationText(db, event.id, text);
 		return { invitationSaved: true };
+	},
+
+	// The per-event chase override (D20): "use defaults" clears it, else all five fields are kept.
+	chase: async ({ params, request }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		if (form.get('useDefaults') === '1') {
+			setChaseRules(db, event.id, null);
+			return { chaseSaved: true };
+		}
+		const rules = parseChaseForm(form);
+		if (typeof rules === 'string') return fail(400, { chaseError: rules });
+		setChaseRules(db, event.id, rules);
+		return { chaseSaved: true };
 	},
 
 	removeTarget: async ({ params, request }) => {
