@@ -1,7 +1,7 @@
 <script lang="ts">
 	// The public registration pages (§4.6): the personal link, the generic link and the one-tap
 	// reconfirm page share this one view, in the language the server picked for the row.
-	import { enhance } from '$app/forms';
+	import { applyAction, enhance } from '$app/forms';
 	import { tick } from 'svelte';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import ConsentBoxes from '$lib/components/ConsentBoxes.svelte';
@@ -58,10 +58,14 @@
 	let submitting = $state(false);
 	let formEl = $state<HTMLFormElement>();
 
-	const submit: SubmitFunction = () => {
+	const submit: SubmitFunction = ({ action }) => {
 		submitting = true;
+		// "Not me" and "Remove me" make this link stop answering, so re-running the page's load
+		// would replace the confirmation with "Link not found": show the result as it is.
+		const final = /\/(notMe|removeMe)$/.test(action.search);
 		return async ({ result, update }) => {
-			await update({ reset: false });
+			if (final) await applyAction(result);
+			else await update({ reset: false });
 			submitting = false;
 			if (result.type === 'success') window.scrollTo({ top: 0, behavior: 'smooth' });
 			else if (result.type === 'failure') {
