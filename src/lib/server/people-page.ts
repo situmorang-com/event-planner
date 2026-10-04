@@ -16,7 +16,7 @@ import {
 } from './event-people.ts';
 import type { EventRow } from './events.ts';
 import { countryOf, type CountryOption } from './guest-list.ts';
-import { contactPerson, rowMessage, type MessagingEnv } from './messaging.ts';
+import { contactPerson, registrationUrl, rowMessage, type MessagingEnv } from './messaging.ts';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
 import { contactBlock, type PersonRow } from './people.ts';
 import { consentBoxesSince, type Country } from './settings.ts';
@@ -46,7 +46,8 @@ export interface PeopleView {
 export function toView(
 	row: EventPersonRow,
 	since: number | null,
-	message: RowMessage | null = null
+	message: RowMessage | null = null,
+	registrationLink: string | null = null
 ): PeopleRow {
 	// A Found row has no person yet, so nothing can be closed to it except its company.
 	const person = row.person_id === null ? null : contactPerson(row);
@@ -94,7 +95,9 @@ export function toView(
 			email: !!person && email === null && !row.blocked_at,
 			reason: whatsapp && email ? whatsapp : null
 		},
-		message
+		message,
+		needs_review: !!row.needs_review,
+		registration_link: registrationLink
 	};
 }
 
@@ -134,8 +137,15 @@ export function peopleView(
 	now = Date.now()
 ): PeopleView {
 	const since = consentBoxesSince(db);
+	// A link needs the event's date (its expiry) and a person behind the row to answer for.
+	const linkable = env && event.starts_at !== null;
 	const rows = listEventPeople(db, event.id).map((r) =>
-		toView(r, since, env ? rowMessage(db, { row: r, event }, env) : null)
+		toView(
+			r,
+			since,
+			env ? rowMessage(db, { row: r, event }, env) : null,
+			linkable && r.stage !== 'found' ? registrationUrl(r, event, env) : null
+		)
 	);
 	const live = rows.filter((r) => r.stage !== 'found');
 	return {

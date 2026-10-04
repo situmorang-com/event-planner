@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+	genericRegistrationUrl,
+	reconfirmUrl,
 	registrationRowId,
 	registrationToken,
 	registrationUrl,
@@ -19,6 +21,10 @@ describe('registration tokens', () => {
 		expect(registrationUrl({ id: 42 }, event, { base: 'https://x.test/', secret })).toBe(
 			`https://x.test/r/${token}`
 		);
+		expect(reconfirmUrl({ id: 42 }, event, { base: 'https://x.test', secret })).toBe(
+			`https://x.test/r/${token}/ok`
+		);
+		expect(genericRegistrationUrl(event, 'https://x.test/')).toBe('https://x.test/r/e/evt1');
 	});
 
 	it('verifies its own row on its own event while the event is on', () => {

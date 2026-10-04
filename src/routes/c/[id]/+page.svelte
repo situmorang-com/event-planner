@@ -3,6 +3,7 @@
 	import { replaceState } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import ConsentBoxes from '$lib/components/ConsentBoxes.svelte';
 	import Logo from '$lib/components/Logo.svelte';
 	import { firstName, initials } from '$lib/names';
 	import { formatDate, formatDateTime, formatTime } from '$lib/time';
@@ -381,22 +382,13 @@
 			</div>
 
 			<div class="consent">
-				<label class="check">
-					<input
-						type="checkbox"
-						name="consent"
-						aria-invalid={errors.consent ? 'true' : undefined}
-						aria-describedby={errors.consent ? 'consent-error' : undefined}
-					/>
-					<span>
-						I agree that {data.org.name} may keep these details to record my attendance and follow up
-						about this event.
-						{#if data.org.privacyUrl}<a href={data.org.privacyUrl} target="_blank" rel="noreferrer"
-								>Privacy policy</a
-							>{/if}
-					</span>
-				</label>
-				{#if errors.consent}<p class="error-text" id="consent-error">{errors.consent}</p>{/if}
+				<ConsentBoxes
+					language="en"
+					org={data.org.name}
+					coHosts={data.event.coHosts}
+					privacyUrl={data.org.privacyUrl}
+					error={errors.consent}
+				/>
 				<label class="check">
 					<input type="checkbox" name="remember" checked />
 					<span>Remember me on this phone for one-tap check-in next time</span>

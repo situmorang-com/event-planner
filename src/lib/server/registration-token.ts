@@ -51,3 +51,17 @@ export function registrationUrl(
 ): string {
 	return `${base.replace(/\/+$/, '')}/r/${registrationToken(secret, event.id, row.id)}`;
 }
+
+/** `{link}` in a reminder: the one-tap reconfirm page behind the same token (§4.6). */
+export function reconfirmUrl(
+	row: { id: number },
+	event: { id: string },
+	env: { base: string; secret: string }
+): string {
+	return `${registrationUrl(row, event, env)}/ok`;
+}
+
+/** The generic link for an event: no prefill, registering is the yes (§4.6). */
+export function genericRegistrationUrl(event: { id: string }, base: string): string {
+	return `${base.replace(/\/+$/, '')}/r/e/${event.id}`;
+}

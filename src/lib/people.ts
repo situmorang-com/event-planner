@@ -171,6 +171,10 @@ export interface PeopleRow extends ChipRow {
 	contact: { whatsapp: boolean; email: boolean; reason: string | null };
 	/** What the buttons open; null while found (no person to write to yet). */
 	message: RowMessage | null;
+	/** Came in through the generic registration link: the company owner should check them (§4.6). */
+	needs_review: boolean;
+	/** The row's personal registration link (§7); null while found or before the event has a date. */
+	registration_link: string | null;
 }
 
 export const isLive = (row: Pick<PeopleRow, 'stage'>) => row.stage !== 'found';
@@ -197,6 +201,8 @@ export function markers(row: PeopleRow, day: (ts: number) => string): Marker[] {
 	if (row.blocked_at) list.push({ key: 'blocked', label: 'Blocked company', tone: 'bad' });
 	if (row.suppressed) list.push({ key: 'suppressed', label: 'Suppressed', tone: 'bad' });
 	if (needsDetails(row)) list.push({ key: 'details', label: 'Needs details', tone: 'warn' });
+	if (row.needs_review)
+		list.push({ key: 'review', label: 'Self-registered, check company owner', tone: 'warn' });
 	if (row.chase_count)
 		list.push({
 			key: 'chased',

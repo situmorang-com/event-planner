@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { checkIn, listAttendees, type ContactInput } from './checkins';
 import { listContacts } from './contacts';
 import { createDb, type DB } from './database';
+import { listEventPeople } from './event-people';
 import { createEvent } from './events';
+import { getPerson } from './people';
 import { computeStats } from './stats';
 
 const meta = { method: 'form' as const, device: 'ios' as const, consent: true };
@@ -97,6 +99,47 @@ describe('checkIn', () => {
 			meta
 		);
 		expect(colleague.personId).not.toBe(staffAdded.personId);
+	});
+
+	it('records the three consent boxes on the check-in, the row and the person (§4.7)', () => {
+		const first = checkIn(db, eventId, person(), { ...meta, consentShare: true }, 1_000);
+		const row = () => listEventPeople(db, eventId)[0];
+		expect(row()).toMatchObject({
+			stage: 'checked_in',
+			checkin_id: first.checkinId,
+			consent_event_at: 1_000,
+			consent_share_at: 1_000
+		});
+		expect(getPerson(db, first.personId)!.consent_future_at).toBeNull();
+
+		const other = createEvent(db, {
+			name: 'Summit',
+			venue: '',
+			startsAt: null,
+			timezone: 'UTC',
+			qrMode: 'static'
+		});
+		const second = checkIn(db, other, person(), { ...meta, consentFuture: true }, 2_000);
+		expect(second.personId).toBe(first.personId);
+		expect(getPerson(db, first.personId)!.consent_future_at).toBe(2_000);
+		expect(listEventPeople(db, other)[0]).toMatchObject({
+			consent_event_at: 2_000,
+			consent_share_at: null
+		});
+
+		// A staff add records no consent at all, whatever the form carried.
+		const staff = checkIn(
+			db,
+			eventId,
+			person({ name: 'Bima', email: 'bima@example.com', phone: null }),
+			{ ...meta, method: 'staff', consentFuture: true, consentShare: true },
+			3_000
+		);
+		expect(listEventPeople(db, eventId)[1]).toMatchObject({
+			consent_event_at: null,
+			consent_share_at: null
+		});
+		expect(getPerson(db, staff.personId)!.consent_future_at).toBeNull();
 	});
 
 	it('marks people who attended an earlier event as returning', () => {

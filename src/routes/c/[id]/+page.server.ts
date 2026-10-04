@@ -49,7 +49,8 @@ export const load: PageServerLoad = async ({ params, url, cookies, request, loca
 			name: event.name,
 			venue: event.venue,
 			startsAt: event.starts_at,
-			timezone: event.timezone
+			timezone: event.timezone,
+			coHosts: event.co_hosts
 		},
 		org: { name: ORG_NAME, privacyUrl: PRIVACY_URL },
 		platform: deviceFromUserAgent(request.headers.get('user-agent'))
@@ -151,6 +152,10 @@ export const actions: Actions = {
 			jobTitle: cleanText(raw.jobTitle, 120)
 		};
 		const consent = form.get('consent') === 'on';
+		// Boxes 2 and 3 (§4.7): the future-events tick sticks to the person, the co-host tick to
+		// this row; neither is required.
+		const consentFuture = form.get('consentFuture') === 'on';
+		const consentShare = !!event.co_hosts.trim() && form.get('consentShare') === 'on';
 
 		const errors: Partial<Record<'name' | 'email' | 'consent', string>> = {};
 		if (!input.name) errors.name = 'Please add your name.';
@@ -164,7 +169,9 @@ export const actions: Actions = {
 		const result = checkIn(db, event.id, input, {
 			method: METHODS.includes(methodField) ? methodField : 'form',
 			device: deviceFromUserAgent(request.headers.get('user-agent')),
-			consent
+			consent,
+			consentFuture,
+			consentShare
 		});
 
 		if (form.get('remember') === 'on') rememberMe(cookies, url, result.personId);

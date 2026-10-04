@@ -17,6 +17,7 @@
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Flag from '@lucide/svelte/icons/flag-off';
+	import Link from '@lucide/svelte/icons/link';
 	import Mail from '@lucide/svelte/icons/mail';
 	import Merge from '@lucide/svelte/icons/merge';
 	import MessageCircle from '@lucide/svelte/icons/message-circle';
@@ -62,6 +63,7 @@
 
 	let editing = $state(false);
 	let merging = $state(false);
+	let copied = $state(false);
 	let menu = $state<HTMLDetailsElement | null>(null);
 	let candidates = $state<Candidate[]>([]);
 	let candidateQuery = $state('');
@@ -132,6 +134,21 @@
 		} else if (e.key === 'Escape') {
 			e.currentTarget.value = row.note;
 			e.currentTarget.blur();
+		}
+	}
+
+	// The personal registration link (§7) goes on the clipboard, to paste into any channel.
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+	async function copyLink() {
+		if (!row.registration_link) return;
+		try {
+			await navigator.clipboard.writeText(row.registration_link);
+			copied = true;
+			clearTimeout(copiedTimer);
+			copiedTimer = setTimeout(() => (copied = false), 1500);
+		} catch {
+			// Clipboard refused (http on a LAN laptop): the prompt still lets them copy by hand.
+			prompt('Copy the registration link', row.registration_link);
 		}
 	}
 
@@ -516,6 +533,18 @@
 			{#if message?.hint && !message.whatsapp && !message.email}
 				<span class="hint-text" title={message.hint}>No message link</span>
 			{/if}
+			{#if row.registration_link && !row.skipped_at && !row.locked_at}
+				<button
+					type="button"
+					class="btn btn-ghost btn-icon btn-sm copy-link"
+					class:copied
+					title={copied ? 'Copied' : `Copy ${first}’s registration link`}
+					onclick={copyLink}
+				>
+					{#if copied}<Check size={17} />{:else}<Link size={17} />{/if}
+					<span class="sr-only">{copied ? 'Copied' : `Copy ${first}’s registration link`}</span>
+				</button>
+			{/if}
 			{#if !found && row.stage !== 'checked_in' && (row.stage === 'shortlisted' || viaLinkedin)}
 				<form method="POST" action="?/invited" use:enhance>
 					<input type="hidden" name="id" value={row.id} />
@@ -560,6 +589,12 @@
 						>
 							<Merge size={15} /> Merge into…
 						</button>
+					{/if}
+					{#if row.needs_review}
+						<form method="POST" action="?/reviewed" use:enhance={() => closeMenu()}>
+							<input type="hidden" name="id" value={row.id} />
+							<button class="menu-item"><Check size={15} /> Reviewed</button>
+						</form>
 					{/if}
 					{#if row.person_id && row.d365_flagged}
 						<form
@@ -888,6 +923,10 @@
 		inset: 0;
 		opacity: 0;
 		cursor: pointer;
+	}
+
+	.copy-link.copied {
+		color: var(--good);
 	}
 
 	.hint-text {

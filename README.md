@@ -42,7 +42,10 @@ dev server it stays hidden and the autofill path is used instead.
   with each visit, and everything exports to CSV (Excel-safe, UTF-8).
 - **Staff tools.** Add someone by hand, remove a check-in, open or close the doors, and delete a
   contact on request.
-- **Consent.** Explicit consent is recorded with a timestamp on every self check-in.
+- **Consent.** Three boxes on the check-in and registration pages: this event (required),
+  future events (optional, sticks to the person) and sharing name, company and title with the
+  event's co-hosts (shown only when the event names co-hosts). Each tick is recorded with a
+  timestamp; staff adds record none.
 
 ## Quick start
 
@@ -113,8 +116,23 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   LinkedIn** records an invitation sent elsewhere. Buttons stay hidden for people who may not be
   contacted (locked, suppressed by a D365 flag, or past Malaysian attendees who never agreed to
   hear about future events).
+- **Registration links.** The link button on a row copies that person's registration link to
+  paste into WhatsApp, an email or anywhere else (the message buttons already include it). The
+  page it opens prefills only their name and company, never an email or mobile: the link
+  carries the row id and a signature, nothing personal, and it stops working once the event
+  has ended (moving the event's end date re-validates every link sent). The guest answers
+  _Yes / Maybe / No_, types their own email or mobile (read in the company's phone country),
+  and ticks the consent boxes; a yes makes the row **Confirmed**, a no takes a confirmation
+  back. The page is in the row's language (Indonesian or Malay from the phone country, or the
+  event's explicit choice). **Not me** lists the channel the invitation went out on and skips
+  the row; **Remove me** locks the person everywhere. **Registration link** in the header
+  copies the event's open link (`/r/e/<event>`) for a channel where no row exists yet: anyone
+  who registers through it is confirmed and marked _Self-registered, check company owner_
+  until someone picks **Reviewed** in the row menu. Reminders link a one-tap reconfirm page
+  that marks the row confirmed again.
 - **Markers.** _Needs details_ (no email and no mobile), _chased ×N_, _locked_, _blocked
-  company_, _suppressed_, _no consent recorded_ (a staff add), _via LinkedIn_.
+  company_, _suppressed_, _no consent recorded_ (a staff add), _via LinkedIn_,
+  _self-registered, check company owner_.
 - **Owners.** Each company has an owner, picked from the team names in settings, and a row can
   override it; **Mine** shows the rows that are yours.
 - **Row menu.** Edit details, Remove from the event, **Don't contact again…** (locks the person
@@ -198,19 +216,19 @@ only, never names. An event's page shows its entries under **Activity**.
 
 Copy `.env.example` to `.env`. Everything is optional in development.
 
-| Variable                | Purpose                                                                                                                                                                                   |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_PASSWORD`        | Organizer password. **Required in production**: without it, sign-in is disabled.                                                                                                          |
-| `ORIGIN`                | Public URL, e.g. `https://checkin.example.com`. **Required in production** by SvelteKit's Node adapter, otherwise every form post is rejected.                                            |
-| `PUBLIC_BASE_URL`       | URL printed into QR codes, if it differs from `ORIGIN`.                                                                                                                                   |
-| `ORG_NAME`              | Shown in the consent line: "I agree that _SRKK_ may keep these details…"                                                                                                                  |
-| `PRIVACY_URL`           | Privacy policy link next to the consent box, and in the source line sent to people found by research. **Required** to message them: without it their rows show a hint instead of buttons. |
-| `DEFAULT_PHONE_COUNTRY` | Reads local numbers such as `0812-3456-7890` as `+62…`. Default `ID`; use `MY` for Malaysia.                                                                                              |
-| `DEFAULT_TIMEZONE`      | Fallback event time zone. Default `Asia/Jakarta`; new events take the organizer's browser zone.                                                                                           |
-| `DB_PATH`               | SQLite file. Default `data/attendance.db`. Put it on a persistent volume.                                                                                                                 |
-| `SESSION_SECRET`        | Optional. By default a secret is generated once and stored in the database.                                                                                                               |
-| `ADDRESS_HEADER`        | Behind a reverse proxy, `X-Forwarded-For`, so rate limits see each attendee's IP instead of the proxy's (adapter-node setting).                                                           |
-| `XFF_DEPTH`             | Number of proxies in front: `1` for Traefik alone, `2` with Cloudflare proxying on top.                                                                                                   |
+| Variable                | Purpose                                                                                                                                                                                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ADMIN_PASSWORD`        | Organizer password. **Required in production**: without it, sign-in is disabled.                                                                                                                                                                                                                 |
+| `ORIGIN`                | Public URL, e.g. `https://checkin.example.com`. **Required in production** by SvelteKit's Node adapter, otherwise every form post is rejected.                                                                                                                                                   |
+| `PUBLIC_BASE_URL`       | URL printed into QR codes, if it differs from `ORIGIN`.                                                                                                                                                                                                                                          |
+| `ORG_NAME`              | Shown in the consent line: "I agree that _SRKK_ may keep these details…"                                                                                                                                                                                                                         |
+| `PRIVACY_URL`           | Privacy policy link next to the consent boxes (check-in and registration pages), and in the source line sent to people found by research. **Required**: registering guests must be able to read it, and without it research finds can't be messaged (their rows show a hint instead of buttons). |
+| `DEFAULT_PHONE_COUNTRY` | Reads local numbers such as `0812-3456-7890` as `+62…`. Default `ID`; use `MY` for Malaysia.                                                                                                                                                                                                     |
+| `DEFAULT_TIMEZONE`      | Fallback event time zone. Default `Asia/Jakarta`; new events take the organizer's browser zone.                                                                                                                                                                                                  |
+| `DB_PATH`               | SQLite file. Default `data/attendance.db`. Put it on a persistent volume.                                                                                                                                                                                                                        |
+| `SESSION_SECRET`        | Optional. By default a secret is generated once and stored in the database.                                                                                                                                                                                                                      |
+| `ADDRESS_HEADER`        | Behind a reverse proxy, `X-Forwarded-For`, so rate limits see each attendee's IP instead of the proxy's (adapter-node setting).                                                                                                                                                                  |
+| `XFF_DEPTH`             | Number of proxies in front: `1` for Traefik alone, `2` with Cloudflare proxying on top.                                                                                                                                                                                                          |
 
 ## Deploying
 
@@ -235,6 +253,8 @@ network.
 - **Contacts:** name, email, mobile (E.164 when it parses), company and job title.
 - **Check-ins:** time, device type (iPhone, Android or other), method (form, contact card,
   one-tap or staff) and when consent was given.
+- **Consent:** when the this-event box and the co-host box were ticked, per event row; when
+  the future-events box was ticked, per person. Registration pages record the same boxes.
 - **Entrance screen:** shows first name and last initial, nothing else.
 - **People on an event:** what the organizer enters or research finds: name, company, job
   title, email, mobile, LinkedIn profile link, stage, reply, note, owner and the messages

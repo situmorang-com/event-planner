@@ -85,7 +85,10 @@ export function checkIn(
 			};
 		}
 
-		const consentAt = meta.consent ? now : null;
+		// A staff add records no consent (§4.7): nobody ticked anything.
+		const staff = meta.method === 'staff';
+		const consentAt = meta.consent && !staff ? now : null;
+		const consentShareAt = meta.consentShare && !staff ? now : null;
 		const { lastInsertRowid } = db
 			.prepare(
 				`INSERT INTO checkins (event_id, person_id, checked_in_at, method, device, consent_at)
@@ -93,15 +96,8 @@ export function checkIn(
 			)
 			.run(eventId, personId, now, meta.method, meta.device, consentAt);
 		const checkinId = Number(lastInsertRowid);
-		linkCheckin(
-			db,
-			eventId,
-			personId,
-			checkinId,
-			{ consentAt, consentShareAt: meta.consentShare ? now : null, by: meta.by },
-			now
-		);
-		if (meta.consentFuture) setConsentFuture(db, personId, now, now);
+		linkCheckin(db, eventId, personId, checkinId, { consentAt, consentShareAt, by: meta.by }, now);
+		if (meta.consentFuture && !staff) setConsentFuture(db, personId, now, now);
 		touchLastEvent(db, personId, now);
 
 		const { n } = position.get(eventId, checkinId) as { n: number };

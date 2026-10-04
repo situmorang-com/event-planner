@@ -21,7 +21,9 @@
 	import Ban from '@lucide/svelte/icons/ban';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
+	import Check from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
+	import Link from '@lucide/svelte/icons/link';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Search from '@lucide/svelte/icons/search';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
@@ -181,6 +183,21 @@
 		return '';
 	});
 	const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
+
+	// The open registration link for the event (§4.6), for a channel where no row exists yet.
+	let copiedLink = $state(false);
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+	async function copyGenericLink() {
+		if (!data.genericLink) return;
+		try {
+			await navigator.clipboard.writeText(data.genericLink);
+			copiedLink = true;
+			clearTimeout(copiedTimer);
+			copiedTimer = setTimeout(() => (copiedLink = false), 1500);
+		} catch {
+			prompt('Copy the registration link', data.genericLink);
+		}
+	}
 </script>
 
 <svelte:head>
@@ -207,6 +224,15 @@
 	</div>
 	{#if view}
 		<div class="head-actions">
+			{#if data.genericLink}
+				<button
+					class="btn btn-secondary"
+					onclick={copyGenericLink}
+					title="Copy the open registration link: anyone with it can register, and their row waits for the company owner"
+				>
+					{#if copiedLink}<Check size={17} /> Copied{:else}<Link size={17} /> Registration link{/if}
+				</button>
+			{/if}
 			{#if live.length}
 				<a class="btn btn-secondary" href="/admin/events/{event.id}/people.csv">
 					<Download size={17} /> CSV

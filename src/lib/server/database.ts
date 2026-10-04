@@ -4,7 +4,13 @@ import { dirname } from 'node:path';
 import { seedMessageTemplates } from './message-templates.ts';
 import { migrateToV2 } from './migrate-v2.ts';
 import { SCHEMA, SCHEMA_TABLES_VERSION, TABLES, tableExists } from './schema.ts';
-import { isCountry, schemaVersion, setSchemaVersion, type Country } from './settings.ts';
+import {
+	isCountry,
+	recordConsentBoxesSince,
+	schemaVersion,
+	setSchemaVersion,
+	type Country
+} from './settings.ts';
 
 export type DB = Database.Database;
 
@@ -21,7 +27,11 @@ export interface MigrateOptions {
 // it just as on a migrated one.
 const STEPS: { version: number; run: (db: DB, opts: MigrateOptions) => void }[] = [
 	{ version: 2, run: migrateToV2 },
-	{ version: 3, run: (db) => seedMessageTemplates(db) }
+	{ version: 3, run: (db) => seedMessageTemplates(db) },
+	// Version 4 ships the consent boxes (§4.7, §2.4 step 9): from this moment a check-in is
+	// offered the future-events box, so a checkin-origin person created earlier without a tick
+	// is "legacy" (§2.3). Stamped once; a fresh file gets it on creation.
+	{ version: 4, run: (db) => recordConsentBoxesSince(db) }
 ];
 
 /** Brings a database up to date. Safe to run on every start, and on a reused connection. */
@@ -44,8 +54,6 @@ export function migrate(db: DB, opts: MigrateOptions = {}) {
 		// Version 2 stamps itself inside its transaction; the data steps are stamped here.
 		if (schemaVersion(db) !== version) setSchemaVersion(db, version);
 	}
-	// consent_boxes_since is stamped by the step that ships the consent boxes (§2.4 step 9), not
-	// here: until then every checkin-origin person without a tick is legacy, the safe reading.
 	db.exec(SCHEMA);
 }
 

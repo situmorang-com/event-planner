@@ -798,6 +798,60 @@ export function clearLatestTouch(db: DB, eventId: string, id: number, now = Date
 	})();
 }
 
+/* ───────────────────────── Rows for people already in the pool ───────────────────────── */
+
+/**
+ * A shortlisted row for someone the pool already knows, with no snapshot: a walk-in at the
+ * door or a registration through the generic link. The caller moves the stage on.
+ */
+export function addRowForPerson(
+	db: DB,
+	eventId: string,
+	personId: string,
+	{
+		source,
+		by = '',
+		note = '',
+		needsReview = false
+	}: { source: Source; by?: string; note?: string; needsReview?: boolean },
+	now = Date.now()
+): number {
+	const person = getPerson(db, personId);
+	const { lastInsertRowid } = db.prepare(INSERT_ROW).run({
+		eventId,
+		personId,
+		companyId: person?.company_id ?? null,
+		name: null,
+		jobTitle: null,
+		email: null,
+		phone: null,
+		linkedin: null,
+		sourceUrl: null,
+		reason: null,
+		extra: null,
+		stage: 'shortlisted',
+		skippedAt: null,
+		skippedBy: null,
+		source,
+		note,
+		by,
+		now
+	});
+	const id = Number(lastInsertRowid);
+	if (needsReview) db.prepare(`UPDATE event_people SET needs_review = 1 WHERE id = ?`).run(id);
+	return id;
+}
+
+/** The company owner has looked at a generic-link registration (§4.6): the flag comes off. */
+export function clearReview(db: DB, eventId: string, id: number, now = Date.now()): boolean {
+	const { changes } = db
+		.prepare(
+			`UPDATE event_people SET needs_review = 0, updated_at = ? WHERE id = ? AND event_id = ?`
+		)
+		.run(now, id, eventId);
+	return changes > 0;
+}
+
 /* ───────────────────────── Check-ins ───────────────────────── */
 
 /**
@@ -819,28 +873,8 @@ export function linkCheckin(
 	return db.transaction(() => {
 		let row = findRow(db, eventId, personId);
 		if (!row) {
-			const person = getPerson(db, personId);
-			const { lastInsertRowid } = db.prepare(INSERT_ROW).run({
-				eventId,
-				personId,
-				companyId: person?.company_id ?? null,
-				name: null,
-				jobTitle: null,
-				email: null,
-				phone: null,
-				linkedin: null,
-				sourceUrl: null,
-				reason: null,
-				extra: null,
-				stage: 'shortlisted',
-				skippedAt: null,
-				skippedBy: null,
-				source: 'walk_in',
-				note: '',
-				by,
-				now
-			});
-			row = getEventPerson(db, eventId, Number(lastInsertRowid))!;
+			const id = addRowForPerson(db, eventId, personId, { source: 'walk_in', by }, now);
+			row = getEventPerson(db, eventId, id)!;
 		}
 		applyChange(db, row.id, { type: 'checkin', checkinId, consentAt }, now);
 		if (consentShareAt)
@@ -861,11 +895,14 @@ export function unlinkCheckin(db: DB, checkinId: number, now = Date.now()) {
 		db.prepare(`DELETE FROM event_people WHERE id = ?`).run(row.id);
 }
 
-/** Counts for the tab badge: live rows that aren't found or skipped. */
+/** Counts for the tab badge: live rows that aren't found or skipped ("Not me" skips a live row). */
 export function countLive(db: DB, eventId: string): number {
 	return (
 		db
-			.prepare(`SELECT COUNT(*) AS n FROM event_people WHERE event_id = ? AND stage <> 'found'`)
+			.prepare(
+				`SELECT COUNT(*) AS n FROM event_people
+				WHERE event_id = ? AND stage <> 'found' AND skipped_at IS NULL`
+			)
 			.get(eventId) as { n: number }
 	).n;
 }

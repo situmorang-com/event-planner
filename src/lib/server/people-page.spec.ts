@@ -17,7 +17,7 @@ import {
 import { createEvent, updateEvent } from './events';
 import { createPerson, getPeople } from './people';
 import { addPeople, FOUND_THRESHOLD, peopleView, reviewedGuests } from './people-page';
-import { recordConsentBoxesSince, setTeamNames } from './settings';
+import { consentBoxesSince, recordConsentBoxesSince, setTeamNames } from './settings';
 
 const guest = (name: string, extra: Partial<GuestInput> = {}): GuestInput => ({
 	name,
@@ -160,12 +160,13 @@ describe('peopleView', () => {
 	});
 
 	it('shows a legacy Malaysian attendee as not contactable until they register', () => {
-		// Without the stamp every checkin-origin person is legacy; with it, only earlier ones.
+		// Legacy means created before the consent boxes shipped (the version-4 stamp) without a tick.
+		const since = consentBoxesSince(db)!;
 		const personId = createPerson(
 			db,
 			{ name: 'Mei Ling', email: 'mei@x.my', phone: '+60123456789', company: 'Selat' },
 			{ origin: 'checkin' },
-			START - 10
+			since - 10
 		);
 		addShortlisted(
 			db,
@@ -183,9 +184,8 @@ describe('peopleView', () => {
 		expect(row.person_id).toBe(personId);
 		expect(row.contact).toEqual({ whatsapp: false, email: false, reason: 'not contactable' });
 		expect(markers(row, () => '').map((m) => m.key)).toEqual(['contact']);
+		// The stamp never moves, so a later call changes nothing.
 		recordConsentBoxesSince(db, START);
-		expect(view().rows[0].contact.reason).toBe('not contactable');
-		recordConsentBoxesSince(db, START - 100);
 		expect(view().rows[0].contact.reason).toBe('not contactable');
 
 		setReply(db, eventId, row.id, 'yes');

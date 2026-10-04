@@ -14,6 +14,7 @@ import { db } from '$lib/server/db';
 import {
 	addTouch,
 	clearLatestTouch,
+	clearReview,
 	countLive,
 	countToReview,
 	getEventPerson,
@@ -37,6 +38,7 @@ import { parseGuestList } from '$lib/server/guest-list';
 import { eventPageLoad } from '$lib/server/jobs';
 import { countryResolver } from '$lib/server/messaging';
 import { messagingEnv } from '$lib/server/messaging-env';
+import { genericRegistrationUrl } from '$lib/server/registration-token';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { getPeople, mergeInto } from '$lib/server/people';
 import { addPeople, peopleView, reviewedGuests } from '$lib/server/people-page';
@@ -74,11 +76,14 @@ export const load: PageServerLoad = ({ params, locals, url }) => {
 	};
 	const base = { event, me: locals.who || null, team: teamNames(db), tabs };
 	// Without a date there is nothing to count down to, and Found rows have no expiry (D17).
-	if (event.starts_at === null) return { ...base, view: null, companies: [] };
+	if (event.starts_at === null) return { ...base, view: null, companies: [], genericLink: null };
+	const env = messagingEnv(url);
 	return {
 		...base,
-		view: peopleView(db, event, messagingEnv(url)),
-		companies: companySuggestions(db)
+		view: peopleView(db, event, env),
+		companies: companySuggestions(db),
+		// The open registration link (§4.6): anyone with it can register, flagged for review.
+		genericLink: genericRegistrationUrl(event, env.base)
 	};
 };
 
@@ -265,6 +270,14 @@ export const actions: Actions = {
 			rowCount: 1
 		});
 		return { unblocked: id };
+	},
+
+	// The company owner has checked a generic-link registration (§4.6).
+	reviewed: async ({ params, request }) => {
+		const event = requireEvent(params.id);
+		const id = rowId(await request.formData());
+		if (id !== null) clearReview(db, event.id, id);
+		return { reviewed: id };
 	},
 
 	// Clears the D365 flags on the row's person (§6.1); logged by id.

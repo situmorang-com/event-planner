@@ -193,6 +193,9 @@ describe('renderMessage (§7)', () => {
 		const text = renderMessage(db, 'reminder', ctx(0), ENV)!;
 		expect(text).toMatch(/^Hai Rina, sekadar peringatan/);
 		expect(text.endsWith(OPT_OUT_LINE.ms)).toBe(true);
+		// A reminder links the one-tap reconfirm page (§4.6); every other kind the full form.
+		expect(text).toContain(`https://ep.test/r/${registrationToken('s', eventId, row(0).id)}/ok`);
+		expect(renderMessage(db, 'chase', ctx(0), ENV)).not.toContain('/ok');
 		db.prepare(`UPDATE events SET starts_at = NULL WHERE id = ?`).run(eventId);
 		const undated = renderMessage(db, 'reminder', ctx(0), ENV)!;
 		expect(undated).not.toContain('/r/');

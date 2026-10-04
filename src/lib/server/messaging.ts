@@ -8,7 +8,7 @@ import type { EventPersonRow } from './event-people.ts';
 import type { EventRow, Language } from './events.ts';
 import { OPT_OUT_LINE, SOURCE_LINE, templateBody, type MessageKind } from './message-templates.ts';
 import { contactBlock, type Channel } from './people.ts';
-import { registrationUrl } from './registration-token.ts';
+import { reconfirmUrl, registrationUrl } from './registration-token.ts';
 import { consentBoxesSince, type Country } from './settings.ts';
 import { suggestedTouchKind } from './stages.ts';
 
@@ -172,7 +172,13 @@ export function renderMessage(
 		event: event.name,
 		date: event.starts_at === null ? '' : formatWhen(event.starts_at, event.timezone, language),
 		venue: event.venue,
-		link: event.starts_at === null ? '' : registrationUrl(row, event, env),
+		// A reminder links the one-tap reconfirm page; everything else the full form (§4.6).
+		link:
+			event.starts_at === null
+				? ''
+				: kind === 'reminder'
+					? reconfirmUrl(row, event, env)
+					: registrationUrl(row, event, env),
 		org: env.org
 	});
 	const parts = [text];

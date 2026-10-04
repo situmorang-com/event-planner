@@ -97,9 +97,17 @@ describe('chase defaults', () => {
 });
 
 describe('consent boxes since', () => {
-	it('is recorded once and never moved forward', () => {
+	it('is stamped by schema version 4 and never moved afterwards', () => {
 		const db = createDb(':memory:');
-		// Nothing stamps it until the consent boxes ship: until then everyone is legacy.
+		const since = consentBoxesSince(db);
+		expect(since).not.toBeNull();
+		recordConsentBoxesSince(db, 5_000);
+		expect(consentBoxesSince(db)).toBe(since);
+	});
+
+	it('records the first stamp on a database without one', () => {
+		const db = createDb(':memory:');
+		db.prepare(`DELETE FROM settings WHERE key = 'consent_boxes_since'`).run();
 		expect(consentBoxesSince(db)).toBeNull();
 		recordConsentBoxesSince(db, 5_000);
 		recordConsentBoxesSince(db, 6_000);

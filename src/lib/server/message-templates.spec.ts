@@ -40,7 +40,7 @@ describe('message template seeding', () => {
 			VALUES ('chase', 'en', 'Our own chase {name}', 5, 'Sari')`
 		).run();
 		migrate(db);
-		expect(schemaVersion(db)).toBe(3);
+		expect(schemaVersion(db)).toBe(4);
 		expect(listTemplates(db)).toHaveLength(21);
 		expect(templateBody(db, 'chase', 'en')).toBe('Our own chase {name}');
 		expect(templateBody(db, 'chase', 'id')).toBe(DEFAULT_TEMPLATES.chase.id);

@@ -312,7 +312,7 @@ describe('migration to schema version 2', () => {
 
 		expect(db.pragma('foreign_key_check')).toEqual([]);
 		// Step 2 rebuilds the tables; step 3 then seeds the message templates (§7).
-		expect(schemaVersion(db)).toBe(3);
+		expect(schemaVersion(db)).toBe(4);
 		expect(countTemplates(db)).toBe(21);
 		expect(tables(db)).not.toContain('contacts');
 		expect(tables(db)).not.toContain('invitations');
@@ -432,20 +432,20 @@ describe('migration to schema version 2', () => {
 		).toEqual({
 			value: 'MY'
 		});
-		// The consent boxes have not shipped, so nothing says when legacy ends (§2.4 step 9).
-		expect(consentBoxesSince(db)).toBeNull();
+		// Version 4 stamps when the consent boxes shipped, so "legacy" has a date (§2.4 step 9).
+		expect(consentBoxesSince(db)).not.toBeNull();
 	});
 
 	it('gives a fresh database the current version straight away', () => {
 		const db = new Database(':memory:');
 		migrate(db);
-		expect(schemaVersion(db)).toBe(3);
-		expect(consentBoxesSince(db)).toBeNull();
+		expect(schemaVersion(db)).toBe(4);
+		expect(consentBoxesSince(db)).not.toBeNull();
 		expect(tables(db)).toContain('people');
 		expect(countTemplates(db)).toBe(21);
 		expect(tables(db)).not.toContain('contacts');
 		migrate(db);
-		expect(schemaVersion(db)).toBe(3);
+		expect(schemaVersion(db)).toBe(4);
 	});
 
 	it('gives every check-in at an event without a guest list a walk-in row', () => {
@@ -489,7 +489,7 @@ describe('migration to schema version 2', () => {
 			T0 - DAY
 		);
 		migrate(db);
-		expect(schemaVersion(db)).toBe(3);
+		expect(schemaVersion(db)).toBe(4);
 		expect(tables(db)).not.toContain('suggestions');
 		expect(tables(db)).toContain('invite_briefs');
 		expect(listEventPeople(db, 'old')).toMatchObject([
@@ -616,7 +616,7 @@ describe('migration to schema version 2', () => {
 		migrate(db);
 		migrate(db);
 		expect(snapshot()).toEqual(first);
-		expect(schemaVersion(db)).toBe(3);
+		expect(schemaVersion(db)).toBe(4);
 	});
 
 	it('keeps a .pre-v2 copy beside a file database', () => {
