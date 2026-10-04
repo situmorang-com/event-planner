@@ -5,6 +5,8 @@ import { db } from '$lib/server/db';
 import { blockByHand, listEntries, removeEntry, type DncKind } from '$lib/server/do-not-contact';
 import type { Language } from '$lib/server/events';
 import {
+	APPENDED_LINE_ERROR,
+	containsAppendedLine,
 	DEFAULT_TEMPLATES,
 	isLanguage,
 	KIND_LABEL,
@@ -98,7 +100,8 @@ export const actions: Actions = {
 	},
 
 	// One language's bodies at a time (§4.4). A blank cell goes back to the built-in wording; the
-	// reminder must keep its reconfirm link (§7). Stamped with whoever saved it.
+	// reminder must keep its reconfirm link and no body may carry the lines the app appends (§7).
+	// Stamped with whoever saved it.
 	templates: async ({ request, locals }) => {
 		const form = await request.formData();
 		const language = form.get('language');
@@ -111,6 +114,8 @@ export const actions: Actions = {
 				templateError: 'The reminder must include {link}: it is how people reconfirm.',
 				templateLanguage: language
 			});
+		if (Object.values(bodies).some(containsAppendedLine))
+			return fail(400, { templateError: APPENDED_LINE_ERROR, templateLanguage: language });
 		db.transaction(() => {
 			for (const k of MESSAGE_KINDS) setTemplate(db, k, language, bodies[k], { by: locals.who });
 		})();

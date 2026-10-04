@@ -71,12 +71,11 @@
 		};
 	};
 
-	// Not me / Remove me are one tap each, so a confirm stands between the tap and the lock.
-	const confirmFirst =
-		(message: string): SubmitFunction =>
-		({ cancel }) => {
-			if (!confirm(message)) cancel();
-		};
+	// Box 3 offers to share with the co-hosts, so the footer's promise names them too (§8).
+	const coHosts = $derived(data.event.coHosts.trim());
+	const footer = $derived(
+		coHosts ? fill(t.footerShared, { org, co_hosts: coHosts }) : fill(t.footer, { org })
+	);
 
 	const doneText = $derived.by(() => {
 		if (!done) return '';
@@ -312,7 +311,7 @@
 		</form>
 	{/if}
 
-	<footer class="muted">{fill(t.footer, { org })}</footer>
+	<footer class="muted">{footer}</footer>
 </main>
 
 <style>

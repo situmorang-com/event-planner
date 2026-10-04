@@ -3,11 +3,16 @@ import { ORG_NAME, PRIVACY_URL } from '$lib/server/config';
 import { db } from '$lib/server/db';
 import { hasEnded } from '$lib/server/event-people';
 import { getEvent } from '$lib/server/events';
-import { countryResolver, formatWhen, languageFor } from '$lib/server/messaging';
+import { countryResolver, languageFor } from '$lib/server/messaging';
+import { cleanText } from '$lib/server/normalize';
 import { allow } from '$lib/server/rate-limit';
 import type { RegistrationPageData } from '$lib/registration-page';
 import { registerGeneric } from '$lib/server/registration';
-import { contactShown, readRegistrationForm } from '$lib/server/registration-form';
+import {
+	contactShown,
+	readRegistrationForm,
+	registrationPageEvent
+} from '$lib/server/registration-form';
 import type { Actions, PageServerLoad } from './$types';
 
 /*
@@ -32,12 +37,7 @@ export const load: PageServerLoad = ({ params }): RegistrationPageData => {
 		language,
 		token: null,
 		org: { name: ORG_NAME, privacyUrl: PRIVACY_URL },
-		event: {
-			name: event.name,
-			venue: event.venue,
-			when: formatWhen(event.starts_at!, event.timezone, language),
-			coHosts: event.co_hosts
-		},
+		event: registrationPageEvent(event, language),
 		prefill: null
 	};
 };
@@ -51,7 +51,7 @@ export const actions: Actions = {
 		const language = languageFor(event);
 		const form = await request.formData();
 		// The company typed decides the number's country when it is known (D14), else the event.
-		const company = String(form.get('company') ?? '');
+		const company = cleanText(form.get('company'), 120);
 		const read = readRegistrationForm(form, {
 			country: countryResolver(db, event)(company),
 			language,

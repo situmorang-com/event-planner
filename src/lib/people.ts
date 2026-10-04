@@ -98,11 +98,13 @@ export interface ChipRow {
 }
 
 export function matchesChip(row: ChipRow, chip: Chip, ended: boolean): boolean {
+	// A skipped row, found or "not me", is only ever behind the Skipped chip.
+	if (row.skipped_at !== null) return chip === 'skipped';
 	switch (chip) {
 		case 'review':
-			return row.stage === 'found' && row.skipped_at === null;
+			return row.stage === 'found';
 		case 'skipped':
-			return row.skipped_at !== null;
+			return false;
 		case 'shortlisted':
 		case 'invited':
 		case 'confirmed':

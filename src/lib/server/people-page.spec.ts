@@ -17,6 +17,7 @@ import {
 import { createEvent, updateEvent } from './events';
 import { createPerson, getPeople } from './people';
 import { addPeople, FOUND_THRESHOLD, peopleView, reviewedGuests } from './people-page';
+import { notMe } from './registration';
 import { consentBoxesSince, recordConsentBoxesSince, setTeamNames } from './settings';
 
 const guest = (name: string, extra: Partial<GuestInput> = {}): GuestInput => ({
@@ -100,7 +101,12 @@ describe('peopleView', () => {
 		expect(view().counts).toMatchObject({ yes: 2, maybe: 1, confirmed: 1, shortlisted: 0 });
 		expect(view().ended).toBe(false);
 		expect(view(START + 7 * 3_600_000)).toMatchObject({ ended: true });
-		expect(view(START + 7 * 3_600_000).counts.no_show).toBe(3);
+		// A row its person disowned is nobody's yes: it counts only behind the Skipped chip.
+		notMe(db, { row: rows[0], event: event() });
+		expect(view().progress).toEqual({ yes: 1, confirmed: 0, target: 10 });
+		expect(view().counts).toMatchObject({ yes: 1, confirmed: 0, skipped: 1 });
+		expect(view().rows[0].message).toBeNull();
+		expect(view(START + 7 * 3_600_000).counts.no_show).toBe(2);
 	});
 
 	it('closes the message buttons for locked, blocked and flagged people', () => {

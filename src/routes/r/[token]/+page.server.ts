@@ -1,8 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import { ORG_NAME, PRIVACY_URL } from '$lib/server/config';
 import { db, secret } from '$lib/server/db';
-import type { EventRow } from '$lib/server/events';
-import { formatWhen, languageFor, phoneCountryFor, rowLanguage } from '$lib/server/messaging';
+import { phoneCountryFor, rowLanguage } from '$lib/server/messaging';
 import { allow } from '$lib/server/rate-limit';
 import { isReply } from '$lib/invitations';
 import type { RegistrationPageData } from '$lib/registration-page';
@@ -10,7 +9,8 @@ import { lookupRegistration, notMe, removeMe, submitRegistration } from '$lib/se
 import {
 	contactShown,
 	readRegistrationForm,
-	registrationMessage
+	registrationMessage,
+	registrationPageEvent
 } from '$lib/server/registration-form';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -20,41 +20,20 @@ import type { Actions, PageServerLoad } from './$types';
  * Every request re-checks the token against the event's current end.
  */
 
-function pageEvent(event: EventRow, language: 'id' | 'en' | 'ms') {
-	return {
-		name: event.name,
-		venue: event.venue,
-		when: event.starts_at === null ? null : formatWhen(event.starts_at, event.timezone, language),
-		coHosts: event.co_hosts
-	};
-}
-
 export const load: PageServerLoad = ({ params }): RegistrationPageData => {
 	const found = lookupRegistration(db, secret, params.token);
 	if (found.status === 'invalid') error(404, 'Link not found');
-	const org = { name: ORG_NAME, privacyUrl: PRIVACY_URL };
-	if (found.status === 'expired') {
-		const language = languageFor(found.event);
-		return {
-			state: 'expired',
-			mode: 'personal',
-			language,
-			token: params.token,
-			org,
-			event: pageEvent(found.event, language),
-			prefill: null
-		};
-	}
 	const { row, event } = found;
+	// The row's language (§2.3) on every page it gets, the expired one included.
 	const language = rowLanguage(row, event);
 	return {
-		state: 'form',
+		state: found.status === 'ok' ? 'form' : 'expired',
 		mode: 'personal',
 		language,
 		token: params.token,
-		org,
-		event: pageEvent(event, language),
-		prefill: { name: row.name, company: row.company }
+		org: { name: ORG_NAME, privacyUrl: PRIVACY_URL },
+		event: registrationPageEvent(event, language),
+		prefill: found.status === 'ok' ? { name: row.name, company: row.company } : null
 	};
 };
 

@@ -838,8 +838,13 @@ export function addRowForPerson(
 		now
 	});
 	const id = Number(lastInsertRowid);
-	if (needsReview) db.prepare(`UPDATE event_people SET needs_review = 1 WHERE id = ?`).run(id);
+	if (needsReview) flagReview(db, id, now);
 	return id;
+}
+
+/** A registration the company owner should look at (§4.6): the generic link, or a doubt. */
+export function flagReview(db: DB, id: number, now = Date.now()) {
+	db.prepare(`UPDATE event_people SET needs_review = 1, updated_at = ? WHERE id = ?`).run(now, id);
 }
 
 /** The company owner has looked at a generic-link registration (§4.6): the flag comes off. */

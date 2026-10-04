@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { listAttendees } from './checkins';
-import { migrate, type DB } from './database';
+import { migrate, SCHEMA_VERSION, type DB } from './database';
 import { countLive, listEventPeople } from './event-people';
 import { getPerson } from './people';
 import { listTargets } from './planning';
@@ -312,7 +312,7 @@ describe('migration to schema version 2', () => {
 
 		expect(db.pragma('foreign_key_check')).toEqual([]);
 		// Step 2 rebuilds the tables; step 3 then seeds the message templates (§7).
-		expect(schemaVersion(db)).toBe(4);
+		expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
 		expect(countTemplates(db)).toBe(21);
 		expect(tables(db)).not.toContain('contacts');
 		expect(tables(db)).not.toContain('invitations');
@@ -439,13 +439,13 @@ describe('migration to schema version 2', () => {
 	it('gives a fresh database the current version straight away', () => {
 		const db = new Database(':memory:');
 		migrate(db);
-		expect(schemaVersion(db)).toBe(4);
+		expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
 		expect(consentBoxesSince(db)).not.toBeNull();
 		expect(tables(db)).toContain('people');
 		expect(countTemplates(db)).toBe(21);
 		expect(tables(db)).not.toContain('contacts');
 		migrate(db);
-		expect(schemaVersion(db)).toBe(4);
+		expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
 	});
 
 	it('gives every check-in at an event without a guest list a walk-in row', () => {
@@ -489,7 +489,7 @@ describe('migration to schema version 2', () => {
 			T0 - DAY
 		);
 		migrate(db);
-		expect(schemaVersion(db)).toBe(4);
+		expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
 		expect(tables(db)).not.toContain('suggestions');
 		expect(tables(db)).toContain('invite_briefs');
 		expect(listEventPeople(db, 'old')).toMatchObject([
@@ -616,7 +616,7 @@ describe('migration to schema version 2', () => {
 		migrate(db);
 		migrate(db);
 		expect(snapshot()).toEqual(first);
-		expect(schemaVersion(db)).toBe(4);
+		expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
 	});
 
 	it('keeps a .pre-v2 copy beside a file database', () => {

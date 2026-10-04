@@ -137,17 +137,19 @@ export function peopleView(
 	now = Date.now()
 ): PeopleView {
 	const since = consentBoxesSince(db);
-	// A link needs the event's date (its expiry) and a person behind the row to answer for.
+	// A link needs the event's date (its expiry) and a person behind the row to answer for;
+	// a blocked company's people get none (D13).
 	const linkable = env && event.starts_at !== null;
 	const rows = listEventPeople(db, event.id).map((r) =>
 		toView(
 			r,
 			since,
-			env ? rowMessage(db, { row: r, event }, env) : null,
-			linkable && r.stage !== 'found' ? registrationUrl(r, event, env) : null
+			env ? rowMessage(db, { row: r, event, since }, env) : null,
+			linkable && r.stage !== 'found' && !r.blocked_at ? registrationUrl(r, event, env) : null
 		)
 	);
-	const live = rows.filter((r) => r.stage !== 'found');
+	// A row skipped by "not me" is nobody's reply (D8).
+	const live = rows.filter((r) => r.stage !== 'found' && !r.skipped_at);
 	return {
 		rows,
 		groups: groupRows(rows),

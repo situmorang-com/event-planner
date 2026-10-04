@@ -24,8 +24,6 @@ export const MESSAGE_KINDS: MessageKind[] = [
 
 export const LANGUAGES: Language[] = ['id', 'en', 'ms'];
 
-export const isMessageKind = (v: unknown): v is MessageKind =>
-	MESSAGE_KINDS.includes(v as MessageKind);
 export const isLanguage = (v: unknown): v is Language => LANGUAGES.includes(v as Language);
 
 export const KIND_LABEL: Record<MessageKind, string> = {
@@ -112,6 +110,22 @@ export const SOURCE_LINE: Record<Language, { found: string; withUrl: string; pri
 		privacy: 'Cara kami mengendalikan data: {privacy_url}'
 	}
 };
+
+/**
+ * §7: the opt-out and source lines are appended at render time and never stored, so a body
+ * that pastes one in (it would then read twice, or freeze a stale privacy sentence) is refused
+ * by the editors. Checked against the lines in every language.
+ */
+export function containsAppendedLine(body: string): boolean {
+	if (/\{(privacy_url|source_url)\}/.test(body)) return true;
+	return LANGUAGES.some(
+		(l) => body.includes(OPT_OUT_LINE[l]) || body.includes(SOURCE_LINE[l].found)
+	);
+}
+
+/** What the editors say when a body carries one of those lines. */
+export const APPENDED_LINE_ERROR =
+	'Leave out the opt-out and source lines: they are added to every message automatically.';
 
 export interface TemplateRow {
 	id: number;

@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { createDb, migrate, SCHEMA } from './database';
+import { createDb, migrate, SCHEMA, SCHEMA_VERSION } from './database';
 import {
+	containsAppendedLine,
 	DEFAULT_TEMPLATES,
 	LANGUAGES,
 	listTemplates,
@@ -40,13 +41,22 @@ describe('message template seeding', () => {
 			VALUES ('chase', 'en', 'Our own chase {name}', 5, 'Sari')`
 		).run();
 		migrate(db);
-		expect(schemaVersion(db)).toBe(4);
+		expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
 		expect(listTemplates(db)).toHaveLength(21);
 		expect(templateBody(db, 'chase', 'en')).toBe('Our own chase {name}');
 		expect(templateBody(db, 'chase', 'id')).toBe(DEFAULT_TEMPLATES.chase.id);
 		// Running again changes nothing.
 		seedMessageTemplates(db);
 		expect(listTemplates(db)).toHaveLength(21);
+	});
+
+	it('spots a body that pastes in a line the app appends itself (§7)', () => {
+		expect(containsAppendedLine(`Hi {name}, see you. ${OPT_OUT_LINE.en}`)).toBe(true);
+		expect(containsAppendedLine(`Halo. ${OPT_OUT_LINE.id}`)).toBe(true);
+		expect(containsAppendedLine('We found your work details on public pages: x')).toBe(true);
+		expect(containsAppendedLine('How we handle data: {privacy_url}')).toBe(true);
+		expect(containsAppendedLine(DEFAULT_TEMPLATES.chase.ms)).toBe(false);
+		expect(containsAppendedLine('Please STOP by the stand if you can')).toBe(false);
 	});
 
 	it('keeps the built-in wording free of the lines that are appended at render time', () => {

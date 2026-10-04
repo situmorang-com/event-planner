@@ -1,11 +1,13 @@
-import { fill } from '../consent.ts';
+import { fill, type Language } from '../consent.ts';
 import type {
 	RegistrationField,
 	RegistrationFormResult,
+	RegistrationPageData,
 	RegistrationValues
 } from '../registration-page.ts';
 import { REGISTRATION_TEXT, type RegistrationText } from '../registration-text.ts';
-import type { Language } from '../consent.ts';
+import type { EventRow } from './events.ts';
+import { formatWhen } from './messaging.ts';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
 
 /*
@@ -56,6 +58,19 @@ export function readRegistrationForm(
 		consentFuture: form.get('consentFuture') === 'on',
 		consentShare: form.get('consentShare') === 'on',
 		errors
+	};
+}
+
+/** The event as the public pages show it: name, venue, the date in the page's language, co-hosts. */
+export function registrationPageEvent(
+	event: Pick<EventRow, 'name' | 'venue' | 'starts_at' | 'timezone' | 'co_hosts'>,
+	language: Language
+): RegistrationPageData['event'] {
+	return {
+		name: event.name,
+		venue: event.venue,
+		when: event.starts_at === null ? null : formatWhen(event.starts_at, event.timezone, language),
+		coHosts: event.co_hosts
 	};
 }
 

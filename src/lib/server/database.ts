@@ -14,7 +14,7 @@ import {
 
 export type DB = Database.Database;
 
-export { SCHEMA, SCHEMA_VERSION } from './schema.ts';
+export { SCHEMA } from './schema.ts';
 
 export interface MigrateOptions {
 	/** What existing events get as `phone_country`: DEFAULT_PHONE_COUNTRY in the app. */
@@ -33,6 +33,9 @@ const STEPS: { version: number; run: (db: DB, opts: MigrateOptions) => void }[] 
 	// is "legacy" (§2.3). Stamped once; a fresh file gets it on creation.
 	{ version: 4, run: (db) => recordConsentBoxesSince(db) }
 ];
+
+/** The version a database is at once every step has run: the last step's, so it can't drift. */
+export const SCHEMA_VERSION = STEPS[STEPS.length - 1].version;
 
 /** Brings a database up to date. Safe to run on every start, and on a reused connection. */
 export function migrate(db: DB, opts: MigrateOptions = {}) {

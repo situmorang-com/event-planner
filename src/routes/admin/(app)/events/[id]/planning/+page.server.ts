@@ -6,7 +6,13 @@ import { countLive, countToReview, listEventPeople } from '$lib/server/event-peo
 import { getEvent, setInvitationText } from '$lib/server/events';
 import { eventPageLoad } from '$lib/server/jobs';
 import { languageFor } from '$lib/server/messaging';
-import { DEFAULT_TEMPLATES, PLACEHOLDERS } from '$lib/server/message-templates';
+import {
+	APPENDED_LINE_ERROR,
+	containsAppendedLine,
+	DEFAULT_TEMPLATES,
+	LANGUAGE_LABEL,
+	PLACEHOLDERS
+} from '$lib/server/message-templates';
 import { cleanText } from '$lib/server/normalize';
 import {
 	addTargets,
@@ -83,7 +89,7 @@ export const load: PageServerLoad = ({ params, url }) => {
 		// The per-event invitation wording (D21) and what it replaces when left blank.
 		invitation: {
 			text: event.invitation_text ?? '',
-			language: languageFor(event),
+			languageLabel: LANGUAGE_LABEL[languageFor(event)],
 			fallback: DEFAULT_TEMPLATES.invitation[languageFor(event)],
 			placeholders: PLACEHOLDERS
 		},
@@ -152,10 +158,12 @@ export const actions: Actions = {
 		return { researchSet: id };
 	},
 
-	// The event's own invitation wording (D21); blank goes back to the message default.
+	// The event's own invitation wording (D21); blank goes back to the message default. The
+	// opt-out line is appended at render time, so a body that carries it is refused (§7).
 	invitation: async ({ params, request }) => {
 		const event = requireEvent(params.id);
 		const text = String((await request.formData()).get('text') ?? '').slice(0, 2000);
+		if (containsAppendedLine(text)) return fail(400, { invitationError: APPENDED_LINE_ERROR });
 		setInvitationText(db, event.id, text);
 		return { invitationSaved: true };
 	},

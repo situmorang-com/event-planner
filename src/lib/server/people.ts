@@ -120,6 +120,23 @@ function pickMatch(
 }
 
 /**
+ * Whether what someone typed could be this record: the name is the same, and the company,
+ * email and phone don't contradict (one side empty is fine). The guard a public form applies
+ * to a findPerson() hit before writing to it, since anyone can type a listed name.
+ */
+export function detailsAgree(
+	person: Pick<PersonRow, 'name' | 'company' | 'email' | 'phone'>,
+	input: Identity
+): boolean {
+	return (
+		nameKey(person.name) === nameKey(input.name ?? '') &&
+		companiesAgree(person.company, input.company) &&
+		!contradict(person.email, input.email?.toLowerCase()) &&
+		!contradict(person.phone, input.phone)
+	);
+}
+
+/**
  * Who this is (§3): the event's own rows first, in arrival-matching order, then the pool
  * with the guards that stop two different people from merging. Undefined means a new person.
  */

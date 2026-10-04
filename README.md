@@ -124,12 +124,18 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   _Yes / Maybe / No_, types their own email or mobile (read in the company's phone country),
   and ticks the consent boxes; a yes makes the row **Confirmed**, a no takes a confirmation
   back. The page is in the row's language (Indonesian or Malay from the phone country, or the
-  event's explicit choice). **Not me** lists the channel the invitation went out on and skips
-  the row; **Remove me** locks the person everywhere. **Registration link** in the header
-  copies the event's open link (`/r/e/<event>`) for a channel where no row exists yet: anyone
-  who registers through it is confirmed and marked _Self-registered, check company owner_
-  until someone picks **Reviewed** in the row menu. Reminders link a one-tap reconfirm page
-  that marks the row confirmed again.
+  event's explicit choice). A public form never merges or rewrites anyone else's record: an
+  email or mobile that another guest on the event holds is refused, and one that matches a
+  second record in the pool is saved on the link's person with the row marked for review so
+  you can **Merge into…** by hand. **Not me** lists the channel the invitation went out on
+  and skips the row; **Remove me** locks the person everywhere. **Registration link** in the
+  header copies the event's open link (`/r/e/<event>`) for a channel where no row exists yet:
+  everyone who registers through it is confirmed and marked _Self-registered, check company
+  owner_ until someone picks **Reviewed** in the row menu; a listed person is matched only
+  when every detail typed agrees with their record (so a stranger typing a listed name gets a
+  new flagged row, and the listed person is untouched). Reminders link a one-tap reconfirm
+  page that marks the row confirmed again; it only re-confirms a yes, and sends anyone else
+  to the full form.
 - **Markers.** _Needs details_ (no email and no mobile), _chased ×N_, _locked_, _blocked
   company_, _suppressed_, _no consent recorded_ (a staff add), _via LinkedIn_,
   _self-registered, check company owner_.

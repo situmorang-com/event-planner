@@ -34,8 +34,6 @@
 	let invitationSaved = $state(false);
 	let copied = $state<string | null>(null);
 
-	const LANGUAGE_NAME = { id: 'Indonesian', en: 'English', ms: 'Malay' } as const;
-
 	// The agent gets web tools only and never the token: curl fetches its brief and posts its answer.
 	const command = $derived(researchCommand(data.base, event.id));
 	const overCap = $derived(data.ticked > data.cap);
@@ -496,9 +494,10 @@
 				<p class="hint">
 					Placeholders: {#each data.invitation.placeholders as p, i (p)}{i ? ', ' : ''}<code
 							>{p}</code
-						>{/each}. Blank means the {LANGUAGE_NAME[data.invitation.language]} default shown above.
+						>{/each}. Blank means the {data.invitation.languageLabel} default shown above.
 				</p>
 			</div>
+			{#if form && 'invitationError' in form}<p class="error-text">{form.invitationError}</p>{/if}
 			<div class="actions">
 				{#if invitationSaved}<span class="saved"><Check size={16} /> Saved</span>{/if}
 				<button class="btn btn-primary">Save wording</button>

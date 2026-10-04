@@ -5,6 +5,7 @@ import { addEntry, check as doNotContact, lockPerson } from './do-not-contact.ts
 import {
 	addRowForPerson,
 	findRow,
+	flagReview,
 	getEventPerson,
 	hasEnded,
 	listTouches,
@@ -13,8 +14,8 @@ import {
 import { getEvent, type EventRow } from './events.ts';
 import {
 	createPerson,
+	detailsAgree,
 	findPerson,
-	mergeInto,
 	setConsentFuture,
 	touchLastEvent,
 	updatePerson
@@ -24,20 +25,25 @@ import { applyChange, type Reply } from './stages.ts';
 
 /*
  * What the public registration pages do (§4.6, D7, D15): a guest answers with their own
- * email and mobile, which merge into their record by §3 precedence (they typed it, so it
- * wins), and their consents land on the row and the person. Nothing here reads a request:
- * the routes parse and rate-limit, this module changes the database.
+ * email and mobile, which land on their record by §3 precedence (they typed it, so it wins),
+ * and their consents land on the row and the person. Nothing here reads a request: the routes
+ * parse and rate-limit, this module changes the database.
+ *
+ * Anyone holding a link can type anything, so no public submission ever deletes, re-parents
+ * or rewrites another person's record: a typed email or mobile that names someone else is
+ * refused or left for the organizer to merge by hand (§3), and the generic link only lands on
+ * a record whose every stored detail agrees with what was typed.
  */
 
 export type Lookup =
 	| { status: 'ok'; row: EventPersonRow; event: EventRow }
-	| { status: 'expired'; event: EventRow }
+	| { status: 'expired'; row: EventPersonRow; event: EventRow }
 	| { status: 'invalid' };
 
 /**
  * The row and event behind a token, checked on every request against the event as it is
  * now: moving the date re-validates every link already sent (§7). A row whose person said
- * "not me" or is locked no longer answers to its link.
+ * "not me" or is locked, or whose company is blocked (D13), no longer answers to its link.
  */
 export function lookupRegistration(
 	db: DB,
@@ -56,12 +62,15 @@ export function lookupRegistration(
 	// whether the event is over; the expiry is read separately below.
 	if (!verifyRegistrationToken(secret, event, id, token, event.starts_at))
 		return { status: 'invalid' };
-	if (hasEnded(event, now)) return { status: 'expired', event };
-	if (row.locked_at || row.skipped_at) return { status: 'invalid' };
+	if (hasEnded(event, now)) return { status: 'expired', row, event };
+	if (row.locked_at || row.skipped_at || row.blocked_at) return { status: 'invalid' };
 	return { status: 'ok', row, event };
 }
 
-/** A registration can only be refused for a listed or blocked identity (D13). */
+/**
+ * A registration is refused for a listed or blocked identity (D13), for details that belong
+ * to someone else on the event, and for a row its person already disowned.
+ */
 export type RegistrationResult =
 	{ status: 'saved'; rowId: number; personId: string } | { status: 'refused' };
 
@@ -92,8 +101,10 @@ const REFUSED: RegistrationResult = { status: 'refused' };
 
 /**
  * The personal link (§4.6): the reply and the typed email/mobile land on the row's person.
- * A yes confirms the row; maybe and no are replies (a no takes a confirmation back). When
- * the typed details name another record in the pool, that record folds into this one.
+ * A yes confirms the row; maybe and no are replies (a no takes a confirmation back). Typed
+ * details that someone else on the event already holds are refused; when they match another
+ * record in the pool, the row is flagged for review and the organizer merges by hand (§3):
+ * a public form never folds one person into another.
  */
 export function submitRegistration(
 	db: DB,
@@ -104,36 +115,36 @@ export function submitRegistration(
 	return db.transaction((): RegistrationResult => {
 		const personId = row.person_id!;
 		if (doNotContact(db, { email: input.email, phone: input.phone })) return REFUSED;
-		const details = {
-			name: row.name,
-			jobTitle: row.job_title,
-			email: input.email,
-			phone: input.phone,
-			company: row.company
-		};
-		// §3 order finds the row's own person by name first; the typed email or mobile may still
-		// name a second record of the same person in the pool, which folds into this one.
-		const hit = findPerson(db, details, event.id);
-		const twin =
-			hit && hit.id !== personId ? hit : findPerson(db, { email: input.email, phone: input.phone });
-		if (twin && twin.id !== personId) {
-			if (twin.locked_at) return REFUSED;
-			// The link's row survives, so the link keeps working after the merge.
-			mergeInto(db, twin.id, personId, { by: 'registration' }, now);
-		}
-		updatePerson(db, personId, details, { origin: 'self_registered' }, now);
+		const other = findPerson(db, { email: input.email, phone: input.phone }, event.id);
+		const twin = other && other.id !== personId ? other : undefined;
+		if (twin && (twin.locked_at || findRow(db, event.id, twin.id))) return REFUSED;
+		updatePerson(
+			db,
+			personId,
+			{
+				name: row.name,
+				jobTitle: row.job_title,
+				email: input.email,
+				phone: input.phone,
+				company: row.company
+			},
+			{ origin: 'self_registered' },
+			now
+		);
 		answer(db, row.id, input.rsvp, 'registration', now);
 		recordConsents(db, row.id, personId, event, input, now);
 		if (input.note) appendNote(db, row.id, input.note, now);
+		if (twin) flagReview(db, row.id, now);
 		touchLastEvent(db, personId, now);
 		return { status: 'saved', rowId: row.id, personId };
 	})();
 }
 
 /**
- * The generic link (§4.6): no prefill, and registering is the yes. Someone already on the
- * event lands on their own row; anyone else gets a row the company owner must check
- * (`needs_review`), whether they were in the pool or are brand new (`self_registered`).
+ * The generic link (§4.6): no prefill, and registering is the yes. Every row it touches is
+ * flagged for the company owner (`needs_review`). A §3 hit is used only when everything typed
+ * agrees with it, so the link can fill blanks on a listed person but never rewrite them;
+ * anyone else, in the pool or not, gets a new `self_registered` person for the owner to merge.
  */
 export function registerGeneric(
 	db: DB,
@@ -145,13 +156,16 @@ export function registerGeneric(
 		if (isBlocked(findCompany(db, input.company)) || doNotContact(db, input)) return REFUSED;
 		const hit = findPerson(db, input, event.id);
 		if (hit?.locked_at || hit?.d365_suppressed) return REFUSED;
+		const theirs = hit && detailsAgree(hit, input) ? hit : undefined;
 		let personId: string;
 		let rowId: number | null = null;
-		if (hit) {
-			personId = hit.id;
+		if (theirs) {
+			const row = findRow(db, event.id, theirs.id);
+			// They said "not me" to this event's invitation; the organizer re-adds them, not a form.
+			if (row?.skipped_at) return REFUSED;
+			personId = theirs.id;
 			updatePerson(db, personId, input, { origin: 'self_registered' }, now);
-			const row = findRow(db, event.id, personId);
-			if (row && !row.skipped_at) rowId = row.id;
+			if (row) rowId = row.id;
 		} else {
 			personId = createPerson(db, input, { origin: 'self_registered' }, now);
 		}
@@ -163,7 +177,10 @@ export function registerGeneric(
 				{ source: 'self_registered', note: input.note, needsReview: true },
 				now
 			);
-		else if (input.note) appendNote(db, rowId, input.note, now);
+		else {
+			flagReview(db, rowId, now);
+			if (input.note) appendNote(db, rowId, input.note, now);
+		}
 		answer(db, rowId, 'yes', 'registration', now);
 		recordConsents(db, rowId, personId, event, input, now);
 		touchLastEvent(db, personId, now);
@@ -171,8 +188,12 @@ export function registerGeneric(
 	})();
 }
 
+/** The one-tap page only re-confirms a yes (§5.3): anyone else answers the full form. */
+export const canReconfirm = (row: Pick<EventPersonRow, 'reply'>) => row.reply === 'yes';
+
 /** The one-tap page behind a reminder (§4.6): the row is confirmed again. */
 export function reconfirm(db: DB, row: EventPersonRow, now = Date.now()): boolean {
+	if (!canReconfirm(row)) return false;
 	return !!applyChange(db, row.id, { type: 'confirm', via: 'reconfirm' }, now);
 }
 
@@ -268,9 +289,20 @@ function recordConsents(
 	if (consents.consentFuture) setConsentFuture(db, personId, now, now);
 }
 
+/** The row's note may not grow past this through the public forms. */
+export const NOTE_LIMIT = 1000;
+
+/**
+ * The guest's note goes beside the organizer's. A link can be submitted again and again, so
+ * a note already there isn't repeated and nothing is added once the limit is reached.
+ */
 function appendNote(db: DB, rowId: number, note: string, now: number) {
 	db.prepare(
-		`UPDATE event_people SET note = CASE WHEN note = '' THEN @note ELSE note || ' · ' || @note END,
+		`UPDATE event_people SET note = CASE
+				WHEN note = '' THEN @note
+				WHEN instr(note, @note) > 0 THEN note
+				WHEN length(note) + length(@note) + 3 > @limit THEN note
+				ELSE note || ' · ' || @note END,
 			updated_at = @now WHERE id = @id`
-	).run({ id: rowId, note, now });
+	).run({ id: rowId, note, now, limit: NOTE_LIMIT });
 }

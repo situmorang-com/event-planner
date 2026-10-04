@@ -146,7 +146,8 @@ export const actions: Actions = {
 		const input = {
 			name: cleanText(raw.name, 100),
 			email: normalizeEmail(raw.email),
-			// The company's phone country when it has one, else the event's (D14, §4.7).
+			// §4.7 says the event's country; D14 makes the company's choice override it wherever
+			// a number is read, and a walk-in types their company, so the same resolver applies.
 			phone: normalizePhone(raw.phone, countryResolver(db, event)(company)),
 			company,
 			jobTitle: cleanText(raw.jobTitle, 120)

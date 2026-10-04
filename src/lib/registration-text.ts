@@ -39,6 +39,8 @@ export interface RegistrationText {
 	expired: string;
 	expiredBody: string;
 	footer: string;
+	/** The footer when the event has co-hosts: box 3 may share name, company and title with them. */
+	footerShared: string;
 	errors: {
 		rsvp: string;
 		name: string;
@@ -85,6 +87,8 @@ export const REGISTRATION_TEXT: Record<Language, RegistrationText> = {
 		expired: 'This link has expired',
 		expiredBody: 'The event has ended, so this link no longer works.',
 		footer: 'Your details go only to {org}. Never shared or sold.',
+		footerShared:
+			'Your details go only to {org}. Your name, company and title reach {co_hosts} only if you agree. Never sold.',
 		errors: {
 			rsvp: 'Please choose an answer.',
 			name: 'Please add your name.',
@@ -129,6 +133,8 @@ export const REGISTRATION_TEXT: Record<Language, RegistrationText> = {
 		expired: 'Tautan ini sudah kedaluwarsa',
 		expiredBody: 'Acara sudah berakhir, jadi tautan ini tidak berlaku lagi.',
 		footer: 'Data Anda hanya untuk {org}. Tidak pernah dibagikan atau dijual.',
+		footerShared:
+			'Data Anda hanya untuk {org}. Nama, perusahaan, dan jabatan Anda dibagikan kepada {co_hosts} hanya jika Anda setuju. Tidak pernah dijual.',
 		errors: {
 			rsvp: 'Mohon pilih jawaban.',
 			name: 'Mohon isi nama Anda.',
@@ -173,6 +179,8 @@ export const REGISTRATION_TEXT: Record<Language, RegistrationText> = {
 		expired: 'Pautan ini telah tamat tempoh',
 		expiredBody: 'Acara telah berakhir, jadi pautan ini tidak lagi berfungsi.',
 		footer: 'Butiran anda hanya untuk {org}. Tidak pernah dikongsi atau dijual.',
+		footerShared:
+			'Butiran anda hanya untuk {org}. Nama, syarikat dan jawatan anda dikongsi dengan {co_hosts} hanya jika anda bersetuju. Tidak pernah dijual.',
 		errors: {
 			rsvp: 'Sila pilih jawapan.',
 			name: 'Sila isi nama anda.',

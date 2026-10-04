@@ -84,6 +84,7 @@ export type MessageRow = Pick<
 	| 'country'
 	| 'stage'
 	| 'reply'
+	| 'skipped_at'
 >;
 
 export type MessageEvent = Pick<
@@ -102,6 +103,8 @@ export type MessageEvent = Pick<
 export interface MessageContext {
 	row: MessageRow;
 	event: MessageEvent;
+	/** `consent_boxes_since`, when the caller already read it for a whole page of rows. */
+	since?: number | null;
 }
 
 const LOCALE: Record<Language, string> = { id: 'id-ID', en: 'en-GB', ms: 'ms-MY' };
@@ -220,7 +223,8 @@ export function emailHref(email: string, subject: string, text: string): string 
 
 /**
  * What a row's buttons open (§7): the message for the kind the rules suggest (or the one
- * asked for), on each channel open to the person. Null for a Found row: there is no person yet.
+ * asked for), on each channel open to the person. Null for a Found row (there is no person
+ * yet) and for a skipped one: "not me" took the person out of the chase (§4.6).
  */
 export function rowMessage(
 	db: DB,
@@ -230,8 +234,8 @@ export function rowMessage(
 ): RowMessage | null {
 	const { row, event } = ctx;
 	const person = contactPerson(row);
-	if (!person || row.stage === 'found') return null;
-	const since = consentBoxesSince(db);
+	if (!person || row.stage === 'found' || row.skipped_at) return null;
+	const since = ctx.since === undefined ? consentBoxesSince(db) : ctx.since;
 	const open = (channel: Channel) =>
 		!row.blocked_at && contactBlock(person, channel, since) === null;
 	const text = renderMessage(db, kind, ctx, env);

@@ -382,6 +382,8 @@
 			</div>
 
 			<div class="consent">
+				<!-- The check-in page is English throughout (labels, errors, the done card), so the
+				     boxes are too; §2.3's language rule names messages and the registration page. -->
 				<ConsentBoxes
 					language="en"
 					org={data.org.name}
@@ -418,7 +420,14 @@
 		</form>
 	{/if}
 
-	<footer class="muted">Your details go only to {data.org.name}. Never shared or sold.</footer>
+	<footer class="muted">
+		{#if data.event.coHosts.trim()}
+			Your details go only to {data.org.name}. Your name, company and title reach {data.event
+				.coHosts} only if you agree. Never sold.
+		{:else}
+			Your details go only to {data.org.name}. Never shared or sold.
+		{/if}
+	</footer>
 </main>
 
 <style>
