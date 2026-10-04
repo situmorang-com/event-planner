@@ -6,7 +6,7 @@ import { ORG_NAME, PRIVACY_URL } from '$lib/server/config';
 import { db, secret } from '$lib/server/db';
 import { deviceFromUserAgent } from '$lib/server/device';
 import { getEvent } from '$lib/server/events';
-import { countryResolver } from '$lib/server/messaging';
+import { countryResolver, languageFor } from '$lib/server/messaging';
 import { getPerson } from '$lib/server/people';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { issuePass, PASS_TTL_MS, verifyPass, verifyQrToken } from '$lib/server/qr-token';
@@ -50,7 +50,9 @@ export const load: PageServerLoad = async ({ params, url, cookies, request, loca
 			venue: event.venue,
 			startsAt: event.starts_at,
 			timezone: event.timezone,
-			coHosts: event.co_hosts
+			coHosts: event.co_hosts,
+			// The consent boxes read in the event's language (§2.3); the rest of the page is English.
+			language: languageFor(event)
 		},
 		org: { name: ORG_NAME, privacyUrl: PRIVACY_URL },
 		platform: deviceFromUserAgent(request.headers.get('user-agent'))

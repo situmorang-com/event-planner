@@ -1,7 +1,13 @@
+import { building } from '$app/environment';
 import type { Handle } from '@sveltejs/kit';
 import { isAdmin } from '$lib/server/auth';
 import { db } from '$lib/server/db';
+import { startScheduler } from '$lib/server/housekeeping';
 import { whoAmI } from '$lib/server/who';
+
+// Housekeeping (§5.4) runs once as the server starts and then daily. The build imports this
+// module too, so `building` keeps it from touching the build-time database.
+startScheduler(db, { building });
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.admin = isAdmin(event.cookies);

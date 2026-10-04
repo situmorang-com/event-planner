@@ -7,7 +7,7 @@
 		isOverdue,
 		KIND_LABEL,
 		markers,
-		MENU_KINDS,
+		menuKinds,
 		nextActionLabel,
 		STAGE_LABEL,
 		type MessageKind,
@@ -635,7 +635,7 @@
 						value={kind}
 						onchange={(e) => (chosen = e.currentTarget.value as MessageKind)}
 					>
-						{#each MENU_KINDS as k (k)}
+						{#each menuKinds(row) as k (k)}
 							<option value={k}>{KIND_LABEL[k]}{k === row.suggested_kind ? ' ·' : ''}</option>
 						{/each}
 					</select>

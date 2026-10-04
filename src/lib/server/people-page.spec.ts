@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { markers } from '../people';
+import { markers, menuKinds } from '../people';
 import { checkIn } from './checkins';
 import { blockCompany, findCompany, setCompanyOwner, setCompanyPhoneCountry } from './companies';
 import { createDb, type DB } from './database';
@@ -197,6 +197,46 @@ describe('peopleView', () => {
 		setReply(db, eventId, row.id, 'yes');
 		db.prepare(`UPDATE people SET consent_future_at = 1 WHERE id = ?`).run(personId);
 		expect(view().rows[0].contact).toEqual({ whatsapp: true, email: true, reason: null });
+	});
+
+	it('offers a legacy Indonesian attendee the notice first, then says where the clock stands', () => {
+		const since = consentBoxesSince(db)!;
+		const personId = createPerson(
+			db,
+			{ name: 'Rina Wijaya', email: 'rina@x.id', phone: '+6281234567890', company: 'Batavia' },
+			{ origin: 'checkin' },
+			since - 10
+		);
+		addShortlisted(db, eventId, [guest('Rina Wijaya', { email: 'rina@x.id' })], { source: 'pool' });
+		const day = (ts: number) => `day ${ts}`;
+		let [row] = view().rows;
+		expect(row.person_id).toBe(personId);
+		expect(row.legacy).toEqual({ notice_at: null, kept_at: null });
+		// The notice is their invitation (§8): preselected, rendered, and on the menu.
+		expect(row.suggested_kind).toBe('legacy_notice');
+		expect(row.message?.kind).toBe('legacy_notice');
+		expect(row.message?.text).toContain('Anda pernah hadir di acara SRKK');
+		expect(menuKinds(row)).toContain('legacy_notice');
+		expect(markers(row, day).map((m) => m.label)).toEqual([
+			'Legacy: past attendee, send the notice first'
+		]);
+
+		addTouch(db, eventId, row.id, { kind: 'legacy_notice', via: 'whatsapp' }, 3_000);
+		[row] = view().rows;
+		expect(row.stage).toBe('invited');
+		expect(row.legacy).toEqual({ notice_at: 3_000, kept_at: null });
+		expect(row.suggested_kind).toBe('chase');
+		expect(markers(row, day).map((m) => m.label)).toEqual([
+			'Legacy: notice sent day 3000, kept if they reply'
+		]);
+
+		setReply(db, eventId, row.id, 'maybe', 4_000);
+		[row] = view().rows;
+		expect(row.legacy).toEqual({ notice_at: 3_000, kept_at: 4_000 });
+		expect(markers(row, day).map((m) => m.label)).toEqual(['Legacy: kept, answered day 4000']);
+
+		// Nobody else gets the notice: a Malaysian legacy attendee waits, a new person is invited.
+		expect(menuKinds({ legacy: null })).not.toContain('legacy_notice');
 	});
 });
 

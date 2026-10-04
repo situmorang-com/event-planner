@@ -1,6 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { isReply, linkedinProfile } from '$lib/invitations';
-import { MENU_KINDS, type MessageKind } from '$lib/people';
+import { isMessageKind } from '$lib/people';
 import { fromLocalInput } from '$lib/time';
 import { logActivity } from '$lib/server/activity-log';
 import { countCheckins } from '$lib/server/checkins';
@@ -62,7 +62,6 @@ function rowId(form: FormData, field = 'id'): number | null {
 
 const VIAS: Via[] = ['whatsapp', 'email', 'linkedin', 'other'];
 const isVia = (v: unknown): v is Via => VIAS.includes(v as Via);
-const isMenuKind = (v: unknown): v is MessageKind => MENU_KINDS.includes(v as MessageKind);
 
 /** A team name from the form, or null for "the company's owner" / nobody. */
 function ownerFrom(form: FormData): string | null {
@@ -71,7 +70,8 @@ function ownerFrom(form: FormData): string | null {
 }
 
 export const load: PageServerLoad = ({ params, locals, url }) => {
-	// The start job runs lazily here until the scheduler lands (§5.4).
+	// The start job and the next-action pass also run lazily here (§5.4), so a page opened
+	// before the day's housekeeping is right.
 	const event = eventPageLoad(db, requireEvent(params.id));
 	const tabs = {
 		checkins: countCheckins(db, event.id),
@@ -346,7 +346,7 @@ export const actions: Actions = {
 		const state = getStageState(db, id);
 		if (!state) return fail(404, { touchError: true });
 		addTouch(db, event.id, id, {
-			kind: isMenuKind(kind) ? kind : suggestedTouchKind(state),
+			kind: isMessageKind(kind) ? kind : suggestedTouchKind(state),
 			via,
 			by: locals.who
 		});

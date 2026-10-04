@@ -1,5 +1,5 @@
 // The jobs from §5.4 that run per event. Each is idempotent and stamps the event when it has
-// run, so the lazy call from a page load and the scheduler (Phase C) can never run one twice.
+// run, so the lazy call from a page load and the daily housekeeping can never run one twice.
 import { logActivity } from './activity-log.ts';
 import type { DB } from './database.ts';
 import { getEvent, type EventRow } from './events.ts';
@@ -33,8 +33,9 @@ export function runEventStart(db: DB, eventId: string, now = Date.now()): number
 /**
  * What an event page calls as it loads: the start job if it is due, then the next-action
  * pass, since "due" and "the event has begun" move with the clock and not with a write
- * (§5.2). Returns the event as it is afterwards, so the page renders the purged state
- * rather than the one it read first.
+ * (§5.2). Housekeeping does the same daily; this keeps a page opened before it right.
+ * Returns the event as it is afterwards, so the page renders the purged state rather than
+ * the one it read first.
  */
 export function eventPageLoad(db: DB, event: EventRow, now = Date.now()): EventRow {
 	const started = runEventStart(db, event.id, now);

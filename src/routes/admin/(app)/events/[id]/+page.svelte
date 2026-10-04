@@ -12,7 +12,7 @@
 	import { connectLive, type LiveArrival, type LiveQr } from '$lib/live';
 	import { mailtoHref } from '$lib/mailto';
 	import { initials } from '$lib/names';
-	import { formatDateTime, formatTime } from '$lib/time';
+	import { formatDate, formatDateTime, formatTime } from '$lib/time';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Monitor from '@lucide/svelte/icons/monitor';
 	import Download from '@lucide/svelte/icons/download';
@@ -145,6 +145,15 @@
 			{#if event.starts_at && event.venue}&nbsp;·&nbsp;{/if}
 			{event.venue}
 		</p>
+		{#if event.planning_purged_at}
+			<p class="muted small kept">
+				Planning data deleted {formatDate(event.planning_purged_at, event.timezone)}
+			</p>
+		{:else if data.planningKeptUntil}
+			<p class="muted small kept">
+				Planning data kept until {formatDate(data.planningKeptUntil, event.timezone)}
+			</p>
+		{/if}
 	</div>
 	<div class="head-actions">
 		<form method="POST" action="?/toggle" use:enhance>
@@ -554,6 +563,10 @@
 		display: flex;
 		gap: 8px;
 		flex-wrap: wrap;
+	}
+
+	.kept {
+		margin-top: -4px;
 	}
 
 	h1 {

@@ -11,6 +11,7 @@ import { deleteEvent, getEvent, setEventOpen, updateEvent } from '$lib/server/ev
 import { eventPageLoad } from '$lib/server/jobs';
 import { countryResolver } from '$lib/server/messaging';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
+import { planningKeptUntil } from '$lib/server/retention';
 import { computeStats } from '$lib/server/stats';
 import { checkinUrl, publicBaseUrl } from '$lib/server/urls';
 import type { Actions, PageServerLoad } from './$types';
@@ -23,7 +24,8 @@ function requireEvent(id: string) {
 
 export const load: PageServerLoad = ({ params, url }) => {
 	const now = Date.now();
-	// The start job runs lazily here until the scheduler lands (§5.4).
+	// The start job and the next-action pass also run lazily here (§5.4), so a page opened
+	// before the day's housekeeping is right.
 	const event = eventPageLoad(db, requireEvent(params.id), now);
 	const attendees = listAttendees(db, event.id);
 	const { base, reachable } = publicBaseUrl(url);
@@ -35,6 +37,8 @@ export const load: PageServerLoad = ({ params, url }) => {
 		people: countLive(db, event.id),
 		review: countToReview(db, event.id),
 		activity: listActivity(db, event.id, 50),
+		// What research left behind goes 90 days after the start (D10), unless deleted sooner.
+		planningKeptUntil: planningKeptUntil(event),
 		staticLink: checkinUrl(base, event.id),
 		reachable,
 		created: url.searchParams.has('created'),

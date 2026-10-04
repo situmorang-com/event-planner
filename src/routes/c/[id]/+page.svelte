@@ -382,10 +382,10 @@
 			</div>
 
 			<div class="consent">
-				<!-- The check-in page is English throughout (labels, errors, the done card), so the
-				     boxes are too; §2.3's language rule names messages and the registration page. -->
+				<!-- The boxes carry the legal wording, so they read in the event's language (§2.3);
+				     the labels around them stay English, as the rest of the page is. -->
 				<ConsentBoxes
-					language="en"
+					language={data.event.language}
 					org={data.org.name}
 					coHosts={data.event.coHosts}
 					privacyUrl={data.org.privacyUrl}

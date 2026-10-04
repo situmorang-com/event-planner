@@ -26,7 +26,9 @@ import type { EventRow } from './events.ts';
 import { countryOf, type CountryOption } from './guest-list.ts';
 import { contactPerson, registrationUrl, rowMessage, type MessagingEnv } from './messaging.ts';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
+import type { MessageKind } from '../people.ts';
 import { contactBlock, type PersonRow } from './people.ts';
+import { isLegacyIndonesian } from './retention.ts';
 import { consentBoxesSince, type Country } from './settings.ts';
 import { suggestedTouchKind } from './stages.ts';
 
@@ -54,6 +56,25 @@ export interface PeopleView {
 	today: Today;
 	/** Rows due today or earlier (D20). */
 	due: number;
+}
+
+/** The row's legacy state (§8) when its person is a legacy Indonesian attendee, else null. */
+export function legacyOf(row: EventPersonRow, since: number | null): PeopleRow['legacy'] {
+	const person = row.person_id === null ? null : contactPerson(row);
+	if (!person || !isLegacyIndonesian({ ...person, legacy_kept_at: row.legacy_kept_at }, since))
+		return null;
+	return { notice_at: row.legacy_notice_at, kept_at: row.legacy_kept_at };
+}
+
+/**
+ * The kind the row's buttons open first (§7): the next action's, else what the stage calls
+ * for; for a legacy attendee not yet told, the notice is the invitation (§8).
+ */
+export function suggestedKind(row: EventPersonRow, since: number | null): MessageKind {
+	if (row.next_action_kind) return row.next_action_kind;
+	const legacy = legacyOf(row, since);
+	if (legacy && !legacy.notice_at && row.stage === 'shortlisted') return 'legacy_notice';
+	return suggestedTouchKind(row);
 }
 
 export function toView(
@@ -114,7 +135,8 @@ export function toView(
 		next_action_at: row.next_action_at,
 		next_action_kind: row.next_action_kind,
 		next_action_overridden: !!row.next_action_overridden,
-		suggested_kind: row.next_action_kind ?? suggestedTouchKind(row)
+		suggested_kind: suggestedKind(row, since),
+		legacy: legacyOf(row, since)
 	};
 }
 
@@ -161,7 +183,7 @@ export function peopleView(
 		toView(
 			r,
 			since,
-			env ? rowMessage(db, { row: r, event, since }, env) : null,
+			env ? rowMessage(db, { row: r, event, since }, env, suggestedKind(r, since)) : null,
 			linkable && r.stage !== 'found' && !r.blocked_at ? registrationUrl(r, event, env) : null
 		)
 	);

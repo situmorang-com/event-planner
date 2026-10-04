@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { MENU_KINDS, type MessageKind } from '$lib/people';
+import { isMessageKind } from '$lib/people';
 import { db } from '$lib/server/db';
 import { getEventPerson } from '$lib/server/event-people';
 import { getEvent } from '$lib/server/events';
@@ -15,8 +15,8 @@ export const GET: RequestHandler = ({ params, url }) => {
 	const event = getEvent(db, params.id);
 	if (!event) error(404, 'Event not found');
 	const id = Number(url.searchParams.get('id'));
-	const kind = url.searchParams.get('kind') as MessageKind;
-	if (!Number.isSafeInteger(id) || !MENU_KINDS.includes(kind)) error(400, 'Bad request');
+	const kind = url.searchParams.get('kind');
+	if (!Number.isSafeInteger(id) || !isMessageKind(kind)) error(400, 'Bad request');
 	const row = getEventPerson(db, event.id, id);
 	if (!row) error(404, 'Row not found');
 	const message = rowMessage(db, { row, event }, messagingEnv(url), kind);

@@ -106,8 +106,8 @@ the event no chip is on; once it has ended, Checked in and No-show are.
 - **To review.** What the research run found (see [Planning](#planning-finding-people-to-invite))
   waits here with its source link and reason. **Add** makes the person real and shortlists them;
   **Skip** hides the row (reversibly). A company header offers **Add all** and **Skip all**.
-  Found rows are deleted when the event starts; skipped ones go 90 days later once the
-  retention phase lands.
+  Found rows are deleted when the event starts; skipped ones go 90 days later, or sooner with
+  **Delete planning data** on the Planning tab.
 - **Replies and messages.** Tap _Attending_, _Tentative_ or _Declined_; tap it again to clear
   it. Notes save when you leave the field. The WhatsApp button (for numbers in international
   format) and the email button open a message that fits the reply: an invitation, a
@@ -214,6 +214,8 @@ and LinkedIn are blank.
   from, who recorded it and when. Add an entry by hand (email, mobile, or name and company) to
   lock whoever it matches now and refuse them on every list later. Entries never expire; one
   comes off only by hand, with a reason, and that is logged.
+- **Retention.** The [retention table](#retention) with live counts: how many people or rows
+  each rule holds, how many the next daily run removes, and when housekeeping last ran.
 
 Every export, deletion, lock, unlock and merge is written to an activity log with ids and counts
 only, never names. An event's page shows its entries under **Activity**.
@@ -273,19 +275,29 @@ network.
 
 ### Retention
 
-What the app deletes by itself, and when. The event-start step runs as soon as an event page
-is opened after the start; the rest is scheduled housekeeping that arrives with the retention
-phase, so for now only the first row below runs.
+What the app deletes by itself, and when. Housekeeping runs when the server starts and once a
+day after that (in the one app process; nothing external to schedule), and the event-start
+step also runs as soon as one of the event's pages is opened after the start. Every deletion
+is logged with ids and counts only. **Settings › Retention** shows this table with live counts
+of what each rule holds and what the next run removes; the Contacts page and the exports show
+each person's own _kept until_ date from the same rules.
 
-| What                                                 | Kept until                                    |
-| ---------------------------------------------------- | --------------------------------------------- |
-| Found rows nobody approved                           | the event starts                              |
-| Found rows that were skipped                         | 90 days after the event starts                |
-| Research and typed prospects who never replied       | 12 months after their last event              |
-| Past Indonesian attendees who never ticked a consent | 30 days after the notice, unless they reply   |
-| Attendees, customers, anyone who replied             | deleted by hand                               |
-| Touch and activity logs                              | with the row or the event                     |
-| Do-not-contact entries                               | forever (removed by hand only, with a reason) |
+| What                                                 | Kept until                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------------- |
+| Found rows nobody approved                           | the event starts                                            |
+| Found rows that were skipped                         | 90 days after the event starts, or **Delete planning data** |
+| Research and typed prospects who never replied       | 12 months after their last event                            |
+| Past Indonesian attendees who never ticked a consent | 30 days after the notice, unless they reply                 |
+| Attendees, customers, anyone who replied             | deleted by hand                                             |
+| Touch and activity logs                              | with the row or the event                                   |
+| Do-not-contact entries                               | forever (removed by hand only, with a reason)               |
+
+**Legacy notices.** A past attendee in Indonesia who checked in before the consent boxes
+existed never saw the "future events" box. Their row offers a _Legacy notice_ as its first
+message: it says their details come from a past event and invites them to this one, with the
+opt-out line. Sending it starts the 30-day clock shown on the row ("Legacy: notice sent 3 Oct,
+kept if they reply"); a reply, a registration or a check-in keeps them, and silence deletes
+them. The same attendee in Malaysia is _not contactable_ until they register themselves.
 
 ## Project layout
 

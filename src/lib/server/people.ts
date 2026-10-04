@@ -409,42 +409,6 @@ export const contactable = (
 	consentBoxesSince: number | null
 ) => contactBlock(person, channel, consentBoxesSince) === null;
 
-export const DAY = 86_400_000;
-
-function addMonths(ts: number, months: number) {
-	const d = new Date(ts);
-	d.setUTCMonth(d.getUTCMonth() + months);
-	return d.getTime();
-}
-
-/**
- * When the retention jobs (§5.4) will delete this person; null means "until deleted".
- * The single source for the UI and the jobs, so the two can never disagree.
- */
-export function keptUntil(
-	person: Pick<
-		PersonRow,
-		| 'origin'
-		| 'is_customer'
-		| 'consent_future_at'
-		| 'legacy_notice_at'
-		| 'legacy_kept_at'
-		| 'last_event_at'
-		| 'created_at'
-		| 'country'
-	>,
-	facts: { attendee: boolean; replied: boolean }
-): number | null {
-	const legacy = person.origin === 'checkin' && !person.consent_future_at;
-	if (legacy && person.legacy_notice_at && !person.legacy_kept_at && !facts.replied)
-		return person.legacy_notice_at + 30 * DAY;
-	if (facts.attendee || facts.replied || person.is_customer || person.consent_future_at)
-		return null;
-	if (person.origin === 'research' || person.origin === 'typed')
-		return addMonths(person.last_event_at ?? person.created_at, 12);
-	return null;
-}
-
 /* ───────────────────────── Lists ───────────────────────── */
 
 export interface PersonListRow extends PersonRow {

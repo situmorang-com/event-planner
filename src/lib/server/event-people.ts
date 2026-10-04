@@ -79,6 +79,8 @@ export interface EventPersonRow {
 	d365_no_phone: 0 | 1 | null;
 	is_customer: 0 | 1 | null;
 	consent_future_at: number | null;
+	legacy_notice_at: number | null;
+	legacy_kept_at: number | null;
 	country: Country | null;
 	person_created_at: number | null;
 	blocked_at: number | null;
@@ -106,7 +108,8 @@ const ROW_SELECT = `SELECT ep.id, ep.event_id, ep.person_id,
 	ep.next_action_at, ep.next_action_kind, ep.next_action_overridden, ep.needs_review, ep.note,
 	ep.added_by, ep.created_at, ep.updated_at,
 	p.origin, p.locked_at, p.d365_suppressed, p.d365_no_email, p.d365_no_phone, p.is_customer,
-	p.consent_future_at, p.country, p.created_at AS person_created_at,
+	p.consent_future_at, p.legacy_notice_at, p.legacy_kept_at, p.country,
+	p.created_at AS person_created_at,
 	COALESCE(pco.never_invite_at, rco.never_invite_at) AS blocked_at,
 	COALESCE(pco.never_invite_reason, rco.never_invite_reason) AS blocked_reason,
 	(SELECT COUNT(*) FROM touches t WHERE t.event_person_id = ep.id) AS touch_count,
@@ -765,8 +768,23 @@ export function addTouch(
 			.prepare(`INSERT INTO touches (event_person_id, kind, via, at, by) VALUES (?, ?, ?, ?, ?)`)
 			.run(id, kind, via, now, by);
 		applyChange(db, id, { type: 'touch', touch: { kind, via, at: now } }, now);
+		if (kind === 'legacy_notice' && row.person_id) syncLegacyNotice(db, row.person_id, now);
 		return Number(lastInsertRowid);
 	})();
+}
+
+/**
+ * `people.legacy_notice_at` is the first legacy notice recorded for the person on any event
+ * (§5.4, D15): their thirty days run from the first time they were told. Re-read from the
+ * touches, so undoing a notice recorded by mistake takes the clock away again.
+ */
+function syncLegacyNotice(db: DB, personId: string, now: number) {
+	db.prepare(
+		`UPDATE people SET legacy_notice_at = (
+			SELECT MIN(t.at) FROM touches t JOIN event_people ep ON ep.id = t.event_person_id
+			WHERE ep.person_id = @id AND t.kind = 'legacy_notice'
+		), updated_at = @now WHERE id = @id`
+	).run({ id: personId, now });
 }
 
 /** "Invited via LinkedIn", or the bulk Mark invited: a touch without a message link. */
@@ -795,11 +813,16 @@ export function clearLatestTouch(db: DB, eventId: string, id: number, now = Date
 	return db.transaction(() => {
 		if (owned(db, eventId, id) === null) return false;
 		const latest = db
-			.prepare(`SELECT id FROM touches WHERE event_person_id = ? ORDER BY at DESC, id DESC LIMIT 1`)
-			.get(id) as { id: number } | undefined;
+			.prepare(
+				`SELECT t.id, t.kind, ep.person_id FROM touches t JOIN event_people ep ON ep.id = t.event_person_id
+				WHERE t.event_person_id = ? ORDER BY t.at DESC, t.id DESC LIMIT 1`
+			)
+			.get(id) as { id: number; kind: TouchKind; person_id: string | null } | undefined;
 		if (!latest) return false;
 		db.prepare(`DELETE FROM touches WHERE id = ?`).run(latest.id);
 		applyChange(db, id, { type: 'recount', touches: listTouches(db, id) }, now);
+		if (latest.kind === 'legacy_notice' && latest.person_id)
+			syncLegacyNotice(db, latest.person_id, now);
 		return true;
 	})();
 }

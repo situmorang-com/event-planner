@@ -5,6 +5,7 @@ import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
 import { blockByHand, listEntries, removeEntry, type DncKind } from '$lib/server/do-not-contact';
 import type { Language } from '$lib/server/events';
+import { housekeepingRanAt, retentionCounts } from '$lib/server/housekeeping';
 import {
 	APPENDED_LINE_ERROR,
 	containsAppendedLine,
@@ -56,8 +57,11 @@ function templateGrid() {
 
 export const load: PageServerLoad = ({ url }) => {
 	const showRemoved = url.searchParams.has('removed');
+	const now = Date.now();
 	return {
 		tokens: listTokens(db),
+		// The §5.4 table with what each rule holds and what the next daily run removes.
+		retention: { rows: retentionCounts(db, now), ranAt: housekeepingRanAt(db) },
 		phoneCountry: phoneCountryDefault(db, envCountry()),
 		chase: { fields: CHASE_FIELDS, values: chaseFormValues(chaseDefaults(db)) },
 		blocked: listEntries(db, showRemoved),
@@ -68,7 +72,7 @@ export const load: PageServerLoad = ({ url }) => {
 			languages: LANGUAGES.map((l) => ({ key: l, label: LANGUAGE_LABEL[l] })),
 			placeholders: PLACEHOLDERS
 		},
-		now: Date.now()
+		now
 	};
 };
 

@@ -260,6 +260,26 @@ export function applyChange(
 			WHERE id = @id`
 		).run({ ...next, now, id: rowId });
 	}
+	if (answers(change)) keepLegacy(db, rowId, now);
 	recomputeRow(db, rowId, now);
 	return { ...row, ...next };
+}
+
+/** The changes that are the person speaking: a reply, a registration or reconfirm, a check-in. */
+const answers = (change: StageChange) =>
+	change.type === 'confirm' ||
+	change.type === 'checkin' ||
+	(change.type === 'reply' && change.reply !== 'pending');
+
+/**
+ * A legacy attendee who answers after the notice is kept (§5.4, D15). Stamped here, on the
+ * one path every answer takes, so the staff reply button, the registration pages and the
+ * check-in page can't disagree about what counts.
+ */
+function keepLegacy(db: DB, rowId: number, now: number) {
+	db.prepare(
+		`UPDATE people SET legacy_kept_at = @now, updated_at = @now
+		WHERE id = (SELECT person_id FROM event_people WHERE id = @id)
+			AND legacy_notice_at IS NOT NULL AND legacy_kept_at IS NULL`
+	).run({ id: rowId, now });
 }

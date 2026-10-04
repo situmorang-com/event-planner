@@ -10,7 +10,6 @@ import {
 	createPerson,
 	findPerson,
 	getPerson,
-	keptUntil,
 	listPeople,
 	mergeInto,
 	peopleAtCompany,
@@ -264,42 +263,7 @@ describe('mergeInto', () => {
 	});
 });
 
-describe('retention and country', () => {
-	const base = {
-		origin: 'typed' as const,
-		is_customer: 0 as const,
-		consent_future_at: null,
-		legacy_notice_at: null,
-		legacy_kept_at: null,
-		last_event_at: null,
-		created_at: Date.UTC(2026, 0, 15),
-		country: null
-	};
-
-	it('keeps prospects for twelve months after their last event, attendees until deleted', () => {
-		expect(keptUntil(base, { attendee: false, replied: false })).toBe(Date.UTC(2027, 0, 15));
-		expect(
-			keptUntil(
-				{ ...base, origin: 'research', last_event_at: Date.UTC(2026, 5, 1) },
-				{ attendee: false, replied: false }
-			)
-		).toBe(Date.UTC(2027, 5, 1));
-		expect(keptUntil(base, { attendee: true, replied: false })).toBeNull();
-		expect(keptUntil(base, { attendee: false, replied: true })).toBeNull();
-		expect(keptUntil({ ...base, is_customer: 1 }, { attendee: false, replied: false })).toBeNull();
-	});
-
-	it('gives legacy attendees thirty days after the notice unless they answer', () => {
-		const legacy = { ...base, origin: 'checkin' as const, legacy_notice_at: Date.UTC(2026, 9, 1) };
-		expect(keptUntil(legacy, { attendee: true, replied: false })).toBe(Date.UTC(2026, 9, 31));
-		expect(
-			keptUntil({ ...legacy, legacy_kept_at: 1 }, { attendee: true, replied: false })
-		).toBeNull();
-		expect(
-			keptUntil({ ...legacy, consent_future_at: 1 }, { attendee: true, replied: false })
-		).toBeNull();
-	});
-
+describe('country and lists', () => {
 	it('reads the country from the phone, then the event, else unknown', () => {
 		expect(countryOf({ country: 'MY', phone: '+62812' })).toBe('MY');
 		expect(countryOf({ country: null, phone: '+60123' })).toBe('MY');

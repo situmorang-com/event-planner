@@ -37,7 +37,13 @@ export const KIND_LABEL: Record<MessageKind, string> = {
 	legacy_notice: 'Legacy notice'
 };
 
-/** The kinds a row's message menu offers (§7); the legacy notice is the jobs' own. */
+export const isMessageKind = (v: unknown): v is MessageKind =>
+	typeof v === 'string' && v in KIND_LABEL;
+
+/**
+ * The kinds a row's message menu offers (§7). The legacy notice (§8) is added for a legacy
+ * Indonesian attendee only: it is their invitation, and the clock that follows is theirs.
+ */
 export const MENU_KINDS: MessageKind[] = [
 	'invitation',
 	'chase',
@@ -46,6 +52,10 @@ export const MENU_KINDS: MessageKind[] = [
 	'followup_maybe',
 	'thanks_no'
 ];
+
+export function menuKinds(row: Pick<PeopleRow, 'legacy'>): MessageKind[] {
+	return row.legacy ? [...MENU_KINDS, 'legacy_notice'] : MENU_KINDS;
+}
 
 export type NextActionKind = 'chase' | 'reminder';
 
@@ -205,6 +215,11 @@ export interface PeopleRow extends ChipRow {
 	next_action_overridden: boolean;
 	/** The kind the message menu preselects: the next action's, else what the stage calls for. */
 	suggested_kind: MessageKind;
+	/**
+	 * Set for a legacy Indonesian attendee (§2.3, D15): checked in before the consent boxes,
+	 * never ticked "future events". They get one notice and thirty days to answer (§5.4).
+	 */
+	legacy: { notice_at: number | null; kept_at: number | null } | null;
 }
 
 /** Today in the event's zone, as the page measures "due" and "overdue" against it. */
@@ -281,5 +296,16 @@ export function markers(row: PeopleRow, day: (ts: number) => string): Marker[] {
 		list.push({ key: 'linkedin', label: 'Via LinkedIn', tone: 'brand' });
 	if (!row.contact.whatsapp && !row.contact.email && row.contact.reason === 'not contactable')
 		list.push({ key: 'contact', label: 'Not contactable', tone: 'warn' });
+	if (row.legacy) list.push({ key: 'legacy', label: legacyLabel(row.legacy, day), tone: 'warn' });
 	return list;
+}
+
+/** What is going on with a legacy attendee (§8): the notice, the clock, or that they answered. */
+export function legacyLabel(
+	legacy: NonNullable<PeopleRow['legacy']>,
+	day: (ts: number) => string
+): string {
+	if (legacy.kept_at) return `Legacy: kept, answered ${day(legacy.kept_at)}`;
+	if (legacy.notice_at) return `Legacy: notice sent ${day(legacy.notice_at)}, kept if they reply`;
+	return 'Legacy: past attendee, send the notice first';
 }

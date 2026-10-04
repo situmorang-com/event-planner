@@ -5,6 +5,7 @@ import { countCheckins } from '$lib/server/checkins';
 import { db } from '$lib/server/db';
 import { countLive, countToReview, listEventPeople } from '$lib/server/event-people';
 import { getEvent, setChaseRules, setInvitationText } from '$lib/server/events';
+import { purgePlanning } from '$lib/server/housekeeping';
 import { eventPageLoad } from '$lib/server/jobs';
 import { languageFor } from '$lib/server/messaging';
 import {
@@ -28,6 +29,7 @@ import {
 	setTargetFocus,
 	setTargetResearch
 } from '$lib/server/planning';
+import { planningKeptUntil } from '$lib/server/retention';
 import { chaseDefaults } from '$lib/server/settings';
 import { publicBaseUrl } from '$lib/server/urls';
 import type { Actions, PageServerLoad } from './$types';
@@ -45,7 +47,8 @@ const idOf = (form: FormData, field = 'id') => {
 
 export const load: PageServerLoad = ({ params, url }) => {
 	const now = Date.now();
-	// The start job runs lazily here until the scheduler lands (§5.4).
+	// The start job and the next-action pass also run lazily here (§5.4), so a page opened
+	// before the day's housekeeping is right.
 	const event = eventPageLoad(db, requireEvent(params.id), now);
 	const rows = listEventPeople(db, event.id);
 	const brief = getBrief(db, event.id);
@@ -89,6 +92,11 @@ export const load: PageServerLoad = ({ params, url }) => {
 		started: event.starts_at !== null && now >= event.starts_at,
 		toReview: countToReview(db, event.id),
 		accepted: rows.filter((r) => r.stage !== 'found' && r.source === 'research').length,
+		// Retention (D10): when the Found rows and research stamps go, and what is left to delete.
+		retention: {
+			keptUntil: planningKeptUntil(event),
+			found: rows.filter((r) => r.stage === 'found').length
+		},
 		// The per-event invitation wording (D21) and what it replaces when left blank.
 		invitation: {
 			text: event.invitation_text ?? '',
@@ -197,5 +205,11 @@ export const actions: Actions = {
 		const id = idOf(await request.formData());
 		if (id) removeTarget(db, event.id, id);
 		return { targetRemoved: id };
+	},
+
+	// Delete planning data (D10): every Found row and the research stamps, now; logged.
+	purge: async ({ params, locals }) => {
+		const event = requireEvent(params.id);
+		return { purged: purgePlanning(db, event.id, { by: locals.who }) };
 	}
 };

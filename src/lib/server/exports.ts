@@ -3,7 +3,9 @@
 import { ORIGIN_LABEL } from '../people.ts';
 import { toCsv } from './csv.ts';
 import type { DB } from './database.ts';
-import { keptUntil, listPeople, type PersonListRow } from './people.ts';
+import { listPeople, type PersonListRow } from './people.ts';
+import { keptUntilPerson } from './retention.ts';
+import { consentBoxesSince } from './settings.ts';
 
 export interface ExportPerson {
 	email: string | null;
@@ -38,9 +40,9 @@ export const POOL_HEADERS = [
 	'First seen (UTC)'
 ];
 
-export function poolRow(p: PersonListRow) {
+export function poolRow(p: PersonListRow, since: number | null) {
 	const r = exportRow(p);
-	const kept = keptUntil(p, { attendee: p.events_attended > 0, replied: !!p.replied });
+	const kept = keptUntilPerson(p, { attendee: p.events_attended > 0, replied: !!p.replied, since });
 	return [
 		r.name,
 		r.email,
@@ -61,5 +63,12 @@ export function poolRow(p: PersonListRow) {
 /** The Contacts export (§4.5): the default list, or the prospects behind the chip. */
 export function poolCsv(db: DB, { prospects = false } = {}) {
 	const people = listPeople(db, { limit: 1_000_000, prospects });
-	return { csv: toCsv(POOL_HEADERS, people.map(poolRow)), count: people.length };
+	const since = consentBoxesSince(db);
+	return {
+		csv: toCsv(
+			POOL_HEADERS,
+			people.map((p) => poolRow(p, since))
+		),
+		count: people.length
+	};
 }

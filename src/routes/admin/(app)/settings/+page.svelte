@@ -9,6 +9,7 @@
 	import Phone from '@lucide/svelte/icons/phone';
 	import Plus from '@lucide/svelte/icons/plus';
 	import ShieldBan from '@lucide/svelte/icons/shield-ban';
+	import Timer from '@lucide/svelte/icons/timer';
 	import Users from '@lucide/svelte/icons/users';
 	import X from '@lucide/svelte/icons/x';
 	import type { PageProps } from './$types';
@@ -322,6 +323,44 @@
 	{/each}
 </section>
 
+<!-- Retention -->
+<section class="card block" id="retention">
+	<div class="block-head">
+		<span class="block-icon"><Timer size={18} /></span>
+		<div>
+			<h2>Retention</h2>
+			<p class="muted">
+				What the app deletes by itself, and when. Housekeeping runs when the server starts and once
+				a day after that; an event’s own start step also runs as soon as one of its pages is opened.
+				Every deletion is written to the activity log with ids and counts only.
+				{#if data.retention.ranAt}Last run {when(data.retention.ranAt)}.{/if}
+			</p>
+		</div>
+	</div>
+	<div class="table-wrap">
+		<table class="table">
+			<thead>
+				<tr>
+					<th>What</th>
+					<th>Kept until</th>
+					<th class="num">Held now</th>
+					<th class="num">Next run removes</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each data.retention.rows as r (r.key)}
+					<tr>
+						<td>{r.what}</td>
+						<td>{r.until}</td>
+						<td class="num">{r.total === null ? '–' : r.total.toLocaleString()}</td>
+						<td class="num" class:due={!!r.due}>{r.due === null ? '–' : r.due.toLocaleString()}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+</section>
+
 <!-- Do-not-contact list -->
 <section class="card block" id="blocked">
 	<div class="block-head">
@@ -597,6 +636,11 @@
 
 	tr.removed td {
 		color: var(--muted);
+	}
+
+	td.due {
+		color: var(--warn);
+		font-weight: 650;
 	}
 
 	.unblock {

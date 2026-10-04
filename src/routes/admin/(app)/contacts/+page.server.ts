@@ -1,20 +1,26 @@
 import { fail } from '@sveltejs/kit';
 import { countContacts, deleteContact, listContacts } from '$lib/server/contacts';
 import { db } from '$lib/server/db';
-import { keptUntil, mergeInto, setPersonCountry } from '$lib/server/people';
+import { check } from '$lib/server/do-not-contact';
+import { mergeInto, setPersonCountry } from '$lib/server/people';
 import { cleanText } from '$lib/server/normalize';
-import { isCountry } from '$lib/server/settings';
+import { personRetention } from '$lib/server/retention';
+import { consentBoxesSince, isCountry } from '$lib/server/settings';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ url }) => {
 	const q = url.searchParams.get('q') ?? '';
 	const prospects = url.searchParams.get('prospects') === '1';
+	const since = consentBoxesSince(db);
 	return {
 		q,
 		prospects,
 		contacts: listContacts(db, q, 1000, prospects).map((c) => ({
 			...c,
-			kept_until: keptUntil(c, { attendee: c.events_attended > 0, replied: !!c.replied })
+			// The rule that holds them and its date (§5.4), and for a locked person where the
+			// do-not-contact entry came from (D13).
+			kept: personRetention(c, { attendee: c.events_attended > 0, replied: !!c.replied, since }),
+			lock_source: c.locked_at ? (check(db, c)?.source ?? null) : null
 		})),
 		total: countContacts(db),
 		prospectTotal: countContacts(db, true),

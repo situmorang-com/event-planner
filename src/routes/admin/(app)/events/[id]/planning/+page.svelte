@@ -18,6 +18,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import MessageSquareText from '@lucide/svelte/icons/message-square-text';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
+	import Timer from '@lucide/svelte/icons/timer';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import UserCheck from '@lucide/svelte/icons/user-check';
 	import type { PageProps } from './$types';
@@ -457,6 +458,55 @@
 		</a>
 	</section>
 
+	<!-- Retention (D10): what research left behind, and the button that deletes it now. -->
+	<section class="card step" id="retention">
+		<div class="step-head">
+			<span class="step-number"><Timer size={15} /></span>
+			<div>
+				<h2>Planning data</h2>
+				<p class="muted">
+					What research finds is personal data with a short life: the names nobody approved go when
+					the event starts, and everything left, skipped names and the research stamps on the
+					companies, goes 90 days after the start. The brief and the target companies stay, so a
+					later event can copy them.
+				</p>
+			</div>
+		</div>
+		<div class="retention">
+			<p>
+				{#if event.planning_purged_at}
+					Planning data deleted {formatDate(event.planning_purged_at, event.timezone)}{data
+						.retention.found
+						? `; ${data.retention.found} found since`
+						: ''}.
+				{:else if data.retention.keptUntil}
+					Kept until {formatDate(data.retention.keptUntil, event.timezone)}{data.retention.found
+						? ` · ${data.retention.found} found ${data.retention.found === 1 ? 'row' : 'rows'} now`
+						: ''}.
+				{/if}
+				{#if form && 'purged' in form && form.purged !== null}
+					<span class="saved"><Check size={16} /> Deleted {form.purged}</span>
+				{/if}
+			</p>
+			{#if !event.planning_purged_at || data.retention.found}
+				<form
+					method="POST"
+					action="?/purge"
+					use:enhance={({ cancel }) => {
+						if (
+							!confirm(
+								`Delete this event’s planning data now? ${data.retention.found} found ${data.retention.found === 1 ? 'row goes' : 'rows go'}, with the research stamps. The brief and the companies stay. This is logged.`
+							)
+						)
+							cancel();
+					}}
+				>
+					<button class="btn btn-danger"><Trash2 size={16} /> Delete planning data</button>
+				</form>
+			{/if}
+		</div>
+	</section>
+
 	<!-- Invitation wording (D21): this event's own text over the message default. -->
 	<section class="card step" id="invitation">
 		<div class="step-head">
@@ -857,6 +907,21 @@
 
 	.review-link {
 		justify-self: start;
+	}
+
+	.retention {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+
+	.retention p {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		flex-wrap: wrap;
 	}
 
 	.empty {

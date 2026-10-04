@@ -78,10 +78,22 @@
 		node.focus();
 	}
 
-	// The retention rules (§5.4) in one phrase per person; null means "until deleted".
-	function kept(ts: number | null) {
-		return ts === null ? 'Until deleted' : `Until ${formatDate(ts, 'UTC')}`;
+	// The retention rules (§5.4) in one phrase per person; no date means "until deleted".
+	function kept(k: { rule: 'legacy' | 'prospect' | 'kept'; until: number | null }) {
+		if (k.rule === 'legacy')
+			return k.until === null
+				? 'Legacy: until the notice is sent'
+				: `Until ${formatDate(k.until, 'UTC')} unless they reply`;
+		return k.until === null ? 'Until deleted' : `Until ${formatDate(k.until, 'UTC')}`;
 	}
+
+	// Where a lock came from (D13), as the do-not-contact list names it.
+	const LOCK_SOURCE = {
+		staff: 'added by staff',
+		stop_reply: 'replied STOP',
+		not_me: 'said “not me”',
+		remove_me: 'asked to be removed'
+	} as const;
 	const mergeError = $derived(form && 'mergeError' in form ? form.mergeError : null);
 </script>
 
@@ -178,7 +190,8 @@
 										<span class="person-name">{c.name}</span>
 										{#if c.locked_at}
 											<span class="pill pill-bad tiny" title={c.lock_reason || 'Do not contact'}>
-												<Lock size={11} /> Locked
+												<Lock size={11} /> Locked{#if c.lock_source}
+													· {LOCK_SOURCE[c.lock_source]}{/if}
 											</span>
 										{/if}
 									</span>
@@ -206,6 +219,11 @@
 							<td>
 								{ORIGIN_LABEL[c.origin]}
 								{#if c.origin_detail}<div class="muted small">{c.origin_detail}</div>{/if}
+								{#if c.consent_future_at}
+									<div class="muted small" title="Ticked the future-events box">
+										Future events: yes, {formatDate(c.consent_future_at, 'UTC')}
+									</div>
+								{/if}
 							</td>
 							<td>
 								<form
@@ -236,7 +254,7 @@
 									<div class="muted small">{timeAgo(c.last_seen_at, data.now)}</div>
 								{:else}<span class="muted">–</span>{/if}
 							</td>
-							<td class="kept small" class:muted={c.kept_until === null}>{kept(c.kept_until)}</td>
+							<td class="kept small" class:muted={c.kept.until === null}>{kept(c.kept)}</td>
 							<td>
 								<div class="row-actions">
 									<button

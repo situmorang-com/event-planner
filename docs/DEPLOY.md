@@ -136,6 +136,12 @@ not move the stamp. Guest-list rows whose email was shared with a clearly differ
 the pool become their own person, marked for review on the People tab, so nothing is folded
 together silently.
 
+Housekeeping (the retention jobs: Found rows at the event start, planning data 90 days on,
+prospects after 12 months, legacy attendees 30 days after their notice) runs inside the app
+process, once at startup and then every 24 hours, so nothing is scheduled in Coolify. It is
+one more reason for the single-writer setting: two containers would each run it. The timer is
+skipped during `npm run build`, which imports the server modules.
+
 The registration links (`/r/<token>`, `/r/<token>/ok`, `/r/e/<event>`) are public and signed
 with the same app secret as the QR passes, so the links already sent survive a redeploy; they
 expire with the event's end as set in its settings.
