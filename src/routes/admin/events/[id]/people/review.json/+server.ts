@@ -1,15 +1,15 @@
 import { error, json } from '@sveltejs/kit';
-import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
 import { getEvent } from '$lib/server/events';
 import { COLUMN_LABEL, COLUMNS, parseGuestList, readColumns } from '$lib/server/guest-list';
+import { countryResolver } from '$lib/server/messaging';
 import { cleanText } from '$lib/server/normalize';
 import type { RequestHandler } from './$types';
 
 /**
  * Splits typed, pasted or uploaded lines into fields for the organizer to check before anything
  * is saved. Lines without a name come back too, named '', so they can be filled in. Numbers are
- * read with the event's phone country (D14). The detected column mapping comes back with the
+ * read with the company's phone country, else the event's (D14). The detected column mapping comes back with the
  * rows, and a mapping sent in `columns` is used instead of it (§4.2).
  */
 export const POST: RequestHandler = async ({ params, request }) => {
@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	if (text.length > 2_000_000) error(413, 'Too large');
 	const parsed = parseGuestList(text, {
 		company: cleanText(body.company, 120),
-		country: event.phone_country || DEFAULT_PHONE_COUNTRY,
+		country: countryResolver(db, event),
 		keepNameless: true,
 		columns: readColumns(body.columns),
 		header: body.header === undefined ? undefined : body.header !== false

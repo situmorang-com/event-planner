@@ -2,7 +2,10 @@ import type Database from 'better-sqlite3';
 
 type DB = Database.Database;
 
-export const SCHEMA_VERSION = 2;
+/** The version a database is at once SCHEMA's tables exist and every data step has run. */
+export const SCHEMA_VERSION = 3;
+/** The version SCHEMA alone gives a fresh file: the data steps after it run on it too. */
+export const SCHEMA_TABLES_VERSION = 2;
 
 /** The check-ins table, by name, so the v2 migration can build its replacement beside the old one. */
 export function checkinsTable(name: string) {

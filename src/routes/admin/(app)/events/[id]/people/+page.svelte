@@ -172,6 +172,7 @@
 			'lockError',
 			'renameError',
 			'blockError',
+			'countryError',
 			'removeError'
 		] as const)
 			if (key in form && typeof form[key] === 'string') return form[key];
@@ -395,6 +396,34 @@
 						<p class="group-meta muted">{groupSummary(group)}</p>
 					{/if}
 					<div class="group-tools">
+						{#if group.id}
+							<!-- The company's phone country (D14): how its local numbers are read, and the language
+							     its people are written to in. Empty follows the event. -->
+							<form
+								class="country-form"
+								method="POST"
+								action="?/companyCountry"
+								use:enhance={() =>
+									async ({ update }) =>
+										update({ reset: false })}
+							>
+								<input type="hidden" name="company" value={group.id} />
+								<label class="country">
+									<span class="sr-only">Phone country for {group.name}</span>
+									<select
+										class="owner-select"
+										name="country"
+										value={group.phone_country ?? ''}
+										title="Phone country: reads local numbers and picks the message language"
+										onchange={(e) => e.currentTarget.form?.requestSubmit()}
+									>
+										<option value="">Event’s country</option>
+										<option value="ID">+62 Indonesia</option>
+										<option value="MY">+60 Malaysia</option>
+									</select>
+								</label>
+							</form>
+						{/if}
 						{#if group.id && data.team.length}
 							<form
 								class="owner-form"

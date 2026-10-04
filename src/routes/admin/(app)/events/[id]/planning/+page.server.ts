@@ -3,8 +3,10 @@ import { DEPARTMENTS, SENIORITY, type Brief } from '$lib/planning';
 import { countCheckins } from '$lib/server/checkins';
 import { db } from '$lib/server/db';
 import { countLive, countToReview, listEventPeople } from '$lib/server/event-people';
-import { getEvent } from '$lib/server/events';
+import { getEvent, setInvitationText } from '$lib/server/events';
 import { eventPageLoad } from '$lib/server/jobs';
+import { languageFor } from '$lib/server/messaging';
+import { DEFAULT_TEMPLATES, PLACEHOLDERS } from '$lib/server/message-templates';
 import { cleanText } from '$lib/server/normalize';
 import {
 	addTargets,
@@ -59,6 +61,7 @@ export const load: PageServerLoad = ({ params, url }) => {
 			waiting: waiting.get(t.key) ?? 0,
 			known: t.known,
 			blocked: t.blocked_at !== null,
+			phoneCountry: t.phone_country,
 			research: t.research,
 			defaultTick,
 			ticked: !t.blocked_at && !!(t.research ?? (defaultTick ? 1 : 0)),
@@ -77,6 +80,13 @@ export const load: PageServerLoad = ({ params, url }) => {
 		started: event.starts_at !== null && now >= event.starts_at,
 		toReview: countToReview(db, event.id),
 		accepted: rows.filter((r) => r.stage !== 'found' && r.source === 'research').length,
+		// The per-event invitation wording (D21) and what it replaces when left blank.
+		invitation: {
+			text: event.invitation_text ?? '',
+			language: languageFor(event),
+			fallback: DEFAULT_TEMPLATES.invitation[languageFor(event)],
+			placeholders: PLACEHOLDERS
+		},
 		base: publicBaseUrl(url).base,
 		now,
 		tabs: {
@@ -140,6 +150,14 @@ export const actions: Actions = {
 		const value = form.get('research');
 		if (id) setTargetResearch(db, event.id, id, value === '1' ? 1 : value === '0' ? 0 : null);
 		return { researchSet: id };
+	},
+
+	// The event's own invitation wording (D21); blank goes back to the message default.
+	invitation: async ({ params, request }) => {
+		const event = requireEvent(params.id);
+		const text = String((await request.formData()).get('text') ?? '').slice(0, 2000);
+		setInvitationText(db, event.id, text);
+		return { invitationSaved: true };
 	},
 
 	removeTarget: async ({ params, request }) => {

@@ -1,4 +1,4 @@
-import type { Reply, Stage, Via } from '../people.ts';
+import type { MessageKind, Reply, Stage, Via } from '../people.ts';
 import type { DB } from './database.ts';
 
 /*
@@ -66,7 +66,7 @@ export type StageChange =
  * What a message tapped now is for (§7): the invitation until they have one, then a chase or
  * the follow-up that fits their answer. The messaging phase lets the row's menu override it.
  */
-export function suggestedTouchKind(row: Pick<StageState, 'stage' | 'reply'>): TouchKind {
+export function suggestedTouchKind(row: Pick<StageState, 'stage' | 'reply'>): MessageKind {
 	if (row.stage === 'shortlisted') return 'invitation';
 	switch (row.reply) {
 		case 'yes':

@@ -1,8 +1,9 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { seedMessageTemplates } from './message-templates.ts';
 import { migrateToV2 } from './migrate-v2.ts';
-import { SCHEMA, SCHEMA_VERSION, TABLES, tableExists } from './schema.ts';
+import { SCHEMA, SCHEMA_TABLES_VERSION, TABLES, tableExists } from './schema.ts';
 import { isCountry, schemaVersion, setSchemaVersion, type Country } from './settings.ts';
 
 export type DB = Database.Database;
@@ -15,9 +16,12 @@ export interface MigrateOptions {
 }
 
 // Each step takes a database at the previous version to its own. A failing step throws
-// before schema_version changes, so the previous image can still run on the file.
+// before schema_version changes, so the previous image can still run on the file. Steps past
+// SCHEMA_TABLES_VERSION are data steps: SCHEMA gives a fresh file the tables, and they run on
+// it just as on a migrated one.
 const STEPS: { version: number; run: (db: DB, opts: MigrateOptions) => void }[] = [
-	{ version: 2, run: migrateToV2 }
+	{ version: 2, run: migrateToV2 },
+	{ version: 3, run: (db) => seedMessageTemplates(db) }
 ];
 
 /** Brings a database up to date. Safe to run on every start, and on a reused connection. */
@@ -28,16 +32,17 @@ export function migrate(db: DB, opts: MigrateOptions = {}) {
 		// Databases before versioning have no key: the contacts table tells them from a fresh file.
 		if (!tableExists(db, 'contacts')) {
 			db.exec(SCHEMA);
-			setSchemaVersion(db, SCHEMA_VERSION);
-			return;
-		}
-		version = 1;
+			version = SCHEMA_TABLES_VERSION;
+			setSchemaVersion(db, version);
+		} else version = 1;
 	}
 	const country = isCountry(opts.phoneCountry) ? opts.phoneCountry : 'ID';
 	for (const step of STEPS) {
 		if (step.version <= version) continue;
 		step.run(db, { phoneCountry: country satisfies Country });
 		version = step.version;
+		// Version 2 stamps itself inside its transaction; the data steps are stamped here.
+		if (schemaVersion(db) !== version) setSchemaVersion(db, version);
 	}
 	// consent_boxes_since is stamped by the step that ships the consent boxes (§2.4 step 9), not
 	// here: until then every checkin-origin person without a tick is legacy, the safe reading.

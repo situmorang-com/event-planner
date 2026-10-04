@@ -7,9 +7,9 @@ import {
 	companySuggestions,
 	renameCompany,
 	setCompanyOwner,
+	setCompanyPhoneCountry,
 	unblockCompany
 } from '$lib/server/companies';
-import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
 import {
 	addTouch,
@@ -35,10 +35,12 @@ import {
 import { getEvent } from '$lib/server/events';
 import { parseGuestList } from '$lib/server/guest-list';
 import { eventPageLoad } from '$lib/server/jobs';
+import { countryResolver } from '$lib/server/messaging';
+import { messagingEnv } from '$lib/server/messaging-env';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { getPeople, mergeInto } from '$lib/server/people';
 import { addPeople, peopleView, reviewedGuests } from '$lib/server/people-page';
-import { teamNames } from '$lib/server/settings';
+import { isCountry, teamNames } from '$lib/server/settings';
 import { getStageState, suggestedTouchKind, type Via } from '$lib/server/stages';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -62,7 +64,7 @@ function ownerFrom(form: FormData): string | null {
 	return name && teamNames(db).includes(name) ? name : null;
 }
 
-export const load: PageServerLoad = ({ params, locals }) => {
+export const load: PageServerLoad = ({ params, locals, url }) => {
 	// The start job runs lazily here until the scheduler lands (§5.4).
 	const event = eventPageLoad(db, requireEvent(params.id));
 	const tabs = {
@@ -73,7 +75,11 @@ export const load: PageServerLoad = ({ params, locals }) => {
 	const base = { event, me: locals.who || null, team: teamNames(db), tabs };
 	// Without a date there is nothing to count down to, and Found rows have no expiry (D17).
 	if (event.starts_at === null) return { ...base, view: null, companies: [] };
-	return { ...base, view: peopleView(db, event), companies: companySuggestions(db) };
+	return {
+		...base,
+		view: peopleView(db, event, messagingEnv(url)),
+		companies: companySuggestions(db)
+	};
 };
 
 export const actions: Actions = {
@@ -81,7 +87,8 @@ export const actions: Actions = {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const company = cleanText(form.get('company'), 120);
-		const country = event.phone_country || DEFAULT_PHONE_COUNTRY;
+		// Numbers are read in the company's country when it has one, else the event's (D14).
+		const country = countryResolver(db, event);
 		const reviewed = form.has('guests')
 			? reviewedGuests(String(form.get('guests')), company, country)
 			: null;
@@ -159,7 +166,7 @@ export const actions: Actions = {
 			company: cleanText(values.company, 120),
 			jobTitle: cleanText(values.jobTitle, 120),
 			email: normalizeEmail(values.email),
-			phone: normalizePhone(values.phone, event.phone_country || DEFAULT_PHONE_COUNTRY),
+			phone: normalizePhone(values.phone, countryResolver(db, event)(values.company)),
 			linkedin: linkedinProfile(values.linkedin)
 		};
 		const errors: Record<string, string> = {};
@@ -214,6 +221,18 @@ export const actions: Actions = {
 		const id = cleanText(form.get('company'), 20);
 		if (id) setCompanyOwner(db, id, ownerFrom(form));
 		return { companyOwned: id };
+	},
+
+	// The company's phone country (D14): '' follows the event again. It also picks the language.
+	companyCountry: async ({ params, request }) => {
+		requireEvent(params.id);
+		const form = await request.formData();
+		const id = cleanText(form.get('company'), 20);
+		const country = String(form.get('country') ?? '');
+		if (!id || (country && !isCountry(country)))
+			return fail(400, { countryError: 'Pick Indonesia, Malaysia or the event’s country.' });
+		setCompanyPhoneCountry(db, id, isCountry(country) ? country : null);
+		return { countrySet: id };
 	},
 
 	// "Block company": nobody there can be added, researched or messaged from now on (D13).

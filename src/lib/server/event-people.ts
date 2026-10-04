@@ -39,6 +39,8 @@ export interface EventPersonRow {
 	linkedin: string | null;
 	company: string;
 	company_key: string;
+	/** The company's own phone country (D14); null follows the event. */
+	company_phone_country: Country | null;
 	source_url: string | null;
 	reason: string | null;
 	/** JSON while found: D365 flags, owner note, is_customer. */
@@ -93,6 +95,7 @@ const ROW_SELECT = `SELECT ep.id, ep.event_id, ep.person_id,
 	COALESCE(p.linkedin, ep.linkedin) AS linkedin,
 	COALESCE(pco.name, rco.name, '') AS company,
 	COALESCE(pco.key, rco.key, '') AS company_key,
+	COALESCE(pco.phone_country, rco.phone_country) AS company_phone_country,
 	COALESCE(p.source_url, ep.source_url) AS source_url,
 	COALESCE(p.research_reason, ep.reason) AS reason,
 	ep.extra, ep.stage, ep.skipped_at, ep.skipped_by, ep.source, ep.reply, ep.replied_at,
@@ -102,7 +105,7 @@ const ROW_SELECT = `SELECT ep.id, ep.event_id, ep.person_id,
 	ep.next_action_at, ep.next_action_kind, ep.next_action_overridden, ep.needs_review, ep.note,
 	ep.added_by, ep.created_at, ep.updated_at,
 	p.origin, p.locked_at, p.d365_suppressed, p.d365_no_email, p.d365_no_phone, p.is_customer,
-	p.consent_future_at,
+	p.consent_future_at, p.country, p.created_at AS person_created_at,
 	COALESCE(pco.never_invite_at, rco.never_invite_at) AS blocked_at,
 	COALESCE(pco.never_invite_reason, rco.never_invite_reason) AS blocked_reason,
 	(SELECT COUNT(*) FROM touches t WHERE t.event_person_id = ep.id) AS touch_count,

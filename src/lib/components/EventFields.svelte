@@ -12,6 +12,9 @@
 			qrMode: string;
 			targetCount: string;
 			phoneCountry: string;
+			endsAt: string;
+			language: string;
+			coHosts: string;
 		};
 		errors?: Record<string, string | undefined>;
 	}
@@ -62,17 +65,32 @@
 				</p>{/if}
 		</div>
 		<div class="field">
-			<label class="label" for="venue">Venue <span class="optional">(optional)</span></label>
+			<label class="label" for="endsAt">Ends <span class="optional">(optional)</span></label>
 			<input
 				class="input"
-				id="venue"
-				name="venue"
-				value={values.venue}
-				placeholder="Grand Ballroom, Jakarta"
+				id="endsAt"
+				name="endsAt"
+				type="datetime-local"
+				value={values.endsAt}
+				aria-invalid={errors.endsAt ? 'true' : undefined}
 			/>
+			{#if errors.endsAt}<p class="error-text">{errors.endsAt}</p>{:else}<p class="hint">
+					Registration links stop working then. Blank means six hours after the start.
+				</p>{/if}
 		</div>
 	</div>
 	<input type="hidden" name="timezone" value={timezone} />
+
+	<div class="field">
+		<label class="label" for="venue">Venue <span class="optional">(optional)</span></label>
+		<input
+			class="input"
+			id="venue"
+			name="venue"
+			value={values.venue}
+			placeholder="Grand Ballroom, Jakarta"
+		/>
+	</div>
 
 	<div class="row">
 		<div class="field">
@@ -99,7 +117,37 @@
 				<option value="ID">Indonesia (+62)</option>
 				<option value="MY">Malaysia (+60)</option>
 			</select>
-			<p class="hint">Reads local numbers like 0812… and picks the language of messages.</p>
+			<p class="hint">
+				Reads local numbers like 0812… and picks the language of messages. A company can choose its
+				own on the People tab.
+			</p>
+		</div>
+	</div>
+
+	<div class="row">
+		<div class="field">
+			<label class="label" for="language">Message language</label>
+			<select class="input" id="language" name="language" value={values.language}>
+				<option value="">From the phone country</option>
+				<option value="id">Indonesian</option>
+				<option value="en">English</option>
+				<option value="ms">Malay</option>
+			</select>
+			<p class="hint">Invitations, reminders and the registration page for everyone on the list.</p>
+		</div>
+		<div class="field">
+			<label class="label" for="coHosts">Co-hosts <span class="optional">(optional)</span></label>
+			<input
+				class="input"
+				id="coHosts"
+				name="coHosts"
+				value={values.coHosts}
+				placeholder="Microsoft Indonesia"
+			/>
+			<p class="hint">
+				Names the partner in the “share my name, company and title with…” consent box. Leave blank
+				and the box isn’t shown.
+			</p>
 		</div>
 	</div>
 

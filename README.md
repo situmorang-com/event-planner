@@ -198,19 +198,19 @@ only, never names. An event's page shows its entries under **Activity**.
 
 Copy `.env.example` to `.env`. Everything is optional in development.
 
-| Variable                | Purpose                                                                                                                                            |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_PASSWORD`        | Organizer password. **Required in production**: without it, sign-in is disabled.                                                                   |
-| `ORIGIN`                | Public URL, e.g. `https://checkin.example.com`. **Required in production** by SvelteKit's Node adapter, otherwise every form post is rejected.     |
-| `PUBLIC_BASE_URL`       | URL printed into QR codes, if it differs from `ORIGIN`.                                                                                            |
-| `ORG_NAME`              | Shown in the consent line: "I agree that _SRKK_ may keep these details…"                                                                           |
-| `PRIVACY_URL`           | Privacy policy link next to the consent box. Becomes **required** when messaging lands: the source line sent to people found by research links it. |
-| `DEFAULT_PHONE_COUNTRY` | Reads local numbers such as `0812-3456-7890` as `+62…`. Default `ID`; use `MY` for Malaysia.                                                       |
-| `DEFAULT_TIMEZONE`      | Fallback event time zone. Default `Asia/Jakarta`; new events take the organizer's browser zone.                                                    |
-| `DB_PATH`               | SQLite file. Default `data/attendance.db`. Put it on a persistent volume.                                                                          |
-| `SESSION_SECRET`        | Optional. By default a secret is generated once and stored in the database.                                                                        |
-| `ADDRESS_HEADER`        | Behind a reverse proxy, `X-Forwarded-For`, so rate limits see each attendee's IP instead of the proxy's (adapter-node setting).                    |
-| `XFF_DEPTH`             | Number of proxies in front: `1` for Traefik alone, `2` with Cloudflare proxying on top.                                                            |
+| Variable                | Purpose                                                                                                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_PASSWORD`        | Organizer password. **Required in production**: without it, sign-in is disabled.                                                                                                          |
+| `ORIGIN`                | Public URL, e.g. `https://checkin.example.com`. **Required in production** by SvelteKit's Node adapter, otherwise every form post is rejected.                                            |
+| `PUBLIC_BASE_URL`       | URL printed into QR codes, if it differs from `ORIGIN`.                                                                                                                                   |
+| `ORG_NAME`              | Shown in the consent line: "I agree that _SRKK_ may keep these details…"                                                                                                                  |
+| `PRIVACY_URL`           | Privacy policy link next to the consent box, and in the source line sent to people found by research. **Required** to message them: without it their rows show a hint instead of buttons. |
+| `DEFAULT_PHONE_COUNTRY` | Reads local numbers such as `0812-3456-7890` as `+62…`. Default `ID`; use `MY` for Malaysia.                                                                                              |
+| `DEFAULT_TIMEZONE`      | Fallback event time zone. Default `Asia/Jakarta`; new events take the organizer's browser zone.                                                                                           |
+| `DB_PATH`               | SQLite file. Default `data/attendance.db`. Put it on a persistent volume.                                                                                                                 |
+| `SESSION_SECRET`        | Optional. By default a secret is generated once and stored in the database.                                                                                                               |
+| `ADDRESS_HEADER`        | Behind a reverse proxy, `X-Forwarded-For`, so rate limits see each attendee's IP instead of the proxy's (adapter-node setting).                                                           |
+| `XFF_DEPTH`             | Number of proxies in front: `1` for Traefik alone, `2` with Cloudflare proxying on top.                                                                                                   |
 
 ## Deploying
 

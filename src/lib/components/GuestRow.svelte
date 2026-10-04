@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { followUpLink, followUpMessage, greetingName, REPLY_LABEL } from '$lib/invitations';
+	import { greetingName, REPLY_LABEL } from '$lib/invitations';
 	import { initials } from '$lib/names';
-	import { effectiveOwner, markers, STAGE_LABEL, type PeopleRow, type Reply } from '$lib/people';
+	import {
+		effectiveOwner,
+		markers,
+		STAGE_LABEL,
+		type PeopleRow,
+		type Reply,
+		type RowMessage
+	} from '$lib/people';
 	import { formatDay, formatTime } from '$lib/time';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Check from '@lucide/svelte/icons/check';
@@ -39,7 +46,7 @@
 		row: PeopleRow;
 		/** What to show, which may run ahead of `row.reply` while a change is saving. */
 		reply: Reply;
-		event: { id: string; name: string; venue: string; starts_at: number | null; timezone: string };
+		event: { id: string; timezone: string };
 		/** Team names to pick an owner from; empty hides the control. */
 		team: string[];
 		/** Set after a failed save of this row's details. */
@@ -65,24 +72,23 @@
 		{ reply: 'no', icon: X }
 	] as const;
 
-	// What the prepared message does, so the button can say so.
-	const PURPOSE: Record<Reply, string> = {
-		pending: 'Invite',
-		yes: 'Confirm with',
-		maybe: 'Follow up with',
-		no: 'Thank'
+	// What the prepared message does, so the button can say so (§7).
+	const PURPOSE: Record<RowMessage['kind'], string> = {
+		invitation: 'Invite',
+		chase: 'Chase',
+		reminder: 'Remind',
+		thanks_yes: 'Thank',
+		followup_maybe: 'Follow up with',
+		thanks_no: 'Thank',
+		legacy_notice: 'Notify'
 	};
 
 	const found = $derived(row.stage === 'found');
 	const details = $derived([row.job_title, row.email, row.phone].filter(Boolean));
 	const first = $derived(greetingName(row.name));
-	const text = $derived(followUpMessage(reply, row.name, event));
-	const whatsapp = $derived(
-		row.contact.whatsapp ? followUpLink({ email: null, phone: row.phone }, event.name, text) : null
-	);
-	const email = $derived(
-		row.contact.email ? followUpLink({ email: row.email, phone: null }, event.name, text) : null
-	);
+	// Rendered on the server for the row's language, with the opt-out line already on it.
+	const message = $derived(row.message);
+	const purpose = $derived(message ? PURPOSE[message.kind] : 'Message');
 	const owner = $derived(effectiveOwner(row));
 	const marks = $derived(markers(row, (ts) => formatDay(ts, event.timezone)));
 	const viaLinkedin = $derived(row.invited_via === 'linkedin');
@@ -481,31 +487,34 @@
 					</label>
 				</form>
 			{/if}
-			{#if whatsapp}
+			{#if message?.whatsapp}
 				<a
 					class="btn btn-ghost btn-icon btn-sm"
-					href={whatsapp.href}
+					href={message.whatsapp}
 					target="_blank"
 					rel="noreferrer"
-					title="{PURPOSE[reply]} {first} on WhatsApp"
+					title="{purpose} {first} on WhatsApp"
 					onclick={() => recordTouch('whatsapp')}
 				>
 					<MessageCircle size={17} />
-					<span class="sr-only">{PURPOSE[reply]} {first} on WhatsApp</span>
+					<span class="sr-only">{purpose} {first} on WhatsApp</span>
 				</a>
 			{/if}
-			{#if email}
+			{#if message?.email}
 				<a
 					class="btn btn-ghost btn-icon btn-sm"
-					href={email.href}
+					href={message.email}
 					target="_blank"
 					rel="noreferrer"
-					title="{PURPOSE[reply]} {first} by email"
+					title="{purpose} {first} by email"
 					onclick={() => recordTouch('email')}
 				>
 					<Mail size={17} />
-					<span class="sr-only">{PURPOSE[reply]} {first} by email</span>
+					<span class="sr-only">{purpose} {first} by email</span>
 				</a>
+			{/if}
+			{#if message?.hint && !message.whatsapp && !message.email}
+				<span class="hint-text" title={message.hint}>No message link</span>
 			{/if}
 			{#if !found && row.stage !== 'checked_in' && (row.stage === 'shortlisted' || viaLinkedin)}
 				<form method="POST" action="?/invited" use:enhance>
@@ -879,6 +888,14 @@
 		inset: 0;
 		opacity: 0;
 		cursor: pointer;
+	}
+
+	.hint-text {
+		padding: 0 6px;
+		font-size: 12.5px;
+		color: var(--muted);
+		white-space: nowrap;
+		cursor: help;
 	}
 
 	.linkedin {

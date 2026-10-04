@@ -76,6 +76,8 @@ export interface TargetRow {
 	researched_at: number | null;
 	source: 'typed' | 'copied' | 'd365' | null;
 	blocked_at: number | null;
+	/** The company's own phone country (D14); null follows the event. */
+	phone_country: 'ID' | 'MY' | null;
 	/** People in the pool at this company who may be contacted. */
 	known: number;
 	created_at: number;
@@ -86,6 +88,7 @@ export function listTargets(db: DB, eventId: string): TargetRow[] {
 		.prepare(
 			`SELECT ec.id, ec.event_id, ec.company_id, co.name, co.key, co.website, ec.focus, ec.research,
 				ec.research_requested_at, ec.researched_at, ec.source, co.never_invite_at AS blocked_at,
+				co.phone_country,
 				(SELECT COUNT(*) FROM people p WHERE p.company_id = co.id AND p.locked_at IS NULL) AS known,
 				ec.created_at
 			FROM event_companies ec JOIN companies co ON co.id = ec.company_id

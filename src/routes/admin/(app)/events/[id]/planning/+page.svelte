@@ -15,6 +15,7 @@
 	import Copy from '@lucide/svelte/icons/copy';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Plus from '@lucide/svelte/icons/plus';
+	import MessageSquareText from '@lucide/svelte/icons/message-square-text';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import UserCheck from '@lucide/svelte/icons/user-check';
@@ -30,7 +31,10 @@
 	const ready = $derived(briefIsReady(brief) && data.targets.length > 0);
 
 	let briefSaved = $state(false);
+	let invitationSaved = $state(false);
 	let copied = $state<string | null>(null);
+
+	const LANGUAGE_NAME = { id: 'Indonesian', en: 'English', ms: 'Malay' } as const;
 
 	// The agent gets web tools only and never the token: curl fetches its brief and posts its answer.
 	const command = $derived(researchCommand(data.base, event.id));
@@ -268,6 +272,11 @@
 							{/if}
 							<span class="muted small">
 								{t.live} on the list{t.waiting ? ` · ${t.waiting} to review` : ''}
+								{#if t.phoneCountry}
+									· <span title="Phone country, set on the People tab"
+										>{t.phoneCountry === 'MY' ? '+60 Malaysia' : '+62 Indonesia'}</span
+									>
+								{/if}
 								{#if t.blocked}
 									· <span class="bad">blocked</span>
 								{:else if t.research === null}
@@ -444,6 +453,57 @@
 		<a class="btn btn-secondary review-link" href="/admin/events/{event.id}/people">
 			<UserCheck size={16} /> Open People{data.toReview ? ` · ${data.toReview} to review` : ''}
 		</a>
+	</section>
+
+	<!-- Invitation wording (D21): this event's own text over the message default. -->
+	<section class="card step" id="invitation">
+		<div class="step-head">
+			<span class="step-number"><MessageSquareText size={15} /></span>
+			<div>
+				<h2>Invitation wording</h2>
+				<p class="muted">
+					What the WhatsApp and email buttons open for people not yet invited. Leave it blank to use
+					the <a href="/admin/settings#messages">message default</a> in each person’s language; text here
+					is sent to everyone on this list as written. The opt-out line is always added at the end.
+				</p>
+			</div>
+		</div>
+		<form
+			class="brief"
+			method="POST"
+			action="?/invitation"
+			use:enhance={() => {
+				invitationSaved = false;
+				return async ({ result, update }) => {
+					await update({ reset: false });
+					invitationSaved = result.type === 'success';
+				};
+			}}
+			oninput={() => (invitationSaved = false)}
+		>
+			<div class="field">
+				<label class="label" for="invitation-text">
+					This event’s invitation <span class="optional">(optional)</span>
+				</label>
+				<textarea
+					class="input textarea"
+					id="invitation-text"
+					name="text"
+					rows="5"
+					maxlength="2000"
+					placeholder={data.invitation.fallback}>{data.invitation.text}</textarea
+				>
+				<p class="hint">
+					Placeholders: {#each data.invitation.placeholders as p, i (p)}{i ? ', ' : ''}<code
+							>{p}</code
+						>{/each}. Blank means the {LANGUAGE_NAME[data.invitation.language]} default shown above.
+				</p>
+			</div>
+			<div class="actions">
+				{#if invitationSaved}<span class="saved"><Check size={16} /> Saved</span>{/if}
+				<button class="btn btn-primary">Save wording</button>
+			</div>
+		</form>
 	</section>
 {/if}
 

@@ -4,6 +4,7 @@
 	import Check from '@lucide/svelte/icons/check';
 	import Copy from '@lucide/svelte/icons/copy';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import MessageSquareText from '@lucide/svelte/icons/message-square-text';
 	import Phone from '@lucide/svelte/icons/phone';
 	import Plus from '@lucide/svelte/icons/plus';
 	import ShieldBan from '@lucide/svelte/icons/shield-ban';
@@ -18,6 +19,26 @@
 
 	const newToken = $derived(form && 'token' in form ? form.token : null);
 	const unblockId = $derived(form && 'unblockId' in form ? form.unblockId : null);
+
+	// One language's bodies show at a time; the one just saved (or refused) stays open.
+	function openLanguage(): string {
+		if (form && 'templatesSaved' in form && form.templatesSaved) return String(form.templatesSaved);
+		if (form && 'templateLanguage' in form && form.templateLanguage)
+			return String(form.templateLanguage);
+		return data.messages.languages[0].key;
+	}
+	// svelte-ignore state_referenced_locally
+	let language = $state(openLanguage());
+	const templatesSaved = $derived(
+		form && 'templatesSaved' in form && form.templatesSaved === language
+	);
+	const templateError = $derived(
+		form &&
+			'templateError' in form &&
+			(!('templateLanguage' in form) || form.templateLanguage === language)
+			? form.templateError
+			: null
+	);
 
 	const KIND_LABEL = { email: 'Email', phone: 'Mobile', name_company: 'Name + company' } as const;
 	const SOURCE_LABEL = {
@@ -181,6 +202,72 @@
 		{#if form && 'phoneSaved' in form}<span class="saved"><Check size={16} /> Saved</span>{/if}
 		{#if form && 'phoneError' in form}<p class="error-text">{form.phoneError}</p>{/if}
 	</form>
+</section>
+
+<!-- Message defaults -->
+<section class="card block" id="messages">
+	<div class="block-head">
+		<span class="block-icon"><MessageSquareText size={18} /></span>
+		<div>
+			<h2>Message defaults</h2>
+			<p class="muted">
+				What the WhatsApp and email buttons open, per language. Each person gets the language of
+				their company’s or event’s phone country unless the event picks one. The opt-out line, and
+				for people found by research the source line, are added when a message opens, so they can’t
+				be edited out. A blank box restores the built-in wording.
+			</p>
+		</div>
+	</div>
+	<div class="languages" role="tablist" aria-label="Language">
+		{#each data.messages.languages as l (l.key)}
+			<button
+				class="chip"
+				role="tab"
+				aria-selected={language === l.key}
+				onclick={() => (language = l.key)}
+			>
+				{l.label}
+			</button>
+		{/each}
+	</div>
+	{#each data.messages.languages as l (l.key)}
+		{#if language === l.key}
+			<form
+				class="templates"
+				method="POST"
+				action="?/templates"
+				use:enhance={() =>
+					async ({ update }) =>
+						update({ reset: false })}
+			>
+				<input type="hidden" name="language" value={l.key} />
+				<p class="hint">
+					Placeholders: {#each data.messages.placeholders as p, i (p)}{i ? ', ' : ''}<code>{p}</code
+						>{/each}. <code>{'{link}'}</code> is the person’s own registration link; the reminder must
+					include it.
+				</p>
+				<div class="template-grid">
+					{#each data.messages.kinds as k (k.key)}
+						<div class="field">
+							<label class="label" for="body-{l.key}-{k.key}">{k.label}</label>
+							<textarea
+								class="input textarea"
+								id="body-{l.key}-{k.key}"
+								name="body_{k.key}"
+								rows="4"
+								maxlength="2000">{data.messages.bodies[l.key][k.key]}</textarea
+							>
+						</div>
+					{/each}
+				</div>
+				<div class="actions">
+					{#if templateError}<p class="error-text">{templateError}</p>{/if}
+					{#if templatesSaved}<span class="saved"><Check size={16} /> Saved</span>{/if}
+					<button class="btn btn-primary">Save {l.label}</button>
+				</div>
+			</form>
+		{/if}
+	{/each}
 </section>
 
 <!-- Do-not-contact list -->
@@ -526,6 +613,37 @@
 		display: grid;
 		gap: 12px;
 		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	}
+
+	.languages {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.chip[aria-selected='true'] {
+		background: var(--brand-soft);
+		border-color: color-mix(in oklab, var(--brand) 55%, transparent);
+		color: var(--brand-text);
+	}
+
+	.templates {
+		display: grid;
+		gap: 14px;
+	}
+
+	.template-grid {
+		display: grid;
+		gap: 14px;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	}
+
+	.textarea {
+		height: auto;
+		padding: 10px 12px;
+		line-height: 1.5;
+		resize: vertical;
+		font-size: 14.5px;
 	}
 
 	.actions {

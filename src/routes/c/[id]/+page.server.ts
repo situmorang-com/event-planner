@@ -2,10 +2,11 @@ import { error, fail, type Cookies } from '@sveltejs/kit';
 import { publicName, firstName } from '$lib/names';
 import { publish } from '$lib/server/bus';
 import { checkIn, type Method } from '$lib/server/checkins';
-import { DEFAULT_PHONE_COUNTRY, ORG_NAME, PRIVACY_URL } from '$lib/server/config';
+import { ORG_NAME, PRIVACY_URL } from '$lib/server/config';
 import { db, secret } from '$lib/server/db';
 import { deviceFromUserAgent } from '$lib/server/device';
 import { getEvent } from '$lib/server/events';
+import { countryResolver } from '$lib/server/messaging';
 import { getPerson } from '$lib/server/people';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { issuePass, PASS_TTL_MS, verifyPass, verifyQrToken } from '$lib/server/qr-token';
@@ -140,11 +141,13 @@ export const actions: Actions = {
 			company: String(form.get('organization') ?? ''),
 			jobTitle: String(form.get('jobTitle') ?? '')
 		};
+		const company = cleanText(raw.company, 120);
 		const input = {
 			name: cleanText(raw.name, 100),
 			email: normalizeEmail(raw.email),
-			phone: normalizePhone(raw.phone, event.phone_country || DEFAULT_PHONE_COUNTRY),
-			company: cleanText(raw.company, 120),
+			// The company's phone country when it has one, else the event's (D14, §4.7).
+			phone: normalizePhone(raw.phone, countryResolver(db, event)(company)),
+			company,
 			jobTitle: cleanText(raw.jobTitle, 120)
 		};
 		const consent = form.get('consent') === 'on';

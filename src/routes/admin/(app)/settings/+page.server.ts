@@ -3,6 +3,19 @@ import { createToken, listTokens, revokeToken } from '$lib/server/api-tokens';
 import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
 import { blockByHand, listEntries, removeEntry, type DncKind } from '$lib/server/do-not-contact';
+import type { Language } from '$lib/server/events';
+import {
+	DEFAULT_TEMPLATES,
+	isLanguage,
+	KIND_LABEL,
+	LANGUAGE_LABEL,
+	LANGUAGES,
+	listTemplates,
+	MESSAGE_KINDS,
+	PLACEHOLDERS,
+	setTemplate,
+	type MessageKind
+} from '$lib/server/message-templates';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import {
 	addTeamName,
@@ -23,6 +36,18 @@ const idOf = (form: FormData, field = 'id') => {
 
 const envCountry = () => (isCountry(DEFAULT_PHONE_COUNTRY) ? DEFAULT_PHONE_COUNTRY : 'ID');
 
+/** The message bodies as a kind × language grid, with the built-in wording where none is stored. */
+function templateGrid() {
+	const bodies = Object.fromEntries(
+		LANGUAGES.map((l) => [
+			l,
+			Object.fromEntries(MESSAGE_KINDS.map((k) => [k, DEFAULT_TEMPLATES[k][l]]))
+		])
+	) as Record<Language, Record<MessageKind, string>>;
+	for (const t of listTemplates(db)) bodies[t.language][t.kind] = t.body;
+	return bodies;
+}
+
 export const load: PageServerLoad = ({ url }) => {
 	const showRemoved = url.searchParams.has('removed');
 	return {
@@ -30,6 +55,12 @@ export const load: PageServerLoad = ({ url }) => {
 		phoneCountry: phoneCountryDefault(db, envCountry()),
 		blocked: listEntries(db, showRemoved),
 		showRemoved,
+		messages: {
+			bodies: templateGrid(),
+			kinds: MESSAGE_KINDS.map((k) => ({ key: k, label: KIND_LABEL[k] })),
+			languages: LANGUAGES.map((l) => ({ key: l, label: LANGUAGE_LABEL[l] })),
+			placeholders: PLACEHOLDERS
+		},
 		now: Date.now()
 	};
 };
@@ -64,6 +95,26 @@ export const actions: Actions = {
 		if (!isCountry(country)) return fail(400, { phoneError: 'Pick Indonesia or Malaysia.' });
 		setPhoneCountryDefault(db, country);
 		return { phoneSaved: country };
+	},
+
+	// One language's bodies at a time (§4.4). A blank cell goes back to the built-in wording; the
+	// reminder must keep its reconfirm link (§7). Stamped with whoever saved it.
+	templates: async ({ request, locals }) => {
+		const form = await request.formData();
+		const language = form.get('language');
+		if (!isLanguage(language)) return fail(400, { templateError: 'Pick a language.' });
+		const bodies = Object.fromEntries(
+			MESSAGE_KINDS.map((k) => [k, String(form.get(`body_${k}`) ?? '').slice(0, 2000)])
+		) as Record<MessageKind, string>;
+		if (bodies.reminder.trim() && !bodies.reminder.includes('{link}'))
+			return fail(400, {
+				templateError: 'The reminder must include {link}: it is how people reconfirm.',
+				templateLanguage: language
+			});
+		db.transaction(() => {
+			for (const k of MESSAGE_KINDS) setTemplate(db, k, language, bodies[k], { by: locals.who });
+		})();
+		return { templatesSaved: language };
 	},
 
 	// A hand-typed entry: hashed the same way as the rows it must match (§2.2), never stored plain.

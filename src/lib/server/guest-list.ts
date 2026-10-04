@@ -323,16 +323,17 @@ function fromColumns(
 			status: cleanText(status, 60)
 		};
 	}
+	const rowCompany = get('company') || company;
 	return {
 		name:
 			get('name') ||
 			[get('first'), get('middle'), get('last')].filter(Boolean).join(' ') ||
 			(linkedin && nameFromLinkedin(linkedin)) ||
 			'',
-		company: get('company') || company,
+		company: rowCompany,
 		jobTitle: get('jobTitle'),
 		email: email && isValidEmail(email) ? email : null,
-		phone: normalizePhone(get('phone'), country),
+		phone: normalizePhone(get('phone'), countryOf(country, rowCompany)),
 		linkedin,
 		reply: reply ?? 'pending',
 		// A reply that isn't one of the usual words ("Yes, with a colleague") is kept as written.
@@ -345,7 +346,9 @@ const isPhoneLike = (cell: string) =>
 	/^[+(]?[\d\s().\-/]+$/.test(cell) && cell.replace(/\D/g, '').length >= 6;
 
 /** A typed line: a name, then a job title, email, mobile, LinkedIn link or reply in any order. */
-function fromShape(cells: string[], company: string, country: string): Row {
+function fromShape(cells: string[], company: string, country: CountryOption): Row {
+	// A typed line names one company (the form's), so its country is known up front.
+	const rowCountry = countryOf(country, company);
 	const row: Row = {
 		name: '',
 		company,
@@ -366,7 +369,7 @@ function fromShape(cells: string[], company: string, country: string): Row {
 		const linkedin = linkedinProfile(cell);
 		if (linkedin) row.linkedin ??= linkedin;
 		else if (!row.email && email && isValidEmail(email)) row.email = email;
-		else if (!row.phone && isPhoneLike(cell)) row.phone = normalizePhone(cell, country);
+		else if (!row.phone && isPhoneLike(cell)) row.phone = normalizePhone(cell, rowCountry);
 		else if (reply) row.reply = reply;
 		else if (!row.name) row.name = cell;
 		else if (!titles.length && DEGREE.test(cell)) row.name += `, ${cell}`;
@@ -380,7 +383,7 @@ function fromShape(cells: string[], company: string, country: string): Row {
 
 interface Shape {
 	company: string;
-	country: string;
+	country: CountryOption;
 	d365: boolean;
 	/** The marketing column says "do not send" rather than "send". */
 	invertedMarketing: boolean;
@@ -402,9 +405,15 @@ export interface ParsedGuestList {
 	d365: boolean;
 }
 
+/** One country for every row, or one looked up per company (D14). */
+export type CountryOption = string | ((company: string) => string);
+
+export const countryOf = (country: CountryOption, company: string) =>
+	typeof country === 'string' ? country : country(company);
+
 export interface ParseOptions {
 	company: string;
-	country: string;
+	country: CountryOption;
 	/** Return lines without a name as guests named '' (for review) instead of skipping them. */
 	keepNameless?: boolean;
 	/** The organizer's own column mapping; the first line is then a header unless `header` is false. */

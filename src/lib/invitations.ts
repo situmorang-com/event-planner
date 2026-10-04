@@ -1,6 +1,3 @@
-import { mailtoHref } from './mailto.ts';
-import { formatDate, formatTime } from './time.ts';
-
 export type Reply = 'pending' | 'yes' | 'maybe' | 'no';
 
 /** Display order: the answers, then everyone still to hear from. */
@@ -150,55 +147,4 @@ export function nameFromLinkedin(url: string): string | null {
 	while (parts.length && /\d/.test(parts[parts.length - 1])) parts.pop();
 	if (parts.length < 2 || parts.some((p) => /\d/.test(p))) return null;
 	return parts.map((p) => p[0].toUpperCase() + p.slice(1)).join(' ');
-}
-
-interface EventInfo {
-	name: string;
-	venue: string;
-	starts_at: number | null;
-	timezone: string;
-}
-
-/** The reply that fits where someone's answer stands. It opens in WhatsApp or email to edit. */
-export function followUpMessage(reply: Reply, guestName: string, event: EventInfo): string {
-	const hi = `Hi ${greetingName(guestName) || 'there'},`;
-	const when = event.starts_at
-		? `on ${formatDate(event.starts_at, event.timezone)} at ${formatTime(event.starts_at, event.timezone)}`
-		: '';
-	const where = event.venue ? (when ? event.venue : `at ${event.venue}`) : '';
-	const details = [when, where].filter(Boolean).join(', ');
-	const at = details ? `${event.name} ${details}` : event.name;
-
-	switch (reply) {
-		case 'yes':
-			return `${hi} thank you for confirming! We look forward to seeing you at ${at}.`;
-		case 'maybe':
-			return `${hi} thanks for getting back to us. We've pencilled you in for ${at}. Just let us know once you're sure.`;
-		case 'no':
-			return `${hi} thank you for letting us know. We'll miss you at ${event.name}, and we hope to see you at the next one.`;
-		default:
-			return `${hi} we'd love to have you at ${at}. Will you be able to join us?`;
-	}
-}
-
-export interface FollowUpLink {
-	href: string;
-	via: 'whatsapp' | 'email';
-}
-
-/** WhatsApp when the mobile is in international format, otherwise email, otherwise nothing. */
-export function followUpLink(
-	guest: { email: string | null; phone: string | null },
-	subject: string,
-	text: string
-): FollowUpLink | null {
-	if (guest.phone?.startsWith('+')) {
-		const number = guest.phone.replace(/\D/g, '');
-		return { via: 'whatsapp', href: `https://wa.me/${number}?text=${encodeURIComponent(text)}` };
-	}
-	if (guest.email) {
-		const query = `subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
-		return { via: 'email', href: `${mailtoHref(guest.email)}?${query}` };
-	}
-	return null;
 }

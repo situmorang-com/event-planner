@@ -1,7 +1,7 @@
 // The People page's view of an event (§4.2) and what its add form sends, kept out of the
 // route so the shaping and the ≤10 / park / pool rules can be tested on a memory database.
 import { isReply, linkedinProfile } from '../invitations.ts';
-import { chipCounts, type Chip, type PeopleRow } from '../people.ts';
+import { chipCounts, type Chip, type PeopleRow, type RowMessage } from '../people.ts';
 import type { DB } from './database.ts';
 import {
 	addFound,
@@ -15,9 +15,11 @@ import {
 	type RowExtra
 } from './event-people.ts';
 import type { EventRow } from './events.ts';
+import { countryOf, type CountryOption } from './guest-list.ts';
+import { contactPerson, rowMessage, type MessagingEnv } from './messaging.ts';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
 import { contactBlock, type PersonRow } from './people.ts';
-import { consentBoxesSince } from './settings.ts';
+import { consentBoxesSince, type Country } from './settings.ts';
 
 /** Rows at one company; "No company" sorts last. */
 export interface CompanyGroup {
@@ -25,6 +27,8 @@ export interface CompanyGroup {
 	id: string | null;
 	name: string;
 	owner: string | null;
+	/** The company's own phone country (D14); null follows the event. */
+	phone_country: Country | null;
 	blocked: boolean;
 	blocked_reason: string | null;
 	rows: PeopleRow[];
@@ -39,23 +43,13 @@ export interface PeopleView {
 	progress: { yes: number; confirmed: number; target: number | null };
 }
 
-export function toView(row: EventPersonRow, since: number | null): PeopleRow {
+export function toView(
+	row: EventPersonRow,
+	since: number | null,
+	message: RowMessage | null = null
+): PeopleRow {
 	// A Found row has no person yet, so nothing can be closed to it except its company.
-	const person =
-		row.person_id === null
-			? null
-			: {
-					locked_at: row.locked_at,
-					d365_suppressed: row.d365_suppressed ?? 0,
-					d365_no_email: row.d365_no_email ?? 0,
-					d365_no_phone: row.d365_no_phone ?? 0,
-					is_customer: row.is_customer ?? 0,
-					origin: row.origin ?? 'typed',
-					consent_future_at: row.consent_future_at,
-					created_at: row.person_created_at ?? 0,
-					country: row.country,
-					phone: row.phone
-				};
+	const person = row.person_id === null ? null : contactPerson(row);
 	const whatsapp = person ? contactBlock(person, 'whatsapp', since) : null;
 	const email = person ? contactBlock(person, 'email', since) : null;
 	return {
@@ -69,6 +63,7 @@ export function toView(row: EventPersonRow, since: number | null): PeopleRow {
 		linkedin: row.linkedin,
 		company: row.company,
 		company_key: row.company_key,
+		company_phone_country: row.company_phone_country,
 		source_url: row.source_url,
 		reason: row.reason,
 		stage: row.stage,
@@ -98,7 +93,8 @@ export function toView(row: EventPersonRow, since: number | null): PeopleRow {
 			whatsapp: !!person && whatsapp === null && !row.blocked_at,
 			email: !!person && email === null && !row.blocked_at,
 			reason: whatsapp && email ? whatsapp : null
-		}
+		},
+		message
 	};
 }
 
@@ -114,6 +110,7 @@ export function groupRows(rows: PeopleRow[]): CompanyGroup[] {
 					id: row.company_id,
 					name: row.company,
 					owner: row.company_owner,
+					phone_country: row.company_phone_country,
 					blocked: !!row.blocked_at,
 					blocked_reason: row.blocked_reason,
 					rows: []
@@ -126,9 +123,20 @@ export function groupRows(rows: PeopleRow[]): CompanyGroup[] {
 	);
 }
 
-export function peopleView(db: DB, event: EventRow, now = Date.now()): PeopleView {
+/**
+ * Everything the People page shows. `env` renders each row's message (§7); without it the rows
+ * carry no message, which is enough for counts and chips.
+ */
+export function peopleView(
+	db: DB,
+	event: EventRow,
+	env: MessagingEnv | null = null,
+	now = Date.now()
+): PeopleView {
 	const since = consentBoxesSince(db);
-	const rows = listEventPeople(db, event.id).map((r) => toView(r, since));
+	const rows = listEventPeople(db, event.id).map((r) =>
+		toView(r, since, env ? rowMessage(db, { row: r, event }, env) : null)
+	);
 	const live = rows.filter((r) => r.stage !== 'found');
 	return {
 		rows,
@@ -155,7 +163,7 @@ export const FOUND_THRESHOLD = 10;
 export function reviewedGuests(
 	raw: string,
 	company: string,
-	country: string
+	country: CountryOption
 ): GuestInput[] | string {
 	let rows: unknown;
 	try {
@@ -170,12 +178,13 @@ export function reviewedGuests(
 		const email = normalizeEmail(r.email);
 		const linkedinText = cleanText(r.linkedin, 300);
 		const extra = readExtra(r.extra);
+		const rowCompany = cleanText(r.company, 120) || company;
 		const guest: GuestInput = {
 			name: cleanText(r.name, 100),
-			company: cleanText(r.company, 120) || company,
+			company: rowCompany,
 			jobTitle: cleanText(r.jobTitle, 120),
 			email,
-			phone: normalizePhone(r.phone, country),
+			phone: normalizePhone(r.phone, countryOf(country, rowCompany)),
 			linkedin: linkedinProfile(linkedinText),
 			reply: isReply(r.reply) ? r.reply : 'pending',
 			note: cleanText(r.note, 300),

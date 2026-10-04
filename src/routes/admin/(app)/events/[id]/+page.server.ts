@@ -4,12 +4,12 @@ import { publicName } from '$lib/names';
 import { listActivity } from '$lib/server/activity-log';
 import { publish } from '$lib/server/bus';
 import { checkIn, listAttendees, removeCheckin } from '$lib/server/checkins';
-import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
 import { countLive, countToReview } from '$lib/server/event-people';
 import { parseEventForm } from '$lib/server/event-form';
 import { deleteEvent, getEvent, setEventOpen, updateEvent } from '$lib/server/events';
 import { eventPageLoad } from '$lib/server/jobs';
+import { countryResolver } from '$lib/server/messaging';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { computeStats } from '$lib/server/stats';
 import { checkinUrl, publicBaseUrl } from '$lib/server/urls';
@@ -46,7 +46,10 @@ export const load: PageServerLoad = ({ params, url }) => {
 			timezone: event.timezone,
 			qrMode: event.qr_mode,
 			targetCount: event.target_count === null ? '' : String(event.target_count),
-			phoneCountry: event.phone_country
+			phoneCountry: event.phone_country,
+			endsAt: event.ends_at ? toLocalInput(event.ends_at, event.timezone) : '',
+			language: event.language ?? '',
+			coHosts: event.co_hosts
 		}
 	};
 };
@@ -79,11 +82,12 @@ export const actions: Actions = {
 			phone: String(form.get('phone') ?? ''),
 			company: String(form.get('company') ?? '')
 		};
+		const company = cleanText(values.company, 120);
 		const input = {
 			name: cleanText(values.name, 100),
 			email: normalizeEmail(values.email),
-			phone: normalizePhone(values.phone, event.phone_country || DEFAULT_PHONE_COUNTRY),
-			company: cleanText(values.company, 120),
+			phone: normalizePhone(values.phone, countryResolver(db, event)(company)),
+			company,
 			jobTitle: ''
 		};
 		const errors: Record<string, string> = {};

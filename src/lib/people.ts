@@ -18,6 +18,28 @@ export const ORIGIN_LABEL: Record<Origin, string> = {
 	research: 'Research'
 };
 
+export type MessageKind =
+	| 'invitation'
+	| 'chase'
+	| 'reminder'
+	| 'thanks_yes'
+	| 'followup_maybe'
+	| 'thanks_no'
+	| 'legacy_notice';
+
+/** The message a row's buttons open (§7), rendered on the server for the row's language. */
+export interface RowMessage {
+	kind: MessageKind;
+	/** Null when the message can't be rendered: a research find without PRIVACY_URL set. */
+	text: string | null;
+	/** wa.me link: the mobile is international and the channel is open to them. */
+	whatsapp: string | null;
+	/** mailto link: they have an email and the channel is open to them. */
+	email: string | null;
+	/** Shown instead of buttons when something the organizer can fix is missing. */
+	hint: string | null;
+}
+
 export const STAGE_LABEL: Record<Stage, string> = {
 	found: 'Found',
 	shortlisted: 'Shortlisted',
@@ -122,6 +144,8 @@ export interface PeopleRow extends ChipRow {
 	linkedin: string | null;
 	company: string;
 	company_key: string;
+	/** The company's own phone country (D14); null follows the event. */
+	company_phone_country: 'ID' | 'MY' | null;
 	source_url: string | null;
 	reason: string | null;
 	source: Source;
@@ -145,6 +169,8 @@ export interface PeopleRow extends ChipRow {
 	touch_count: number;
 	/** Which message buttons may show (§2.3), and why none may when both are closed. */
 	contact: { whatsapp: boolean; email: boolean; reason: string | null };
+	/** What the buttons open; null while found (no person to write to yet). */
+	message: RowMessage | null;
 }
 
 export const isLive = (row: Pick<PeopleRow, 'stage'>) => row.stage !== 'found';

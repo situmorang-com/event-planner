@@ -128,6 +128,11 @@ export function updateEvent(db: DB, id: string, input: EventInput) {
 	});
 }
 
+/** The per-event invitation wording (D21), from the Planning tab; empty means the template. */
+export function setInvitationText(db: DB, id: string, text: string) {
+	db.prepare(`UPDATE events SET invitation_text = ? WHERE id = ?`).run(text.trim() || null, id);
+}
+
 export function setEventOpen(db: DB, id: string, open: boolean) {
 	db.prepare(`UPDATE events SET is_open = ? WHERE id = ?`).run(open ? 1 : 0, id);
 }

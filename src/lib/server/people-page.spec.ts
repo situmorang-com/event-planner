@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { markers } from '../people';
 import { checkIn } from './checkins';
-import { blockCompany, findCompany, setCompanyOwner } from './companies';
+import { blockCompany, findCompany, setCompanyOwner, setCompanyPhoneCountry } from './companies';
 import { createDb, type DB } from './database';
 import { lockPerson } from './do-not-contact';
 import {
@@ -29,6 +29,12 @@ const guest = (name: string, extra: Partial<GuestInput> = {}): GuestInput => ({
 });
 
 const START = Date.UTC(2026, 10, 1, 2);
+const ENV = {
+	org: 'SRKK',
+	privacyUrl: 'https://srkk.test/privacy',
+	base: 'https://ep.test',
+	secret: 's'
+};
 
 function newEvent(db: DB) {
 	return createEvent(db, {
@@ -45,7 +51,7 @@ describe('peopleView', () => {
 	let db: DB;
 	let eventId: string;
 	const event = () => db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId) as never;
-	const view = (now = START - 86_400_000) => peopleView(db, event(), now);
+	const view = (now = START - 86_400_000) => peopleView(db, event(), ENV, now);
 
 	beforeEach(() => {
 		db = createDb(':memory:');
@@ -188,6 +194,62 @@ describe('peopleView', () => {
 	});
 });
 
+describe('peopleView messages', () => {
+	let db: DB;
+	let eventId: string;
+	const event = () => db.prepare(`SELECT * FROM events WHERE id = ?`).get(eventId) as never;
+	const view = () => peopleView(db, event(), ENV, START - 86_400_000);
+
+	beforeEach(() => {
+		db = createDb(':memory:');
+		eventId = newEvent(db);
+	});
+
+	it('renders each live row a message in its company’s language with links per open channel', () => {
+		addShortlisted(
+			db,
+			eventId,
+			[
+				guest('Rina Wijaya', { email: 'rina@batavia.co.id', phone: '+6281234567890' }),
+				guest('Mei Ling', { company: 'Selat Energy', email: 'mei@selat.my', phone: '0123456789' })
+			],
+			{ source: 'typed' }
+		);
+		setCompanyPhoneCountry(db, findCompany(db, 'Selat Energy')!.id, 'MY');
+		const [rina, mei] = view().rows;
+		expect(rina.message).toMatchObject({ kind: 'invitation', hint: null });
+		expect(rina.message?.text).toMatch(/^Halo Rina, SRKK mengundang Anda ke Launch/);
+		expect(rina.message?.text).toMatch(
+			/Balas STOP jika Anda tidak ingin dihubungi lagi tentang acara\.$/
+		);
+		expect(rina.message?.whatsapp).toMatch(/^https:\/\/wa\.me\/6281234567890\?text=/);
+		expect(rina.message?.email).toMatch(/^mailto:rina@batavia\.co\.id\?subject=Launch&body=/);
+		// Mei's company reads MY: her number is local, so email only, and the Malay wording.
+		expect(mei.company_phone_country).toBe('MY');
+		expect(mei.message?.text).toMatch(/^Hai Mei, SRKK ingin menjemput anda/);
+		expect(mei.message?.whatsapp).toBeNull();
+		expect(mei.message?.email).toMatch(/^mailto:mei@selat\.my/);
+		expect(view().groups.find((g) => g.name === 'Selat Energy')?.phone_country).toBe('MY');
+	});
+
+	it('shows a hint instead of buttons for a research find until PRIVACY_URL is set', () => {
+		db.prepare(
+			`INSERT INTO event_people (event_id, name, company_id, source_url, stage, source, created_at,
+				updated_at) VALUES (?, 'Andi Pratama', NULL, 'https://x.test/team', 'found', 'research', 1, 1)`
+		).run(eventId);
+		const found = view().rows[0];
+		expect(found.message).toBeNull();
+		shortlistFound(db, eventId, found.id);
+		db.prepare(`UPDATE people SET email = 'andi@x.test'`).run();
+		const dark = peopleView(db, event(), { ...ENV, privacyUrl: '' }).rows[0];
+		expect(dark.message).toMatchObject({ text: null, whatsapp: null, email: null });
+		expect(dark.message?.hint).toMatch(/PRIVACY_URL/);
+		const lit = view().rows[0];
+		expect(lit.message?.email).toMatch(/^mailto:andi@x\.test/);
+		expect(lit.message?.text).toContain('https://x.test/team');
+	});
+});
+
 describe('addPeople', () => {
 	let db: DB;
 	let eventId: string;
@@ -273,7 +335,7 @@ describe('addPeople', () => {
 		expect(parked).toMatchObject({ added: 0, found: 1 });
 		const budi = rows().find((r) => r.name === 'Budi')!;
 		expect(budi).toMatchObject({ stage: 'found', source: 'd365' });
-		expect(peopleView(db, event()).rows.find((r) => r.id === budi.id)?.suppressed).toBe(true);
+		expect(peopleView(db, event(), ENV).rows.find((r) => r.id === budi.id)?.suppressed).toBe(true);
 		expect(shortlistFound(db, eventId, budi.id)).toMatchObject({ status: 'refused' });
 		expect(findCompany(db, 'Batavia Foods')).toMatchObject({
 			owner: 'Sari Dewi',
