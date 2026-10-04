@@ -182,7 +182,11 @@ export const actions: Actions = {
 	remove: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const id = rowId(await request.formData());
-		if (id !== null) removeRow(db, event.id, id, { by: locals.who });
+		const result = id === null ? 'missing' : removeRow(db, event.id, id, { by: locals.who });
+		if (result === 'checked in')
+			return fail(409, {
+				removeError: 'They have checked in. Remove the check-in on the Check-ins tab instead.'
+			});
 		return { removed: id };
 	},
 

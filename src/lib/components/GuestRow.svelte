@@ -587,17 +587,22 @@
 							<button class="menu-item"><Ban size={15} /> Don’t contact again…</button>
 						</form>
 					{/if}
-					<form
-						method="POST"
-						action="?/remove"
-						use:enhance={({ cancel }) => {
-							if (!confirm(`Remove ${row.name} from this event?`)) cancel();
-							closeMenu();
-						}}
-					>
-						<input type="hidden" name="id" value={row.id} />
-						<button class="menu-item danger"><Trash2 size={15} /> Remove</button>
-					</form>
+					{#if row.checkin_id}
+						<!-- A check-in is attendance: undoing it belongs to the Check-ins tab, which also keeps this row. -->
+						<p class="menu-note">Checked in: remove the check-in on the Check-ins tab.</p>
+					{:else}
+						<form
+							method="POST"
+							action="?/remove"
+							use:enhance={({ cancel }) => {
+								if (!confirm(`Remove ${row.name} from this event?`)) cancel();
+								closeMenu();
+							}}
+						>
+							<input type="hidden" name="id" value={row.id} />
+							<button class="menu-item danger"><Trash2 size={15} /> Remove</button>
+						</form>
+					{/if}
 				</div>
 			</details>
 		</div>
@@ -928,6 +933,13 @@
 		border: 1px solid var(--border);
 		background: var(--surface);
 		box-shadow: var(--shadow-lg);
+	}
+
+	.menu-note {
+		padding: 8px 12px;
+		font-size: 13px;
+		color: var(--muted);
+		max-width: 240px;
 	}
 
 	.menu-item {

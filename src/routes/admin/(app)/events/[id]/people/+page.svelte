@@ -171,7 +171,8 @@
 			'mergeError',
 			'lockError',
 			'renameError',
-			'blockError'
+			'blockError',
+			'removeError'
 		] as const)
 			if (key in form && typeof form[key] === 'string') return form[key];
 		if ('refusedAll' in form && form.refusedAll?.length)

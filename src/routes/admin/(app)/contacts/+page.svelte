@@ -93,8 +93,12 @@
 	<div>
 		<h1>Contacts</h1>
 		<p class="muted">
-			{data.total.toLocaleString()} people who attended, replied or registered, matched by email, mobile,
-			LinkedIn and name across every event
+			{#if data.prospects}
+				{data.prospectTotal.toLocaleString()} prospects: found or typed, never replied, attended or registered
+			{:else}
+				{data.total.toLocaleString()} people who attended, replied or registered, matched by email, mobile,
+				LinkedIn and name across every event
+			{/if}
 		</p>
 	</div>
 	<div class="head-actions">

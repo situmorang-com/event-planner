@@ -575,12 +575,23 @@ export function lockRow(
 }
 
 /** Remove: the row goes, the person stays in the pool. Logged by id. */
-export function removeRow(db: DB, eventId: string, id: number, { by = '' } = {}, now = Date.now()) {
+/**
+ * Deletes an event row. A row that holds a check-in is attendance, not a plan: it can only be
+ * undone from the Check-ins tab (removeCheckin), which keeps every check-in paired with a row.
+ */
+export function removeRow(
+	db: DB,
+	eventId: string,
+	id: number,
+	{ by = '' } = {},
+	now = Date.now()
+): 'removed' | 'missing' | 'checked in' {
 	return db.transaction(() => {
 		const row = db
-			.prepare(`SELECT person_id FROM event_people WHERE id = ? AND event_id = ?`)
-			.get(id, eventId) as { person_id: string | null } | undefined;
-		if (!row) return false;
+			.prepare(`SELECT person_id, checkin_id FROM event_people WHERE id = ? AND event_id = ?`)
+			.get(id, eventId) as { person_id: string | null; checkin_id: number | null } | undefined;
+		if (!row) return 'missing';
+		if (row.checkin_id) return 'checked in';
 		db.prepare(`DELETE FROM event_people WHERE id = ?`).run(id);
 		if (row.person_id) touchLastEvent(db, row.person_id, now);
 		logActivity(
@@ -588,7 +599,7 @@ export function removeRow(db: DB, eventId: string, id: number, { by = '' } = {},
 			{ eventId, kind: 'delete', who: by, what: { eventPersonId: id }, rowCount: 1 },
 			now
 		);
-		return true;
+		return 'removed';
 	})();
 }
 
