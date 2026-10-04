@@ -137,7 +137,10 @@ export interface PeopleRow extends ChipRow {
 	note: string;
 	locked_at: number | null;
 	blocked_at: number | null;
+	blocked_reason: string | null;
 	suppressed: boolean;
+	/** Any D365 flag on the person (§6.1), which the row menu can clear. */
+	d365_flagged: boolean;
 	chase_count: number;
 	touch_count: number;
 	/** Which message buttons may show (§2.3), and why none may when both are closed. */

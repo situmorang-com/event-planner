@@ -3,9 +3,22 @@ import { companyKey, nameKey } from '../invitations.ts';
 type Person = { name: string; company: string; email: string | null; phone: string | null };
 
 /**
- * Pairs a guest list with the check-ins at the event. Email and mobile match exactly; a name
- * match only counts when the companies don't contradict it. Check-ins left over are walk-ins.
- * Live rows carry `checkin_id` now, so this serves the v1 → v2 migration and loose pairing.
+ * Two names that cannot be the same person: both given and not one word in common. "Rina" and
+ * "Rina Wijaya" agree (an abbreviation); "Rina Maharani" and "Hendra Gunawan" clash, so a
+ * shared info@ address must not fold them together (§3, D6).
+ */
+export function namesClash(a: string, b: string): boolean {
+	const [x, y] = [nameKey(a), nameKey(b)];
+	if (!x || !y) return false;
+	const words = new Set(x.split(' '));
+	return !y.split(' ').some((w) => words.has(w));
+}
+
+/**
+ * Pairs a guest list with the check-ins at the event. Email and mobile match exactly, except
+ * that an email shared by two clearly different names is not a pair; a name match only counts
+ * when the companies don't contradict it. Check-ins left over are walk-ins. Live rows carry
+ * `checkin_id` now, so this serves the v1 → v2 migration and loose pairing.
  */
 export function matchArrivals<
 	I extends Person & { id: number },
@@ -33,7 +46,10 @@ export function matchArrivals<
 		}
 	};
 
-	pair((p) => p.email);
+	pair(
+		(p) => p.email,
+		(i, a) => !namesClash(i.name, a.name)
+	);
 	pair((p) => p.phone);
 	pair(
 		(p) => nameKey(p.name) || null,

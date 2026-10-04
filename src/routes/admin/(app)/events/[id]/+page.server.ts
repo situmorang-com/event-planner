@@ -82,7 +82,7 @@ export const actions: Actions = {
 		const input = {
 			name: cleanText(values.name, 100),
 			email: normalizeEmail(values.email),
-			phone: normalizePhone(values.phone, DEFAULT_PHONE_COUNTRY),
+			phone: normalizePhone(values.phone, event.phone_country || DEFAULT_PHONE_COUNTRY),
 			company: cleanText(values.company, 120),
 			jobTitle: ''
 		};

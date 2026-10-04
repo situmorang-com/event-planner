@@ -277,6 +277,11 @@ describe('Dynamics 365 exports', () => {
 		const states = 'Full Name\tStatus\nRina\tActive\nAndi\tInactive';
 		const parsed = parseGuestList(states, opts);
 		expect(parsed.columns).toEqual({ name: 0, d365Status: 1 });
+		// A mapping chosen by hand under "change columns" is not second-guessed.
+		expect(parseGuestList(states, { ...opts, columns: { name: 0, reply: 1 } }).columns).toEqual({
+			name: 0,
+			reply: 1
+		});
 		expect(parsed.guests.map((g) => [g.reply, g.note])).toEqual([
 			['pending', ''],
 			['pending', '']

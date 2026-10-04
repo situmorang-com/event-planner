@@ -2,12 +2,13 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { companyKey, nameKey } from '../invitations.ts';
 import type { DB, MigrateOptions } from './database.ts';
 import { shortId } from './ids.ts';
-import { matchArrivals } from './match-arrivals.ts';
+import { matchArrivals, namesClash } from './match-arrivals.ts';
 import {
 	countryFromPhone,
 	countryFromTimezone,
 	createPerson,
 	findPerson,
+	getPerson,
 	mergeEventRows,
 	updatePerson,
 	type RowForMerge
@@ -78,6 +79,31 @@ type Suggestion = {
 	decided_at: number | null;
 };
 
+// The planning tables as main@0dba76a created them. A version-1 file from before that release
+// has neither, and the steps below read both, so they are created empty first.
+const V1_PLANNING_TABLES = `
+	CREATE TABLE IF NOT EXISTS target_companies (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		website TEXT NOT NULL DEFAULT '',
+		focus TEXT NOT NULL DEFAULT '',
+		created_at INTEGER NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS suggestions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+		company TEXT NOT NULL,
+		name TEXT NOT NULL,
+		job_title TEXT NOT NULL DEFAULT '',
+		linkedin TEXT,
+		source_url TEXT NOT NULL DEFAULT '',
+		reason TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'added', 'dismissed')),
+		created_at INTEGER NOT NULL,
+		decided_at INTEGER
+	);`;
+
 const EVENT_COLUMNS: [string, string][] = [
 	['ends_at', 'INTEGER'],
 	['target_count', 'INTEGER'],
@@ -116,9 +142,10 @@ export function migrateToV2(db: DB, { phoneCountry = 'ID' }: MigrateOptions) {
 				if (!hasColumn(db, 'events', column))
 					db.exec(`ALTER TABLE events ADD COLUMN ${column} ${type}`);
 			db.prepare(`UPDATE events SET phone_country = ?`).run(phoneCountry);
-			// Guest lists created before the LinkedIn column existed.
+			// Guest lists created before the LinkedIn column existed, or before planning did.
 			if (!hasColumn(db, 'invitations', 'linkedin'))
 				db.exec(`ALTER TABLE invitations ADD COLUMN linkedin TEXT`);
+			db.exec(V1_PLANNING_TABLES);
 
 			db.exec(TABLES.companies);
 			db.exec(TABLES.people);
@@ -213,14 +240,16 @@ export function migrateToV2(db: DB, { phoneCountry = 'ID' }: MigrateOptions) {
 			db.exec(TABLES.message_templates);
 			db.exec(TABLES.activity_log);
 
-			// 4. Guest lists become event rows, paired with their check-ins.
-			const createdHere = new Set<string>();
+			// 4. Guest lists become event rows, paired with their check-ins; check-ins that were
+			// never on a list become walk-in rows, as the live app writes them (§4.7).
+			const createdHere = new Map<string, number>();
 			const rowByKey = new Map<string, number>();
 			const insertRow = db.prepare(
 				`INSERT INTO event_people (event_id, person_id, company_id, stage, source, reply, replied_at,
-					invited_at, invited_via, checkin_id, consent_event_at, note, created_at, updated_at)
-				VALUES (@eventId, @personId, @companyId, @stage, 'typed', @reply, @repliedAt, @invitedAt,
-					@invitedVia, @checkinId, @consentEventAt, @note, @createdAt, @updatedAt)`
+					invited_at, invited_via, checkin_id, consent_event_at, needs_review, note, created_at,
+					updated_at)
+				VALUES (@eventId, @personId, @companyId, @stage, @source, @reply, @repliedAt, @invitedAt,
+					@invitedVia, @checkinId, @consentEventAt, @needsReview, @note, @createdAt, @updatedAt)`
 			);
 			const rowFor = db.prepare(
 				`SELECT id, event_id, stage, reply, replied_at, invited_at, invited_via, last_contacted_at,
@@ -232,9 +261,11 @@ export function migrateToV2(db: DB, { phoneCountry = 'ID' }: MigrateOptions) {
 				`SELECT id FROM event_people WHERE event_id = ? AND person_id = ?`
 			);
 			const eventIds = (
-				db.prepare(`SELECT DISTINCT event_id FROM invitations ORDER BY event_id`).all() as {
-					event_id: string;
-				}[]
+				db
+					.prepare(
+						`SELECT event_id FROM invitations UNION SELECT event_id FROM checkins ORDER BY event_id`
+					)
+					.all() as { event_id: string }[]
 			).map((r) => r.event_id);
 			for (const eventId of eventIds) {
 				const invitations = db
@@ -242,22 +273,23 @@ export function migrateToV2(db: DB, { phoneCountry = 'ID' }: MigrateOptions) {
 					.all(eventId) as Invitation[];
 				const checkins = db
 					.prepare(
-						`SELECT c.id AS checkin_id, c.person_id, c.consent_at, p.name, p.email, p.phone,
-							COALESCE(co.name, '') AS company
+						`SELECT c.id AS checkin_id, c.person_id, c.consent_at, c.checked_in_at, p.name, p.email,
+							p.phone, COALESCE(co.name, '') AS company
 						FROM checkins c JOIN people p ON p.id = c.person_id
 							LEFT JOIN companies co ON co.id = p.company_id
-						WHERE c.event_id = ?`
+						WHERE c.event_id = ? ORDER BY c.id`
 					)
 					.all(eventId) as {
 					checkin_id: number;
 					person_id: string;
 					consent_at: number | null;
+					checked_in_at: number;
 					name: string;
 					email: string | null;
 					phone: string | null;
 					company: string;
 				}[];
-				const { arrived } = matchArrivals(invitations, checkins);
+				const { arrived, walkIns } = matchArrivals(invitations, checkins);
 				for (const inv of invitations) {
 					const pair = arrived.get(inv.id);
 					const details = {
@@ -269,36 +301,65 @@ export function migrateToV2(db: DB, { phoneCountry = 'ID' }: MigrateOptions) {
 						company: inv.company
 					};
 					// The check-in's person wins over whoever findPerson would pick.
-					const hit = pair ? { id: pair.person_id } : findPerson(db, details, eventId);
+					let hit = pair ? getPerson(db, pair.person_id) : findPerson(db, details, eventId);
+					// An address shared by two clearly different names is not one person (D6): the
+					// invitee gets their own record, flagged for a human to look at.
+					let needsReview = 0;
+					if (
+						!pair &&
+						hit &&
+						inv.email &&
+						hit.email === inv.email.toLowerCase() &&
+						namesClash(hit.name, inv.name) &&
+						!(inv.phone && hit.phone === inv.phone) &&
+						!(inv.linkedin && hit.linkedin === inv.linkedin)
+					) {
+						hit = undefined;
+						needsReview = 1;
+					}
 					let personId = hit?.id ?? '';
-					if (hit) updatePerson(db, personId, details, { origin: 'typed' }, inv.updated_at);
-					else {
+					if (hit)
+						// Equal rank: the newer record wins (§3), so the dates decide.
+						updatePerson(
+							db,
+							personId,
+							details,
+							{
+								origin: 'typed',
+								tieBreak: inv.updated_at >= hit.updated_at ? 'incoming' : 'stored'
+							},
+							Math.max(inv.updated_at, hit.updated_at)
+						);
+					else
 						personId = createPerson(
 							db,
 							details,
 							{ origin: 'typed', originDetail: 'migrated from guest list' },
 							inv.created_at
 						);
-						createdHere.add(personId);
-					}
 					const replied = inv.reply !== 'pending';
+					// v1 always dated a reply; a hand-edited row without one still gets a date.
+					const repliedAt = replied ? (inv.replied_at ?? inv.updated_at) : null;
 					const { lastInsertRowid } = insertRow.run({
 						eventId,
 						// A second invitation for one person is inserted unlinked, then folded in.
 						personId: existingRow.get(eventId, personId) ? null : personId,
 						companyId: companyId(inv.company),
 						stage: pair ? 'checked_in' : replied ? 'replied' : 'shortlisted',
+						source: 'typed',
 						reply: inv.reply,
-						repliedAt: inv.replied_at,
-						invitedAt: replied ? inv.replied_at : null,
+						repliedAt,
+						invitedAt: repliedAt,
 						invitedVia: replied ? 'other' : null,
 						checkinId: pair?.checkin_id ?? null,
 						consentEventAt: pair?.consent_at ?? null,
+						needsReview,
 						note: inv.note,
 						createdAt: inv.created_at,
 						updatedAt: inv.updated_at
 					});
 					let rowId = Number(lastInsertRowid);
+					if (!hit) createdHere.set(personId, rowId);
 					const survivor = existingRow.get(eventId, personId) as { id: number } | undefined;
 					if (survivor && survivor.id !== rowId) {
 						mergeEventRows(
@@ -310,6 +371,35 @@ export function migrateToV2(db: DB, { phoneCountry = 'ID' }: MigrateOptions) {
 						rowId = survivor.id;
 					}
 					rowByKey.set(`${eventId}:${nameKey(inv.name)}@${companyKey(inv.company)}`, rowId);
+				}
+				for (const c of walkIns) {
+					const mine = existingRow.get(eventId, c.person_id) as { id: number } | undefined;
+					if (mine) {
+						// On the list through the pool, though the arrival matcher didn't pair them.
+						db.prepare(
+							`UPDATE event_people SET stage = 'checked_in', checkin_id = ?, consent_event_at = ?
+							WHERE id = ?`
+						).run(c.checkin_id, c.consent_at, mine.id);
+						continue;
+					}
+					const person = getPerson(db, c.person_id);
+					insertRow.run({
+						eventId,
+						personId: c.person_id,
+						companyId: person?.company_id ?? null,
+						stage: 'checked_in',
+						source: 'walk_in',
+						reply: 'pending',
+						repliedAt: null,
+						invitedAt: null,
+						invitedVia: null,
+						checkinId: c.checkin_id,
+						consentEventAt: c.consent_at,
+						needsReview: 0,
+						note: '',
+						createdAt: c.checked_in_at,
+						updatedAt: c.checked_in_at
+					});
 				}
 			}
 
@@ -328,8 +418,9 @@ export function migrateToV2(db: DB, { phoneCountry = 'ID' }: MigrateOptions) {
 					const { person_id } = db
 						.prepare(`SELECT person_id FROM event_people WHERE id = ?`)
 						.get(rowId) as { person_id: string };
-					// Never downgrade an attendee or someone typed in earlier (D16).
-					if (createdHere.has(person_id))
+					// Only the row that created the person may relabel them: an attendee, or someone
+					// typed in on another event, keeps their first origin (D16).
+					if (createdHere.get(person_id) === rowId)
 						db.prepare(
 							`UPDATE people SET origin = 'research', source_url = ?, research_reason = ?
 							WHERE id = ?`

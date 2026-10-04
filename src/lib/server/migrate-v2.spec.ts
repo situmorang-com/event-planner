@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { listAttendees } from './checkins';
 import { migrate, type DB } from './database';
-import { listEventPeople } from './event-people';
+import { countLive, listEventPeople } from './event-people';
 import { getPerson } from './people';
 import { listTargets } from './planning';
 import { consentBoxesSince, schemaVersion } from './settings';
@@ -76,6 +76,24 @@ const SCHEMA_V1 = `
 
 const T0 = Date.UTC(2026, 5, 1);
 const DAY = 86_400_000;
+
+/** An empty version-1 database. */
+function bareV1(): DB {
+	const db = new Database(':memory:');
+	db.pragma('foreign_keys = ON');
+	db.exec(SCHEMA_V1);
+	db.prepare(`INSERT INTO settings (key, value) VALUES ('secret', 'abc')`).run();
+	return db;
+}
+
+const INSERT_EVENT = `INSERT INTO events (id, name, venue, starts_at, timezone, qr_mode, is_open,
+	created_at) VALUES (?, ?, '', ?, 'Asia/Jakarta', 'static', 1, ?)`;
+const INSERT_CONTACT = `INSERT INTO contacts (id, name, email, phone, company, job_title, created_at,
+	updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+const INSERT_CHECKIN = `INSERT INTO checkins (event_id, contact_id, checked_in_at, method, device,
+	consent_at) VALUES (?, ?, ?, 'form', 'ios', ?)`;
+const INSERT_INVITE = `INSERT INTO invitations (event_id, name, company, job_title, email, phone,
+	reply, replied_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 /** A production-shaped version-1 database: a past event with a guest list, an upcoming one. */
 function buildV1(path = ':memory:'): DB {
@@ -332,14 +350,25 @@ describe('migration to schema version 2', () => {
 			invited_at: T0 - 19 * DAY,
 			invited_via: 'other'
 		});
-		// Typed over typed: the newer spelling (with its title) wins, so look him up by id.
+		// Typed over typed, the newer record wins (§3): the contact was saved after the guest
+		// list, so its spelling stays and the invitation only fills the blank title.
 		expect(rows.find((r) => r.person_id === 'c-hendra')).toMatchObject({
-			name: 'Bapak Hendra Gunawan',
+			name: 'Hendra Gunawan',
 			source: 'typed',
 			stage: 'checked_in',
 			checkin_id: 2,
 			consent_event_at: null,
 			job_title: 'IT Manager'
+		});
+		expect(getPerson(db, 'c-hendra')?.updated_at).toBe(T0);
+		// Checked in without ever being on the list: a walk-in row, as the live app writes it.
+		expect(rows.find((r) => r.person_id === 'c-dewi')).toMatchObject({
+			stage: 'checked_in',
+			source: 'walk_in',
+			checkin_id: 3,
+			consent_event_at: T0 + 3_000,
+			reply: 'pending',
+			created_at: T0 + 3_000
 		});
 		expect(byName('Andi Pratama')).toMatchObject({
 			stage: 'replied',
@@ -385,7 +414,8 @@ describe('migration to schema version 2', () => {
 			linkedin: 'https://www.linkedin.com/in/kevin-tan'
 		});
 		expect(byName('Maya Anggraini')).toMatchObject({ stage: 'found', skipped_at: T0 - 19 * DAY });
-		expect(rows).toHaveLength(6);
+		expect(rows).toHaveLength(7);
+		expect(countLive(db, 'past')).toBe(5);
 
 		// Steps 1 and 6: companies by most common spelling, targets with their website.
 		expect(listTargets(db, 'past').map((t) => [t.name, t.website, t.focus])).toEqual([
@@ -397,20 +427,176 @@ describe('migration to schema version 2', () => {
 		).toEqual({
 			value: 'MY'
 		});
-		// Everyone migrated checked in before the consent boxes existed, so legacy has a date.
-		expect(consentBoxesSince(db)).toBeGreaterThan(T0);
+		// The consent boxes have not shipped, so nothing says when legacy ends (§2.4 step 9).
+		expect(consentBoxesSince(db)).toBeNull();
 	});
 
-	it('gives a fresh database version 2 and the consent-box date straight away', () => {
+	it('gives a fresh database version 2 straight away', () => {
 		const db = new Database(':memory:');
 		migrate(db);
 		expect(schemaVersion(db)).toBe(2);
-		expect(consentBoxesSince(db)).not.toBeNull();
+		expect(consentBoxesSince(db)).toBeNull();
 		expect(tables(db)).toContain('people');
+		expect(tables(db)).toContain('message_templates');
 		expect(tables(db)).not.toContain('contacts');
-		const since = consentBoxesSince(db);
 		migrate(db);
-		expect(consentBoxesSince(db)).toBe(since);
+		expect(schemaVersion(db)).toBe(2);
+	});
+
+	it('gives every check-in at an event without a guest list a walk-in row', () => {
+		const db = bareV1();
+		db.prepare(INSERT_EVENT).run('solo', 'Open Day', T0, T0 - DAY);
+		db.prepare(INSERT_CONTACT).run('a', 'Ani', 'ani@x.id', null, 'Kopi Kita', '', T0, T0);
+		db.prepare(INSERT_CONTACT).run('b', 'Bima', null, '+6281234567890', '', '', T0, T0);
+		db.prepare(INSERT_CHECKIN).run('solo', 'a', T0 + 1_000, T0 + 1_000);
+		db.prepare(INSERT_CHECKIN).run('solo', 'b', T0 + 2_000, null);
+		migrate(db);
+		expect(db.pragma('foreign_key_check')).toEqual([]);
+		const rows = listEventPeople(db, 'solo');
+		expect(
+			rows.map((r) => [r.person_id, r.stage, r.source, r.checkin_id, r.consent_event_at])
+		).toEqual([
+			['a', 'checked_in', 'walk_in', 1, T0 + 1_000],
+			['b', 'checked_in', 'walk_in', 2, null]
+		]);
+		expect(rows[0]).toMatchObject({ company: 'Kopi Kita', created_at: T0 + 1_000 });
+		expect(countLive(db, 'solo')).toBe(2);
+		expect(getPerson(db, 'a')).toMatchObject({ origin: 'checkin', last_event_at: T0 + 1_000 });
+	});
+
+	it('migrates a file from before the planning tables existed', () => {
+		const db = bareV1();
+		db.exec(`DROP TABLE suggestions; DROP TABLE target_companies; DROP TABLE invite_briefs;
+			DROP TABLE api_tokens;`);
+		db.prepare(INSERT_EVENT).run('old', 'Breakfast', T0, T0 - DAY);
+		db.prepare(INSERT_CONTACT).run('a', 'Ani', 'ani@x.id', null, 'Kopi Kita', '', T0, T0);
+		db.prepare(INSERT_CHECKIN).run('old', 'a', T0 + 1_000, T0 + 1_000);
+		db.prepare(INSERT_INVITE).run(
+			'old',
+			'Ani',
+			'Kopi Kita',
+			'',
+			'ani@x.id',
+			null,
+			'yes',
+			T0 - DAY,
+			T0 - 2 * DAY,
+			T0 - DAY
+		);
+		migrate(db);
+		expect(schemaVersion(db)).toBe(2);
+		expect(tables(db)).not.toContain('suggestions');
+		expect(tables(db)).toContain('invite_briefs');
+		expect(listEventPeople(db, 'old')).toMatchObject([
+			{ person_id: 'a', stage: 'checked_in', reply: 'yes', source: 'typed' }
+		]);
+	});
+
+	it('keeps an invitee apart from a stranger on a shared address, flagged for review', () => {
+		const db = bareV1();
+		db.prepare(INSERT_EVENT).run('e', 'Summit', T0, T0 - DAY);
+		db.prepare(INSERT_CONTACT).run(
+			'rina',
+			'Rina Maharani',
+			'info@batavia.co.id',
+			null,
+			'Batavia Foods',
+			'',
+			T0 - 30 * DAY,
+			T0 - 30 * DAY
+		);
+		db.prepare(INSERT_CHECKIN).run('e', 'rina', T0 + 1_000, T0 + 1_000);
+		db.prepare(INSERT_INVITE).run(
+			'e',
+			'Pak Hendra Gunawan',
+			'Batavia Foods',
+			'CIO',
+			'info@batavia.co.id',
+			null,
+			'yes',
+			T0 - DAY,
+			T0 - 2 * DAY,
+			T0 - DAY
+		);
+		db.prepare(INSERT_INVITE).run(
+			'e',
+			'R. Maharani',
+			'Batavia Foods',
+			'CFO',
+			'info@batavia.co.id',
+			null,
+			'pending',
+			null,
+			T0 - 2 * DAY,
+			T0 - 2 * DAY
+		);
+		migrate(db);
+		expect(getPerson(db, 'rina')).toMatchObject({ name: 'Rina Maharani', job_title: 'CFO' });
+		expect(db.prepare(`SELECT COUNT(*) AS n FROM people`).get()).toEqual({ n: 2 });
+		const rows = listEventPeople(db, 'e');
+		expect(rows.find((r) => r.person_id === 'rina')).toMatchObject({
+			stage: 'checked_in',
+			checkin_id: 1,
+			needs_review: 0
+		});
+		expect(rows.find((r) => r.name === 'Pak Hendra Gunawan')).toMatchObject({
+			stage: 'replied',
+			reply: 'yes',
+			needs_review: 1,
+			email: 'info@batavia.co.id'
+		});
+		expect(
+			getPerson(db, rows.find((r) => r.name === 'Pak Hendra Gunawan')!.person_id!)
+		).toMatchObject({ origin: 'typed', origin_detail: 'migrated from guest list' });
+	});
+
+	it('dates a reply whose replied_at was lost, and keeps a first origin across events', () => {
+		const db = bareV1();
+		db.prepare(INSERT_EVENT).run('a', 'First', T0, T0 - DAY);
+		db.prepare(INSERT_EVENT).run('b', 'Second', T0 + 30 * DAY, T0);
+		db.prepare(INSERT_INVITE).run(
+			'a',
+			'Lestari Kusuma',
+			'Kopi Kita',
+			'',
+			'lestari@kopi.id',
+			null,
+			'maybe',
+			null,
+			T0 - 2 * DAY,
+			T0 - DAY
+		);
+		db.prepare(INSERT_INVITE).run(
+			'b',
+			'Lestari Kusuma',
+			'Kopi Kita',
+			'',
+			null,
+			null,
+			'pending',
+			null,
+			T0,
+			T0
+		);
+		db.prepare(
+			`INSERT INTO suggestions (event_id, company, name, source_url, reason, status, created_at,
+				decided_at) VALUES ('b', 'Kopi Kita', 'Lestari Kusuma', 'https://kopi.id/team', 'Ops.',
+				'added', ?, ?)`
+		).run(T0 - 1_000, T0);
+		migrate(db);
+		const [first] = listEventPeople(db, 'a');
+		expect(first).toMatchObject({
+			stage: 'replied',
+			reply: 'maybe',
+			replied_at: T0 - DAY,
+			invited_at: T0 - DAY,
+			invited_via: 'other',
+			source: 'typed'
+		});
+		const [second] = listEventPeople(db, 'b');
+		expect(second.person_id).toBe(first.person_id);
+		expect(second.source).toBe('research');
+		expect(getPerson(db, first.person_id!)).toMatchObject({ origin: 'typed', source_url: null });
 	});
 
 	it('runs once: a second migrate() changes nothing', () => {

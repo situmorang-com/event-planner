@@ -3,13 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { migrateToV2 } from './migrate-v2.ts';
 import { SCHEMA, SCHEMA_VERSION, TABLES, tableExists } from './schema.ts';
-import {
-	isCountry,
-	recordConsentBoxesSince,
-	schemaVersion,
-	setSchemaVersion,
-	type Country
-} from './settings.ts';
+import { isCountry, schemaVersion, setSchemaVersion, type Country } from './settings.ts';
 
 export type DB = Database.Database;
 
@@ -35,7 +29,6 @@ export function migrate(db: DB, opts: MigrateOptions = {}) {
 		if (!tableExists(db, 'contacts')) {
 			db.exec(SCHEMA);
 			setSchemaVersion(db, SCHEMA_VERSION);
-			recordConsentBoxesSince(db);
 			return;
 		}
 		version = 1;
@@ -46,9 +39,9 @@ export function migrate(db: DB, opts: MigrateOptions = {}) {
 		step.run(db, { phoneCountry: country satisfies Country });
 		version = step.version;
 	}
+	// consent_boxes_since is stamped by the step that ships the consent boxes (§2.4 step 9), not
+	// here: until then every checkin-origin person without a tick is legacy, the safe reading.
 	db.exec(SCHEMA);
-	// Anyone checked in before this moment never saw the consent boxes (§2.4 step 9).
-	recordConsentBoxesSince(db);
 }
 
 /** Opens (and migrates) a SQLite database. Pass ':memory:' for tests. */

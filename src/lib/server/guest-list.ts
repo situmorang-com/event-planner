@@ -440,7 +440,8 @@ export function parseGuestList(text: string, opts: ParseOptions): ParsedGuestLis
 
 	const data = header ? rows.slice(1) : rows;
 	// A plain "Status" column is a reply only when it reads as one; Active / Inactive is D365's.
-	if (columns?.reply !== undefined && detected.alias.reply === 'status') {
+	// A mapping the organizer chose by hand is taken as it is.
+	if (!opts.columns && columns?.reply !== undefined && detected.alias.reply === 'status') {
 		const index = columns.reply;
 		const values = data.map((r) => r.cells[index] ?? '').filter(Boolean);
 		if (values.length && !values.every((v) => parseReply(v))) {

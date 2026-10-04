@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { listActivity } from './activity-log';
 import { checkIn, removeCheckin } from './checkins';
 import { blockCompany, findCompany, renameCompany } from './companies';
 import { deleteContact } from './contacts';
 import { createDb, type DB } from './database';
-import { listEntries } from './do-not-contact';
+import { listEntries, lockPerson } from './do-not-contact';
 import {
 	addFound,
 	addShortlisted,
@@ -14,21 +15,21 @@ import {
 	getEventPerson,
 	hasEnded,
 	listEventPeople,
-	listWalkIns,
 	lockRow,
 	markInvited,
-	rowKeptUntil,
+	setDetails,
 	setReply,
 	shortlistAll,
 	shortlistFound,
 	skipAll,
 	skipRow,
+	unflagRow,
 	unmarkInvited,
 	unskipRow,
 	type GuestInput
 } from './event-people';
 import { createEvent } from './events';
-import { getPerson } from './people';
+import { createPerson, getPerson } from './people';
 import { nextState, suggestedTouchKind, type StageState } from './stages';
 
 const guest = (name: string, extra: Partial<GuestInput> = {}): GuestInput => ({
@@ -126,7 +127,7 @@ describe('stage transitions', () => {
 			{ name: 'Kevin Tan', email: 'kevin@x.id', phone: null, company: 'Kopi', jobTitle: '' },
 			{ ...meta, method: 'staff', consent: false }
 		);
-		const [walkIn] = listWalkIns(db, eventId);
+		const walkIn = listEventPeople(db, eventId).find((r) => r.person_id === result.personId);
 		expect(walkIn).toMatchObject({
 			source: 'walk_in',
 			stage: 'checked_in',
@@ -445,16 +446,12 @@ describe('found rows', () => {
 
 		const found = listEventPeople(db, eventId).find((r) => r.stage === 'found')!;
 		expect(found).toMatchObject({ person_id: null, name: 'Rina Wijaya', company: 'Batavia Foods' });
-		expect(rowKeptUntil(found, { starts_at: Date.UTC(2026, 10, 1) })).toBe(Date.UTC(2026, 10, 1));
 
 		skipRow(db, eventId, found.id, { by: 'Edmund' }, 5_000);
 		expect(getEventPerson(db, eventId, found.id)).toMatchObject({
 			skipped_at: 5_000,
 			skipped_by: 'Edmund'
 		});
-		expect(rowKeptUntil(getEventPerson(db, eventId, found.id)!, { starts_at: 1_000 })).toBe(
-			1_000 + 90 * 86_400_000
-		);
 		unskipRow(db, eventId, found.id);
 
 		const added = shortlistFound(db, eventId, found.id, { by: 'Edmund' });
@@ -478,6 +475,57 @@ describe('found rows', () => {
 		expect(
 			addShortlisted(db, eventId, [guest('Eko', { company: 'Kopi Kita' })], { source: 'typed' })
 		).toMatchObject({ added: [], refused: [{ name: 'Eko', reason: 'blocked company' }] });
+	});
+
+	it('refuses an edit that would put a listed channel on a live person', () => {
+		const locked = createPerson(
+			db,
+			{ name: 'Dewi Lestari', email: 'dewi@x.id', phone: '+6281111111111' },
+			{ origin: 'typed' }
+		);
+		lockPerson(db, locked, { source: 'staff', reason: 'asked' });
+		addShortlisted(db, eventId, [guest('Rina Wijaya')], { source: 'typed' });
+		const rina = listEventPeople(db, eventId).find((r) => r.name === 'Rina Wijaya')!;
+		const edit = (email: string | null, phone: string | null = null) =>
+			setDetails(db, eventId, rina.id, {
+				name: 'Rina Wijaya',
+				company: 'Batavia Foods',
+				jobTitle: 'CFO',
+				email,
+				phone
+			});
+		expect(edit('dewi@x.id')).toBe('do not contact');
+		expect(edit(null, '+6281111111111')).toBe('do not contact');
+		expect(edit('rina@x.id')).toBe('saved');
+		expect(getPerson(db, rina.person_id!)).toMatchObject({ email: 'rina@x.id', job_title: 'CFO' });
+		expect(getPerson(db, rina.person_id!)?.locked_at).toBeNull();
+		expect(setDetails(db, eventId, 9_999, { ...rina, jobTitle: '' })).toBe('missing');
+	});
+
+	it('clears the D365 flags explicitly, and logs it by id', () => {
+		addShortlisted(
+			db,
+			eventId,
+			[
+				guest('Hendra Gunawan', { extra: { doNotEmail: true, doNotPhone: true, isCustomer: true } })
+			],
+			{ source: 'd365' }
+		);
+		const row = listEventPeople(db, eventId)[0];
+		db.prepare(`UPDATE people SET d365_suppressed = 1 WHERE id = ?`).run(row.person_id);
+		expect(unflagRow(db, eventId, row.id, { by: 'Edmund' })).toBe(true);
+		expect(getPerson(db, row.person_id!)).toMatchObject({
+			d365_no_email: 0,
+			d365_no_phone: 0,
+			d365_suppressed: 0,
+			is_customer: 1
+		});
+		expect(listActivity(db, eventId)[0]).toMatchObject({
+			kind: 'unlock',
+			who: 'Edmund',
+			what: JSON.stringify({ personId: row.person_id })
+		});
+		expect(unflagRow(db, eventId, 9_999)).toBe(false);
 	});
 });
 

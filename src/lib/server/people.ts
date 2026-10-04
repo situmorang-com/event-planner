@@ -112,7 +112,9 @@ function pickMatch(
 				(!strict || (!contradict(c.email, email) && !contradict(c.phone, input.phone)))
 		);
 		const wanted = companyKey(input.company ?? '');
-		return options.find((c) => c.company_key === wanted) ?? options[0];
+		const exact = options.find((c) => c.company_key === wanted);
+		// Two namesakes and nothing to tell them apart: a new person beats a silent wrong pick.
+		return exact ?? (options.length === 1 ? options[0] : undefined);
 	}
 	return undefined;
 }
@@ -306,10 +308,6 @@ export function touchLastEvent(db: DB, id: string, now = Date.now()) {
 			)
 		), updated_at = @now WHERE id = @id`
 	).run({ id, now });
-}
-
-export function isAttendee(db: DB, personId: string): boolean {
-	return !!db.prepare(`SELECT 1 FROM checkins WHERE person_id = ? LIMIT 1`).get(personId);
 }
 
 /* ───────────────────────── Country and retention ───────────────────────── */

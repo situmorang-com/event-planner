@@ -50,7 +50,8 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 	if (event.starts_at !== null && Date.now() >= event.starts_at)
 		return text(`Event Planner: ${event.name} has started, ${found.length} names not kept.\n`);
 	const { added, skipped } = addSuggestions(db, event.id, found);
-	const review = `${publicBaseUrl(url).base}/admin/events/${event.id}/planning`;
+	// Suggestions wait under People › To review (§4.3); Planning only counts them.
+	const review = `${publicBaseUrl(url).base}/admin/events/${event.id}/people`;
 	return text(
 		`Event Planner: ${added} new suggestion${added === 1 ? '' : 's'} for ${event.name}` +
 			`${skipped ? ` (${skipped} skipped: already known or incomplete)` : ''}.\nReview: ${review}\n`

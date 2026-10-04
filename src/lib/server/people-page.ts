@@ -26,6 +26,7 @@ export interface CompanyGroup {
 	name: string;
 	owner: string | null;
 	blocked: boolean;
+	blocked_reason: string | null;
 	rows: PeopleRow[];
 }
 
@@ -87,8 +88,10 @@ export function toView(row: EventPersonRow, since: number | null): PeopleRow {
 		note: row.note,
 		locked_at: row.locked_at,
 		blocked_at: row.blocked_at,
+		blocked_reason: row.blocked_reason,
 		// A Found row from D365 carries the flag in its snapshot until Add refuses it (§6.1).
 		suppressed: !!row.d365_suppressed || !!parseExtra(row.extra)?.suppressed,
+		d365_flagged: !!row.d365_suppressed || !!row.d365_no_email || !!row.d365_no_phone,
 		chase_count: row.chase_count,
 		touch_count: row.touch_count,
 		contact: {
@@ -112,6 +115,7 @@ export function groupRows(rows: PeopleRow[]): CompanyGroup[] {
 					name: row.company,
 					owner: row.company_owner,
 					blocked: !!row.blocked_at,
+					blocked_reason: row.blocked_reason,
 					rows: []
 				})
 			);
@@ -238,18 +242,28 @@ export function addPeople(
 	return db.transaction((): AddSummary => {
 		const summary: AddSummary = { added: 0, found: 0, duplicates: [], refused: [] };
 		if (req.picked.length) {
-			const picks: GuestInput[] = req.picked.map((p) => ({
-				name: p.name,
-				company: req.company || p.company,
-				jobTitle: p.job_title,
-				email: p.email,
-				phone: p.phone,
-				linkedin: p.linkedin
-			}));
-			const r = addShortlisted(db, eventId, picks, { source: 'pool', by }, now);
-			summary.added += r.added.length;
-			summary.duplicates.push(...r.duplicates);
-			summary.refused.push(...r.refused);
+			// The picker knows the person by id, so the lock is checked on the record itself: a
+			// locked person with no channels and a new company would otherwise slip past the hashes.
+			const picks: GuestInput[] = [];
+			for (const p of req.picked) {
+				if (p.locked_at) summary.refused.push({ name: p.name, reason: 'locked' });
+				else if (p.d365_suppressed) summary.refused.push({ name: p.name, reason: 'suppressed' });
+				else
+					picks.push({
+						name: p.name,
+						company: req.company || p.company,
+						jobTitle: p.job_title,
+						email: p.email,
+						phone: p.phone,
+						linkedin: p.linkedin
+					});
+			}
+			if (picks.length) {
+				const r = addShortlisted(db, eventId, picks, { source: 'pool', by }, now);
+				summary.added += r.added.length;
+				summary.duplicates.push(...r.duplicates);
+				summary.refused.push(...r.refused);
+			}
 		}
 		if (req.typed.length) {
 			const bigPaste = req.typed.length > FOUND_THRESHOLD;

@@ -2,7 +2,13 @@ import { error, fail } from '@sveltejs/kit';
 import { isReply, linkedinProfile } from '$lib/invitations';
 import { logActivity } from '$lib/server/activity-log';
 import { countCheckins } from '$lib/server/checkins';
-import { companySuggestions, renameCompany, setCompanyOwner } from '$lib/server/companies';
+import {
+	blockCompany,
+	companySuggestions,
+	renameCompany,
+	setCompanyOwner,
+	unblockCompany
+} from '$lib/server/companies';
 import { DEFAULT_PHONE_COUNTRY } from '$lib/server/config';
 import { db } from '$lib/server/db';
 import {
@@ -22,6 +28,7 @@ import {
 	shortlistFound,
 	skipAll,
 	skipRow,
+	unflagRow,
 	unmarkInvited,
 	unskipRow
 } from '$lib/server/event-people';
@@ -163,7 +170,12 @@ export const actions: Actions = {
 		if (id === null || Object.keys(errors).length)
 			return fail(400, { editId: id, editErrors: errors, editValues: values });
 
-		setDetails(db, event.id, id, details);
+		if (setDetails(db, event.id, id, details) === 'do not contact')
+			return fail(409, {
+				editId: id,
+				editErrors: { email: 'Those details are on the do-not-contact list.' },
+				editValues: values
+			});
 		return { edited: id };
 	},
 
@@ -198,6 +210,46 @@ export const actions: Actions = {
 		const id = cleanText(form.get('company'), 20);
 		if (id) setCompanyOwner(db, id, ownerFrom(form));
 		return { companyOwned: id };
+	},
+
+	// "Block company": nobody there can be added, researched or messaged from now on (D13).
+	block: async ({ params, request, locals }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		const id = cleanText(form.get('company'), 20);
+		if (!id) return fail(400, { blockError: 'That company is gone.' });
+		blockCompany(db, id, { reason: cleanText(form.get('reason'), 200), by: locals.who });
+		logActivity(db, {
+			eventId: event.id,
+			kind: 'lock',
+			who: locals.who,
+			what: { companyId: id },
+			rowCount: 1
+		});
+		return { blocked: id };
+	},
+
+	unblock: async ({ params, request, locals }) => {
+		const event = requireEvent(params.id);
+		const id = cleanText((await request.formData()).get('company'), 20);
+		if (!id) return fail(400, { blockError: 'That company is gone.' });
+		unblockCompany(db, id);
+		logActivity(db, {
+			eventId: event.id,
+			kind: 'unlock',
+			who: locals.who,
+			what: { companyId: id },
+			rowCount: 1
+		});
+		return { unblocked: id };
+	},
+
+	// Clears the D365 flags on the row's person (§6.1); logged by id.
+	unflag: async ({ params, request, locals }) => {
+		const event = requireEvent(params.id);
+		const id = rowId(await request.formData());
+		if (id !== null) unflagRow(db, event.id, id, { by: locals.who });
+		return { unflagged: id };
 	},
 
 	shortlist: async ({ params, request, locals }) => {

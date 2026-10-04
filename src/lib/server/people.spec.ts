@@ -81,7 +81,7 @@ describe('findPerson', () => {
 		expect(findPerson(db, { name: 'Rina Wijaya', phone: '+60123456789' })).toBeUndefined();
 	});
 
-	it('prefers the namesake at the same company', () => {
+	it('prefers the namesake at the same company, and makes an ambiguous name a new person', () => {
 		createPerson(db, { name: 'Andi Pratama', company: 'Kopi Kita' }, { origin: 'typed' });
 		const selat = createPerson(
 			db,
@@ -89,6 +89,9 @@ describe('findPerson', () => {
 			{ origin: 'typed' }
 		);
 		expect(findPerson(db, { name: 'Andi Pratama', company: 'PT Selat Energy' })?.id).toBe(selat);
+		// Two namesakes and no company, email or phone to tell them apart: nobody is picked.
+		expect(findPerson(db, { name: 'Andi Pratama' })).toBeUndefined();
+		expect(findPerson(db, { name: 'Andi Pratama', company: 'Garuda' })).toBeUndefined();
 	});
 
 	it("tries the event's own rows first, by name alone at a non-contradicting company", () => {

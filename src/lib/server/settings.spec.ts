@@ -99,9 +99,10 @@ describe('chase defaults', () => {
 describe('consent boxes since', () => {
 	it('is recorded once and never moved forward', () => {
 		const db = createDb(':memory:');
-		const first = consentBoxesSince(db);
-		expect(typeof first).toBe('number');
-		recordConsentBoxesSince(db, (first ?? 0) + 1_000_000);
-		expect(consentBoxesSince(db)).toBe(first);
+		// Nothing stamps it until the consent boxes ship: until then everyone is legacy.
+		expect(consentBoxesSince(db)).toBeNull();
+		recordConsentBoxesSince(db, 5_000);
+		recordConsentBoxesSince(db, 6_000);
+		expect(consentBoxesSince(db)).toBe(5_000);
 	});
 });

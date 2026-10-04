@@ -270,22 +270,52 @@ export function removeEntry(
 			`UPDATE people SET locked_at = NULL, lock_reason = NULL, updated_at = ? WHERE id = ?`
 		);
 		for (const p of locked) if (!check(db, p)) unlock.run(now, p.id);
-		logActivity(db, { kind: 'unlock', who: by, what: { entryId: id, reason }, rowCount: 1 }, now);
+		// The reason stays on the entry; the log holds ids only, and unlock rows outlive events.
+		logActivity(db, { kind: 'unlock', who: by, what: { entryId: id }, rowCount: 1 }, now);
 	})();
 	return true;
 }
 
-/** After a company rename or merge: name+company entries follow the company to its new key. */
-export function rehashCompany(db: DB, fromKey: string, toKey: string) {
+/**
+ * After a company rename or merge: every live name+company entry under the old key is listed
+ * under the new key as well. The old entry stays, because older spreadsheets still carry the
+ * old spelling and a rename must not be a way back onto a list (D13); a removed entry that
+ * already sits under the new key is revived rather than left to shadow the live one.
+ */
+export function rehashCompany(db: DB, fromKey: string, toKey: string, now = Date.now()) {
 	if (fromKey === toKey) return;
 	const rows = db
 		.prepare(
-			`SELECT id, name_hash FROM do_not_contact WHERE kind = 'name_company' AND company_key = ?`
+			`SELECT * FROM do_not_contact WHERE kind = 'name_company' AND company_key = ?
+			AND removed_at IS NULL`
 		)
-		.all(fromKey) as { id: number; name_hash: string }[];
-	// OR REPLACE: an entry that already exists under the new key wins over the re-hashed one.
-	const update = db.prepare(
-		`UPDATE OR REPLACE do_not_contact SET hash = ?, company_key = ? WHERE id = ?`
+		.all(fromKey) as DncRow[];
+	const under = db.prepare(`SELECT * FROM do_not_contact WHERE kind = 'name_company' AND hash = ?`);
+	const revive = db.prepare(
+		`UPDATE do_not_contact SET removed_at = NULL, removed_by = NULL, removed_reason = NULL
+		WHERE id = ?`
 	);
-	for (const r of rows) update.run(hashNameCompany(r.name_hash, toKey), toKey, r.id);
+	const insert = db.prepare(
+		`INSERT INTO do_not_contact (kind, hash, name_hash, company_key, label, reason, source, by,
+			created_at)
+		VALUES ('name_company', @hash, @name_hash, @company_key, @label, @reason, @source, @by, @now)`
+	);
+	for (const r of rows) {
+		const hash = hashNameCompany(r.name_hash!, toKey);
+		const existing = under.get(hash) as DncRow | undefined;
+		if (existing) {
+			if (existing.removed_at !== null) revive.run(existing.id);
+			continue;
+		}
+		insert.run({
+			hash,
+			name_hash: r.name_hash,
+			company_key: toKey,
+			label: r.label,
+			reason: r.reason,
+			source: r.source,
+			by: r.by,
+			now
+		});
+	}
 }

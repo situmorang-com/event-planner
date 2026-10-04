@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchArrivals } from './match-arrivals';
+import { matchArrivals, namesClash } from './match-arrivals';
 
 describe('matchArrivals', () => {
 	type P = { name: string; company?: string; email?: string; phone?: string };
@@ -34,6 +34,16 @@ describe('matchArrivals', () => {
 			{ name: 'Rina Wijaya', email: 'rina@example.com' }
 		);
 		expect(pairs(list, came)).toEqual([101, 100]);
+	});
+
+	it('will not pair a shared address with a clearly different name', () => {
+		const list = invitees({ name: 'Pak Hendra Gunawan', email: 'info@batavia.co.id' });
+		const came = checkins({ name: 'Rina Maharani', email: 'info@batavia.co.id' });
+		expect(pairs(list, came)).toEqual([null]);
+		expect(matchArrivals(list, came).walkIns).toHaveLength(1);
+		expect(namesClash('Rina', 'Ibu Rina Wijaya')).toBe(false);
+		expect(namesClash('Rina Maharani', 'Pak Hendra Gunawan')).toBe(true);
+		expect(namesClash('', 'Hendra')).toBe(false);
 	});
 
 	it('uses each check-in once, and lists the rest as walk-ins', () => {

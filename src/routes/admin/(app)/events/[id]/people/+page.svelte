@@ -18,6 +18,7 @@
 	} from '$lib/people';
 	import { formatDateTime } from '$lib/time';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Ban from '@lucide/svelte/icons/ban';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 	import Download from '@lucide/svelte/icons/download';
@@ -165,7 +166,13 @@
 	const editErrors = $derived(form && 'editId' in form ? form : null);
 	const problem = $derived.by(() => {
 		if (!form) return '';
-		for (const key of ['shortlistError', 'mergeError', 'lockError', 'renameError'] as const)
+		for (const key of [
+			'shortlistError',
+			'mergeError',
+			'lockError',
+			'renameError',
+			'blockError'
+		] as const)
 			if (key in form && typeof form[key] === 'string') return form[key];
 		if ('refusedAll' in form && form.refusedAll?.length)
 			return `Couldn’t add ${form.refusedAll.join(', ')}: locked or at a blocked company.`;
@@ -378,7 +385,11 @@
 									<Pencil size={14} /><span class="sr-only">Rename {group.name}</span>
 								</button>
 							{/if}
-							{#if group.blocked}<span class="pill pill-warn">Blocked</span>{/if}
+							{#if group.blocked}
+								<span class="pill pill-warn" title={group.blocked_reason || 'Blocked company'}
+									>Blocked</span
+								>
+							{/if}
 						</div>
 						<p class="group-meta muted">{groupSummary(group)}</p>
 					{/if}
@@ -406,6 +417,42 @@
 									</select>
 								</label>
 							</form>
+						{/if}
+						{#if group.id}
+							{#if group.blocked}
+								<form
+									method="POST"
+									action="?/unblock"
+									use:enhance={({ cancel }) => {
+										if (!confirm(`Unblock ${group.name}? People there can be added again.`))
+											cancel();
+									}}
+								>
+									<input type="hidden" name="company" value={group.id} />
+									<button class="btn btn-ghost btn-sm">Unblock</button>
+								</form>
+							{:else}
+								<form
+									method="POST"
+									action="?/block"
+									use:enhance={({ formData, cancel }) => {
+										const reason = prompt(
+											`Block ${group.name}: nobody there can be added, researched or messaged. Why?`,
+											''
+										);
+										if (reason === null) {
+											cancel();
+											return;
+										}
+										formData.set('reason', reason);
+									}}
+								>
+									<input type="hidden" name="company" value={group.id} />
+									<button class="btn btn-ghost btn-sm" title="Block company">
+										<Ban size={14} /> Block…
+									</button>
+								</form>
+							{/if}
 						{/if}
 						{#if group.waiting > 1}
 							<form method="POST" action="?/addAll" use:enhance>

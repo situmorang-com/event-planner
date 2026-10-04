@@ -157,6 +157,7 @@
 						<th>Mobile</th>
 						<th>Company</th>
 						<th>Origin</th>
+						<th>Country</th>
 						<th>Events</th>
 						<th>Last seen</th>
 						<th>Kept</th>
@@ -202,6 +203,28 @@
 								{ORIGIN_LABEL[c.origin]}
 								{#if c.origin_detail}<div class="muted small">{c.origin_detail}</div>{/if}
 							</td>
+							<td>
+								<form
+									method="POST"
+									action="?/country"
+									use:enhance={() =>
+										async ({ update }) =>
+											update({ reset: false })}
+								>
+									<input type="hidden" name="id" value={c.id} />
+									<select
+										class="country-select"
+										name="country"
+										value={c.country ?? ''}
+										aria-label="Country of {c.name}"
+										onchange={(e) => e.currentTarget.form?.requestSubmit()}
+									>
+										<option value="">Unknown</option>
+										<option value="ID">Indonesia</option>
+										<option value="MY">Malaysia</option>
+									</select>
+								</form>
+							</td>
 							<td class="num">{c.events_attended}</td>
 							<td class="last-seen">
 								{#if c.last_seen_at}
@@ -243,7 +266,7 @@
 						</tr>
 						{#if merging === c.id}
 							<tr class="merge-row">
-								<td colspan="9">
+								<td colspan="10">
 									<form
 										class="merge"
 										method="POST"
@@ -465,6 +488,21 @@
 
 	.small {
 		font-size: 13px;
+	}
+
+	.country-select {
+		font: inherit;
+		font-size: 13px;
+		color: inherit;
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: var(--radius-sm, 6px);
+		padding: 2px 4px;
+	}
+
+	.country-select:hover,
+	.country-select:focus-visible {
+		border-color: var(--border);
 	}
 
 	.last-seen {

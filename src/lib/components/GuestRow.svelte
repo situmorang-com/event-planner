@@ -9,6 +9,7 @@
 	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import Flag from '@lucide/svelte/icons/flag-off';
 	import Mail from '@lucide/svelte/icons/mail';
 	import Merge from '@lucide/svelte/icons/merge';
 	import MessageCircle from '@lucide/svelte/icons/message-circle';
@@ -550,6 +551,20 @@
 						>
 							<Merge size={15} /> Merge into…
 						</button>
+					{/if}
+					{#if row.person_id && row.d365_flagged}
+						<form
+							method="POST"
+							action="?/unflag"
+							use:enhance={({ cancel }) => {
+								if (!confirm(`Clear the Dynamics 365 flags on ${row.name}? This is logged.`))
+									cancel();
+								closeMenu();
+							}}
+						>
+							<input type="hidden" name="id" value={row.id} />
+							<button class="menu-item"><Flag size={15} /> Clear D365 flags</button>
+						</form>
 					{/if}
 					{#if !row.locked_at}
 						<form

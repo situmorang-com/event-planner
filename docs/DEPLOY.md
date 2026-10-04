@@ -81,17 +81,17 @@ without stopping the app. **configured**; restore not yet exercised.
 Pushed with `coolify.sh env push <APP_UUID> .env.production`. The file is gitignored and never
 committed.
 
-| Variable                | Value                            | Why                                                                                                                                                                                                                |
-| ----------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ORIGIN`                | `https://checkin.situmorang.com` | Otherwise every form POST is 403 behind Traefik. Also the base URL printed into QR codes.                                                                                                                          |
-| `ADMIN_PASSWORD`        | random, 24 characters            | Organizer sign-in. Without it, sign-in is disabled in production.                                                                                                                                                  |
-| `ORG_NAME`              | `SRKK`                           | The consent line attendees agree to.                                                                                                                                                                               |
-| `ADDRESS_HEADER`        | `X-Forwarded-For`                | Real client IPs for the rate limits. Without it, every attendee looks like Traefik and shares one limit.                                                                                                           |
-| `XFF_DEPTH`             | `1`                              | Traefik is the only proxy in front. Set to `2` if Cloudflare proxying is ever turned on.                                                                                                                           |
-| `DB_PATH`               | `/data/attendance.db`            | Inside the mount.                                                                                                                                                                                                  |
-| `DEFAULT_PHONE_COUNTRY` | `ID`                             | Reads `0812…` as `+62812…`.                                                                                                                                                                                        |
-| `DEFAULT_TIMEZONE`      | `Asia/Jakarta`                   | Fallback only; events store their own zone.                                                                                                                                                                        |
-| `PRIVACY_URL`           | the SRKK privacy policy URL      | **Required** for people found by research: every message to them carries a source line that links it, and without it their WhatsApp and email buttons stay hidden with a hint. Also linked beside the consent box. |
+| Variable                | Value                            | Why                                                                                                                                                              |
+| ----------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ORIGIN`                | `https://checkin.situmorang.com` | Otherwise every form POST is 403 behind Traefik. Also the base URL printed into QR codes.                                                                        |
+| `ADMIN_PASSWORD`        | random, 24 characters            | Organizer sign-in. Without it, sign-in is disabled in production.                                                                                                |
+| `ORG_NAME`              | `SRKK`                           | The consent line attendees agree to.                                                                                                                             |
+| `ADDRESS_HEADER`        | `X-Forwarded-For`                | Real client IPs for the rate limits. Without it, every attendee looks like Traefik and shares one limit.                                                         |
+| `XFF_DEPTH`             | `1`                              | Traefik is the only proxy in front. Set to `2` if Cloudflare proxying is ever turned on.                                                                         |
+| `DB_PATH`               | `/data/attendance.db`            | Inside the mount.                                                                                                                                                |
+| `DEFAULT_PHONE_COUNTRY` | `ID`                             | Reads `0812…` as `+62812…`.                                                                                                                                      |
+| `DEFAULT_TIMEZONE`      | `Asia/Jakarta`                   | Fallback only; events store their own zone.                                                                                                                      |
+| `PRIVACY_URL`           | the SRKK privacy policy URL      | Linked beside the consent box. It becomes **required** when messaging lands (the source line sent to people found by research links it); today it hides nothing. |
 
 These are baked into the image instead:
 
@@ -125,7 +125,11 @@ tables. Before touching anything it writes a copy of the file beside the databas
 from before version 2 therefore means restoring that copy over `DB_PATH` first; an older image
 started on the new file would recreate empty `contacts` and `invitations` tables. If the
 migration fails it rolls back and the app refuses to start, leaving the version-1 file intact
-for the previous image.
+for the previous image. A version-1 file from before the planning tables existed migrates too.
+The `message_templates` table is created empty here and seeded by the messaging phase, on
+fresh and migrated databases alike. Guest-list rows whose email was shared with a clearly
+different name in the pool become their own person, marked for review on the People tab, so
+nothing is folded together silently.
 
 ## 8. Restoring from a backup
 

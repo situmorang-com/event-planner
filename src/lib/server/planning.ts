@@ -316,8 +316,12 @@ export function researchPrompt(db: DB, event: EventRow, now = Date.now()): strin
 	const known = new Map<string, number>();
 	for (const r of rows) known.set(r.company_key, (known.get(r.company_key) ?? 0) + 1);
 
-	// Free text must not smuggle a name into the prompt: any line naming someone is dropped.
-	const names = new Set(rows.map((r) => nameKey(r.name)).filter(Boolean));
+	// Free text must not smuggle a name into the prompt: any line naming someone known, on
+	// this event or anywhere in the pool, is dropped (§6.2).
+	const pool = db.prepare(`SELECT name FROM people`).all() as { name: string }[];
+	const names = new Set(
+		[...rows.map((r) => r.name), ...pool.map((p) => p.name)].map(nameKey).filter(Boolean)
+	);
 	const scrub = (text: string) =>
 		text
 			.split(/\r?\n/)

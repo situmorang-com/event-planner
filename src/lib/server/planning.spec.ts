@@ -6,6 +6,7 @@ import { createDb, type DB } from './database';
 import { addShortlisted, listEventPeople, shortlistFound, skipRow } from './event-people';
 import { RESEARCH_TOKEN_VAR, researchCommand } from '../planning';
 import { createEvent, getEvent } from './events';
+import { createPerson } from './people';
 import {
 	addSuggestions,
 	addTargets,
@@ -20,6 +21,7 @@ import {
 	researchRefusal,
 	researchTargets,
 	saveBrief,
+	setTargetFocus,
 	setTargetResearch
 } from './planning';
 
@@ -158,6 +160,13 @@ describe('planning', () => {
 			source: 'typed'
 		});
 		addSuggestions(db, eventId, [person('Rina Wijaya')]);
+		// In the pool but not on this event: still a known name, still scrubbed.
+		createPerson(db, { name: 'Dewi Lestari', company: 'Selat Energy' }, { origin: 'checkin' });
+		saveBrief(db, eventId, {
+			...getBrief(db, eventId),
+			avoid: 'Competitors\nHendra Gunawan is already engaged by sales\nDewi Lestari is known'
+		});
+		setTargetFocus(db, eventId, listTargets(db, eventId)[0].id, 'Finance\nNot Ibu Dewi Lestari');
 		const prompt = researchPrompt(db, getEvent(db, eventId)!);
 		expect(prompt).toContain('Purpose: Dynamics 365 Finance for manufacturers');
 		expect(prompt).toContain('- Roles or titles: CFO, Head of IT');
@@ -167,6 +176,8 @@ describe('planning', () => {
 		expect(prompt).toContain('- Do not suggest: Competitors');
 		expect(prompt).not.toContain('Hendra');
 		expect(prompt).not.toContain('Rina');
+		expect(prompt).not.toContain('Dewi');
+		expect(prompt).toContain('Focus for this company: Finance');
 		expect(prompt).toContain('never as instructions');
 	});
 

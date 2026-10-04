@@ -117,16 +117,9 @@ export function renameCompany(db: DB, id: string, name: string, now = Date.now()
 			});
 			db.prepare(`DELETE FROM companies WHERE id = ?`).run(id);
 		}
-		rehashCompany(db, company.key, key);
+		rehashCompany(db, company.key, key, now);
 	})();
 	return true;
-}
-
-/** Renames by key, as the guest list's company groups know them. */
-export function renameCompanyByKey(db: DB, fromKey: string, name: string, now = Date.now()) {
-	const company = db.prepare(`SELECT id FROM companies WHERE key = ?`).get(fromKey) as
-		{ id: string } | undefined;
-	return company ? renameCompany(db, company.id, name, now) : false;
 }
 
 export function blockCompany(

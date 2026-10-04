@@ -17,7 +17,7 @@ import {
 import { createEvent, updateEvent } from './events';
 import { createPerson, getPeople } from './people';
 import { addPeople, FOUND_THRESHOLD, peopleView, reviewedGuests } from './people-page';
-import { setTeamNames } from './settings';
+import { recordConsentBoxesSince, setTeamNames } from './settings';
 
 const guest = (name: string, extra: Partial<GuestInput> = {}): GuestInput => ({
 	name,
@@ -154,14 +154,12 @@ describe('peopleView', () => {
 	});
 
 	it('shows a legacy Malaysian attendee as not contactable until they register', () => {
-		const since = db
-			.prepare(`SELECT value FROM settings WHERE key = 'consent_boxes_since'`)
-			.get() as { value: string };
+		// Without the stamp every checkin-origin person is legacy; with it, only earlier ones.
 		const personId = createPerson(
 			db,
 			{ name: 'Mei Ling', email: 'mei@x.my', phone: '+60123456789', company: 'Selat' },
 			{ origin: 'checkin' },
-			Number(since.value) - 1
+			START - 10
 		);
 		addShortlisted(
 			db,
@@ -179,6 +177,10 @@ describe('peopleView', () => {
 		expect(row.person_id).toBe(personId);
 		expect(row.contact).toEqual({ whatsapp: false, email: false, reason: 'not contactable' });
 		expect(markers(row, () => '').map((m) => m.key)).toEqual(['contact']);
+		recordConsentBoxesSince(db, START);
+		expect(view().rows[0].contact.reason).toBe('not contactable');
+		recordConsentBoxesSince(db, START - 100);
+		expect(view().rows[0].contact.reason).toBe('not contactable');
 
 		setReply(db, eventId, row.id, 'yes');
 		db.prepare(`UPDATE people SET consent_future_at = 1 WHERE id = ?`).run(personId);
@@ -308,6 +310,36 @@ describe('addPeople', () => {
 			source: 'pool',
 			company: 'Batavia Foods'
 		});
+	});
+
+	it('refuses a locked or suppressed pick on the record itself, whatever company is typed', () => {
+		// No channels, so only a name+company hash exists; a new company would miss it.
+		const locked = createPerson(db, { name: 'Andi Pratama', company: 'Old' }, { origin: 'typed' });
+		lockPerson(db, locked, { source: 'staff' });
+		const suppressed = createPerson(db, { name: 'Budi Santoso' }, { origin: 'd365' });
+		db.prepare(`UPDATE people SET d365_suppressed = 1 WHERE id = ?`).run(suppressed);
+		const citra = createPerson(db, { name: 'Citra', company: 'Kopi Kita' }, { origin: 'typed' });
+		blockCompany(db, findCompany(db, 'Kopi Kita')!.id, { reason: 'competitor' });
+		const before = db.prepare(`SELECT COUNT(*) AS n FROM people`).get();
+		expect(
+			addPeople(db, eventId, {
+				typed: [],
+				picked: getPeople(db, [locked, suppressed, citra]),
+				company: 'Kopi Kita',
+				park: false
+			})
+		).toEqual({
+			added: 0,
+			found: 0,
+			duplicates: [],
+			refused: [
+				{ name: 'Andi Pratama', reason: 'locked' },
+				{ name: 'Budi Santoso', reason: 'suppressed' },
+				{ name: 'Citra', reason: 'blocked company' }
+			]
+		});
+		expect(rows()).toEqual([]);
+		expect(db.prepare(`SELECT COUNT(*) AS n FROM people`).get()).toEqual(before);
 	});
 });
 

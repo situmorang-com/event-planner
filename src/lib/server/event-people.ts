@@ -6,7 +6,6 @@ import type { DB } from './database.ts';
 import { addEntry, check as doNotContact, lockPerson, type DncSource } from './do-not-contact.ts';
 import {
 	createPerson,
-	DAY,
 	findPerson,
 	getPerson,
 	touchLastEvent,
@@ -80,6 +79,7 @@ export interface EventPersonRow {
 	country: Country | null;
 	person_created_at: number | null;
 	blocked_at: number | null;
+	blocked_reason: string | null;
 	touch_count: number;
 	chase_count: number;
 }
@@ -104,6 +104,7 @@ const ROW_SELECT = `SELECT ep.id, ep.event_id, ep.person_id,
 	p.origin, p.locked_at, p.d365_suppressed, p.d365_no_email, p.d365_no_phone, p.is_customer,
 	p.consent_future_at,
 	COALESCE(pco.never_invite_at, rco.never_invite_at) AS blocked_at,
+	COALESCE(pco.never_invite_reason, rco.never_invite_reason) AS blocked_reason,
 	(SELECT COUNT(*) FROM touches t WHERE t.event_person_id = ep.id) AS touch_count,
 	(SELECT COUNT(*) FROM touches t WHERE t.event_person_id = ep.id AND t.kind = 'chase')
 		AS chase_count
@@ -158,15 +159,6 @@ export function eventEnd(event: EventTimes): number | null {
 export function hasEnded(event: EventTimes, now = Date.now()): boolean {
 	const end = eventEnd(event);
 	return end !== null && now >= end;
-}
-
-/** When the planning jobs (§5.4) delete a Found row; null for live rows. */
-export function rowKeptUntil(
-	row: Pick<EventPersonRow, 'stage' | 'skipped_at'>,
-	event: { starts_at: number | null }
-): number | null {
-	if (row.stage !== 'found' || !event.starts_at) return null;
-	return row.skipped_at ? event.starts_at + 90 * DAY : event.starts_at;
 }
 
 /* ───────────────────────── Adding people ───────────────────────── */
@@ -648,11 +640,24 @@ export interface Details {
 	linkedin?: string | null;
 }
 
-/** Edits from the row's form: the person for live rows, the snapshot while found. */
-export function setDetails(db: DB, eventId: string, id: number, d: Details, now = Date.now()) {
+export type SetDetailsResult = 'saved' | 'missing' | 'do not contact';
+
+/**
+ * Edits from the row's form: the person for live rows, the snapshot while found. An edit that
+ * would put a listed email, mobile or name on an unlocked person is refused: the add paths
+ * check the list, and this is the only other way a channel reaches a live person (D13).
+ */
+export function setDetails(
+	db: DB,
+	eventId: string,
+	id: number,
+	d: Details,
+	now = Date.now()
+): SetDetailsResult {
 	const row = getEventPerson(db, eventId, id);
-	if (!row) return false;
+	if (!row) return 'missing';
 	if (row.person_id) {
+		if (!row.locked_at && doNotContact(db, d)) return 'do not contact';
 		// The organizer corrected it by hand, so it replaces what was there (typed rank).
 		db.prepare(
 			`UPDATE people SET name = @name, job_title = @jobTitle, email = @email, phone = @phone,
@@ -687,7 +692,28 @@ export function setDetails(db: DB, eventId: string, id: number, d: Details, now 
 			now
 		});
 	}
-	return true;
+	return 'saved';
+}
+
+/**
+ * Clears the D365 flags on the row's person (§6.1): a stale export suppressed them, or the
+ * customer changed their mind. Explicit and logged, by id only.
+ */
+export function unflagRow(db: DB, eventId: string, id: number, { by = '' } = {}, now = Date.now()) {
+	return db.transaction(() => {
+		const row = getEventPerson(db, eventId, id);
+		if (!row?.person_id) return false;
+		db.prepare(
+			`UPDATE people SET d365_no_email = 0, d365_no_phone = 0, d365_suppressed = 0,
+				updated_at = ? WHERE id = ?`
+		).run(now, row.person_id);
+		logActivity(
+			db,
+			{ eventId, kind: 'unlock', who: by, what: { personId: row.person_id }, rowCount: 1 },
+			now
+		);
+		return true;
+	})();
 }
 
 /* ───────────────────────── Touches (D9) ───────────────────────── */
@@ -819,13 +845,6 @@ export function unlinkCheckin(db: DB, checkinId: number, now = Date.now()) {
 	applyChange(db, row.id, { type: 'checkout' }, now);
 	if (row.source === 'walk_in' && row.reply === 'pending' && !row.touch_count && !row.note)
 		db.prepare(`DELETE FROM event_people WHERE id = ?`).run(row.id);
-}
-
-/** Who checked in without being on the list, and hasn't been given a reply since. */
-export function listWalkIns(db: DB, eventId: string): EventPersonRow[] {
-	return listEventPeople(db, eventId).filter(
-		(r) => r.source === 'walk_in' && r.reply === 'pending' && r.stage === 'checked_in'
-	);
 }
 
 /** Counts for the tab badge: live rows that aren't found or skipped. */

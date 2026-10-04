@@ -167,20 +167,65 @@ describe('locking', () => {
 		expect(getPerson(db, personId)?.locked_at).toBeNull();
 		expect(listEntries(db)).toEqual([]);
 		expect(listEntries(db, true)).toHaveLength(3);
-		expect(listActivity(db, null)[0]).toMatchObject({ kind: 'unlock' });
+		// The typed reason stays on the entry; the log never carries free text.
+		expect(listActivity(db, null)[0]).toMatchObject({ kind: 'unlock', who: 'Edmund' });
+		expect(listActivity(db, null)[0].what).toMatch(/^\{"entryId":\d+\}$/);
+		expect(listEntries(db, true)[0].removed_reason).toBe('wrong person');
 		expect(removeEntry(db, email.id, { reason: 'again' })).toBe(false);
 	});
 
-	it('follows a company rename, so the name still hits under the new spelling', () => {
+	it('follows a company rename, so the name hits under both spellings', () => {
+		addEntry(db, {
+			kind: 'name_company',
+			value: 'Hendra Gunawan',
+			company: 'Batavia Foods',
+			source: 'staff',
+			reason: 'asked'
+		});
+		renameCompany(db, findCompany(db, 'Batavia Foods')!.id, 'Batavia Group');
+		expect(check(db, { name: 'Hendra Gunawan', company: 'Batavia Group' })).toMatchObject({
+			company_key: 'batavia group',
+			reason: 'asked'
+		});
+		// An older spreadsheet still carries the old spelling: it must not be a way back in.
+		expect(check(db, { name: 'Hendra Gunawan', company: 'Batavia Foods' })).not.toBeNull();
+		expect(
+			listEntries(db)
+				.map((e) => e.company_key)
+				.sort()
+		).toEqual(['batavia foods', 'batavia group']);
+	});
+
+	it('revives a removed entry under the new key instead of letting it shadow a live one', () => {
+		const removed = addEntry(db, {
+			kind: 'name_company',
+			value: 'Hendra Gunawan',
+			company: 'Batavia Group',
+			source: 'staff'
+		})!;
+		removeEntry(db, removed, { reason: 'wrong person' });
 		addEntry(db, {
 			kind: 'name_company',
 			value: 'Hendra Gunawan',
 			company: 'Batavia Foods',
 			source: 'staff'
 		});
+		const live = addEntry(db, {
+			kind: 'name_company',
+			value: 'Dewi Lestari',
+			company: 'Batavia Group',
+			source: 'staff'
+		})!;
+		addEntry(db, {
+			kind: 'name_company',
+			value: 'Dewi Lestari',
+			company: 'Batavia Foods',
+			source: 'staff'
+		});
+		createPerson(db, { name: 'Anyone', company: 'Batavia Foods' }, { origin: 'typed' });
 		renameCompany(db, findCompany(db, 'Batavia Foods')!.id, 'Batavia Group');
-		expect(check(db, { name: 'Hendra Gunawan', company: 'Batavia Group' })).not.toBeNull();
-		expect(check(db, { name: 'Hendra Gunawan', company: 'Batavia Foods' })).toBeNull();
-		expect(listEntries(db)[0].company_key).toBe('batavia group');
+		expect(check(db, { name: 'Hendra Gunawan', company: 'Batavia Group' })?.id).toBe(removed);
+		expect(check(db, { name: 'Dewi Lestari', company: 'Batavia Group' })?.id).toBe(live);
+		expect(listEntries(db)).toHaveLength(4);
 	});
 });

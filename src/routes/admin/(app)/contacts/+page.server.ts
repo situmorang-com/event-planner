@@ -1,8 +1,9 @@
 import { fail } from '@sveltejs/kit';
 import { countContacts, deleteContact, listContacts } from '$lib/server/contacts';
 import { db } from '$lib/server/db';
-import { keptUntil, mergeInto } from '$lib/server/people';
+import { keptUntil, mergeInto, setPersonCountry } from '$lib/server/people';
 import { cleanText } from '$lib/server/normalize';
+import { isCountry } from '$lib/server/settings';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ url }) => {
@@ -27,6 +28,15 @@ export const actions: Actions = {
 		const id = String((await request.formData()).get('id') ?? '');
 		if (id) deleteContact(db, id, locals.who);
 		return { deleted: true };
+	},
+
+	// The country drives the consent rules (§2.3); an empty value means "unknown" again.
+	country: async ({ request }) => {
+		const form = await request.formData();
+		const id = cleanText(form.get('id'), 40);
+		const country = form.get('country');
+		if (id) setPersonCountry(db, id, isCountry(country) ? country : null);
+		return { country: id };
 	},
 
 	// Two records that turned out to be one person: the loser folds into the chosen survivor.
