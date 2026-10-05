@@ -97,6 +97,10 @@ export const TABLES = {
 		d365_suppressed INTEGER NOT NULL DEFAULT 0,
 		locked_at INTEGER,
 		lock_reason TEXT,
+		-- Whether the team is connected with them on LinkedIn (D26); NULL means not yet.
+		linkedin_status TEXT CHECK (linkedin_status IN ('requested', 'connected')),
+		linkedin_status_at INTEGER,
+		linkedin_status_by TEXT NOT NULL DEFAULT '',
 		last_event_at INTEGER,
 		created_by TEXT NOT NULL DEFAULT '',
 		created_at INTEGER NOT NULL,

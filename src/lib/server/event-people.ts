@@ -74,6 +74,10 @@ export interface EventPersonRow {
 	/** From the person; null while found. */
 	origin: Origin | null;
 	locked_at: number | null;
+	/** The person's LinkedIn connection (D26); null while found or not connected. */
+	linkedin_status: 'requested' | 'connected' | null;
+	linkedin_status_at: number | null;
+	linkedin_status_by: string | null;
 	d365_suppressed: 0 | 1 | null;
 	d365_no_email: 0 | 1 | null;
 	d365_no_phone: 0 | 1 | null;
@@ -107,7 +111,8 @@ const ROW_SELECT = `SELECT ep.id, ep.event_id, ep.person_id,
 	COALESCE(pco.owner, rco.owner) AS company_owner,
 	ep.next_action_at, ep.next_action_kind, ep.next_action_overridden, ep.needs_review, ep.note,
 	ep.added_by, ep.created_at, ep.updated_at,
-	p.origin, p.locked_at, p.d365_suppressed, p.d365_no_email, p.d365_no_phone, p.is_customer,
+	p.origin, p.locked_at, p.linkedin_status, p.linkedin_status_at, p.linkedin_status_by,
+	p.d365_suppressed, p.d365_no_email, p.d365_no_phone, p.is_customer,
 	p.consent_future_at, p.legacy_notice_at, p.legacy_kept_at, p.country,
 	p.created_at AS person_created_at,
 	COALESCE(pco.never_invite_at, rco.never_invite_at) AS blocked_at,
@@ -788,7 +793,7 @@ function syncLegacyNotice(db: DB, personId: string, now: number) {
 	).run({ id: personId, now });
 }
 
-/** "Invited via LinkedIn", or the bulk Mark invited: a touch without a message link. */
+/** "Mark invited on LinkedIn", or the bulk Mark invited: a touch without a message link. */
 export function markInvited(
 	db: DB,
 	eventId: string,
@@ -800,7 +805,7 @@ export function markInvited(
 	return addTouch(db, eventId, id, { kind: 'invitation', via, by }, now);
 }
 
-/** The "Invited via LinkedIn" toggle going off: only its own touch may be undone. */
+/** The "Mark invited on LinkedIn" toggle going off: only its own touch may be undone. */
 export function unmarkInvited(db: DB, eventId: string, id: number, via: Via, now = Date.now()) {
 	return db.transaction(() => {
 		const latest = listTouches(db, id).at(-1);

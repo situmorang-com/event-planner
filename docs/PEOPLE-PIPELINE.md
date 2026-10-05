@@ -2,7 +2,7 @@
 
 The build spec for the invitation pipeline that replaces the **Invitations** and **Planning**
 tabs' guest handling. It implements the 25 decisions agreed with the organizer on 2026-10-02
-(listed at the end as D1–D25). Statements about today's code were checked against `main` at
+(listed at the end as D1–D26). Statements about today's code were checked against `main` at
 `0dba76a`. Where the decisions left something undefined, the choice is marked **(builder)**.
 
 ## 1. Purpose and vocabulary
@@ -13,7 +13,8 @@ An event's **People** list tracks everyone from first sighting to the door.
   `confirmed` → `checked_in`. **No-show** is derived after the event ends.
 - **Markers** on a row: _needs details_ (no email and no mobile), _chased ×N, last 2 Oct_ (from
   the touch log), _locked_ (do-not-contact), _blocked company_, _suppressed_ (D365), _no consent
-  recorded_, _via LinkedIn_.
+  recorded_. An invitation sent on LinkedIn shows as the pressed **Mark invited on LinkedIn**
+  button and the track's Invited step, not as a marker (D26).
 - **Verbs**: **Add** (found → shortlisted), **Skip** (reversible; hides a Found row), **Remove**
   (deletes the event row), **Don't contact again** (locks the person everywhere, with a reason).
 - A **person** is one record in the cross-event pool. An **event row** is that person on one
@@ -66,25 +67,26 @@ only the target tables; on a fresh database it writes `schema_version = 2` direc
 
 **people** (the pool: attendees and prospects)
 
-| Column                                                                                                                              | Serves                             |
-| ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `id TEXT PRIMARY KEY` (uuid)                                                                                                        |                                    |
-| `name TEXT NOT NULL`, `job_title TEXT NOT NULL DEFAULT ''`                                                                          |                                    |
-| `email TEXT` (nullable, **not unique**: shared `info@` addresses exist)                                                             | D6                                 |
-| `phone TEXT` (E.164 when it parses)                                                                                                 | D14                                |
-| `linkedin TEXT` (canonical `https://www.linkedin.com/in/…`)                                                                         | D12                                |
-| `company_id TEXT REFERENCES companies(id) ON DELETE SET NULL`                                                                       | D1, D13                            |
-| `origin TEXT NOT NULL CHECK (IN ('self_registered','checkin','d365','typed','research'))`                                           | D16; first value, never downgraded |
-| `origin_detail TEXT NOT NULL DEFAULT ''` (the one-time "where did you get their details" answer, or the D365 owner note)            | D16, D11                           |
-| `source_url TEXT`, `research_reason TEXT` (research origin only; kept for the person's life so the D10 source line can be rendered) | D10                                |
-| `is_customer INTEGER NOT NULL DEFAULT 0` (from a D365 import; sticky)                                                               | D15, D18, D20                      |
-| `country TEXT CHECK (IN ('ID','MY'))` (null = unknown, treated as MY, the stricter case)                                            | D15                                |
-| `consent_future_at INTEGER`                                                                                                         | D15 box 2                          |
-| `legacy_notice_at INTEGER`, `legacy_kept_at INTEGER`                                                                                | D15 legacy                         |
-| `d365_no_email`, `d365_no_phone`, `d365_suppressed INTEGER NOT NULL DEFAULT 0`                                                      | D11                                |
-| `locked_at INTEGER`, `lock_reason TEXT` (mirror of the do-not-contact hit)                                                          | D13                                |
-| `last_event_at INTEGER` (max of event `starts_at` over its rows and `checked_in_at`; null → use `created_at`)                       | D18                                |
-| `created_by TEXT NOT NULL DEFAULT ''`, `created_at`, `updated_at`                                                                   | D1                                 |
+| Column                                                                                                                                                  | Serves                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `id TEXT PRIMARY KEY` (uuid)                                                                                                                            |                                    |
+| `name TEXT NOT NULL`, `job_title TEXT NOT NULL DEFAULT ''`                                                                                              |                                    |
+| `email TEXT` (nullable, **not unique**: shared `info@` addresses exist)                                                                                 | D6                                 |
+| `phone TEXT` (E.164 when it parses)                                                                                                                     | D14                                |
+| `linkedin TEXT` (canonical `https://www.linkedin.com/in/…`)                                                                                             | D12                                |
+| `company_id TEXT REFERENCES companies(id) ON DELETE SET NULL`                                                                                           | D1, D13                            |
+| `origin TEXT NOT NULL CHECK (IN ('self_registered','checkin','d365','typed','research'))`                                                               | D16; first value, never downgraded |
+| `origin_detail TEXT NOT NULL DEFAULT ''` (the one-time "where did you get their details" answer, or the D365 owner note)                                | D16, D11                           |
+| `source_url TEXT`, `research_reason TEXT` (research origin only; kept for the person's life so the D10 source line can be rendered)                     | D10                                |
+| `is_customer INTEGER NOT NULL DEFAULT 0` (from a D365 import; sticky)                                                                                   | D15, D18, D20                      |
+| `country TEXT CHECK (IN ('ID','MY'))` (null = unknown, treated as MY, the stricter case)                                                                | D15                                |
+| `consent_future_at INTEGER`                                                                                                                             | D15 box 2                          |
+| `legacy_notice_at INTEGER`, `legacy_kept_at INTEGER`                                                                                                    | D15 legacy                         |
+| `d365_no_email`, `d365_no_phone`, `d365_suppressed INTEGER NOT NULL DEFAULT 0`                                                                          | D11                                |
+| `locked_at INTEGER`, `lock_reason TEXT` (mirror of the do-not-contact hit)                                                                              | D13                                |
+| `linkedin_status TEXT CHECK (IN ('requested','connected'))` (NULL = not connected), `linkedin_status_at INTEGER`, `linkedin_status_by TEXT` (schema v6) | D26                                |
+| `last_event_at INTEGER` (max of event `starts_at` over its rows and `checked_in_at`; null → use `created_at`)                                           | D18                                |
+| `created_by TEXT NOT NULL DEFAULT ''`, `created_at`, `updated_at`                                                                                       | D1                                 |
 
 Indexes on `email`, `phone`, `linkedin`, `company_id`.
 
@@ -254,11 +256,25 @@ Header: _Yes n / target_ progress with _Confirmed m_ beside it (D8), stage chips
 
 Default chips: none before the event; Checked in + No-show once the event has **ended**.
 
-Row (`GuestRow.svelte` evolved): name, title, company, stage pill, reply buttons (tap again to
-clear, as today), markers, owner avatar, next-action date (editable = override), note,
-WhatsApp / email buttons (hidden when `contactable()` says no, or no usable value), **Invited via
-LinkedIn** toggle, copy-registration-link button, overflow: Edit, Remove, Don't contact again…,
-Merge into…. "Park as Found" exists only on the add/review card, before a person exists.
+Row (`GuestRow.svelte` evolved): name, title, company, the research source and reason (kept after
+Add), a five-step track (`phaseTrack`: Shortlisted → Invited → Replied, named by the answer →
+Confirmed → Checked in; a no closes the last two, a step passed without happening is struck
+through), the LinkedIn connection (D26), **Next:** in plain words (`nextStep`) beside the
+next-action date (editable = override), reply buttons (tap again to clear, as today), markers,
+owner avatar, note, the **Message** menu (which message the buttons use; kinds are named by when
+they are for, and it is not a stage), WhatsApp / email buttons (hidden when `contactable()` says
+no, or no usable value), **Copy message** when neither exists, **Mark invited on LinkedIn**
+toggle, copy-registration-link button, overflow: Edit, the LinkedIn statuses, Remove, Don't
+contact again…, Merge into…. "Park as Found" exists only on the add/review card, before a person
+exists. A collapsed **How this list works** above the list explains the track, the message menu
+and LinkedIn. The **LinkedIn request sent** filter shows people with `linkedin_status =
+'requested'`.
+
+LinkedIn connection (D26): on the person, since a connection outlives an event. Opening the
+profile from a listed row (`?/linkedin` with `opened=1`, sent as a beacon) moves NULL to
+`requested` only; the row then offers _Already connected_ and _I didn't send one_; `requested`
+offers _They accepted: mark connected_; the menu sets any status. A merge keeps the further
+status (connected > requested > none) with its date and who. Found rows have no status.
 
 Laptop: grouped by company (`groupByCompany`); per group the owner (inherited; set here), _Add
 all / Skip all_ for Found rows, rename company (updates `companies.name`, re-hashes
@@ -380,23 +396,23 @@ _Due today_ = rows with `next_action_at <= end of today`.
 
 ### 5.3 Stage transitions
 
-| From → To                | Trigger                                                                            | Sets                                                                    | Clears                                     |
-| ------------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------ |
-| (new) → found            | research POST, paste > 10 rows, "Park as Found"                                    | snapshot, source, added_by                                              |                                            |
-| found → shortlisted      | Add / Add all / swipe                                                              | `person_id` (find or create; origin per source), stage                  | snapshot copied to the person, then nulled |
-| found → skipped          | Skip                                                                               | `skipped_at`, `skipped_by`                                              |                                            |
-| skipped → found          | Unskip                                                                             |                                                                         | `skipped_at`                               |
-| (new) → shortlisted      | typed ≤10, pool picker, CSV/D365 ≤10, copy to event                                | as above                                                                |                                            |
-| shortlisted → invited    | WhatsApp/email tap (touch `invitation`), "Invited via LinkedIn", bulk Mark invited | `invited_at`, `invited_via`, `last_contacted_at`, touch                 |                                            |
-| invited → replied        | reply button; registration; staff "stop" reply (→ lock)                            | `reply`, `replied_at` (kept when unchanged, as today)                   |                                            |
-| replied → replied        | reply changed                                                                      | `reply`, `replied_at`                                                   | `confirmed_at` if now no                   |
-| replied → invited        | reply cleared                                                                      | `reply = pending`                                                       | `replied_at`                               |
-| shortlisted → replied    | reply recorded before any touch (phone call)                                       | `reply`, `replied_at`, `invited_at = replied_at`, `invited_via = other` |                                            |
-| replied(yes) → confirmed | registration yes, reconfirm tap                                                    | `stage`, `confirmed_at`, `confirmed_via`                                |                                            |
-| any → checked_in         | check-in auto-merge, staff add                                                     | `checkin_id`, `consent_event_at` (may be NULL)                          | `next_action_at`                           |
-| checked_in → previous    | check-in removed                                                                   | stage from reply / confirmed                                            | `checkin_id`                               |
-| any → (deleted)          | Remove, person deletion, event-start purge of Found                                | `activity_log`                                                          |                                            |
-| any → locked             | Don't contact again, stop reply, Remove me                                         | `do_not_contact`, `people.locked_at`                                    | `next_action_at` everywhere                |
+| From → To                | Trigger                                                                                | Sets                                                                    | Clears                                     |
+| ------------------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------ |
+| (new) → found            | research POST, paste > 10 rows, "Park as Found"                                        | snapshot, source, added_by                                              |                                            |
+| found → shortlisted      | Add / Add all / swipe                                                                  | `person_id` (find or create; origin per source), stage                  | snapshot copied to the person, then nulled |
+| found → skipped          | Skip                                                                                   | `skipped_at`, `skipped_by`                                              |                                            |
+| skipped → found          | Unskip                                                                                 |                                                                         | `skipped_at`                               |
+| (new) → shortlisted      | typed ≤10, pool picker, CSV/D365 ≤10, copy to event                                    | as above                                                                |                                            |
+| shortlisted → invited    | WhatsApp/email tap (touch `invitation`), "Mark invited on LinkedIn", bulk Mark invited | `invited_at`, `invited_via`, `last_contacted_at`, touch                 |                                            |
+| invited → replied        | reply button; registration; staff "stop" reply (→ lock)                                | `reply`, `replied_at` (kept when unchanged, as today)                   |                                            |
+| replied → replied        | reply changed                                                                          | `reply`, `replied_at`                                                   | `confirmed_at` if now no                   |
+| replied → invited        | reply cleared                                                                          | `reply = pending`                                                       | `replied_at`                               |
+| shortlisted → replied    | reply recorded before any touch (phone call)                                           | `reply`, `replied_at`, `invited_at = replied_at`, `invited_via = other` |                                            |
+| replied(yes) → confirmed | registration yes, reconfirm tap                                                        | `stage`, `confirmed_at`, `confirmed_via`                                |                                            |
+| any → checked_in         | check-in auto-merge, staff add                                                         | `checkin_id`, `consent_event_at` (may be NULL)                          | `next_action_at`                           |
+| checked_in → previous    | check-in removed                                                                       | stage from reply / confirmed                                            | `checkin_id`                               |
+| any → (deleted)          | Remove, person deletion, event-start purge of Found                                    | `activity_log`                                                          |                                            |
+| any → locked             | Don't contact again, stop reply, Remove me                                             | `do_not_contact`, `people.locked_at`                                    | `next_action_at` everywhere                |
 
 ### 5.4 Jobs and retention (D10, D17, D18)
 
@@ -596,4 +612,5 @@ origin on every person · D17 events need a date; purge at start · D18 retentio
 Mine-due-today · D20 chase rules and in-app due counts · D21 message kinds, languages, templates ·
 D22 bulk actions · D23 settings page and activity log · D24 earlier bindings (no scraping, human
 approval, token API, on-demand research, guided brief) · D25 research ticks, batches of 15,
-researched_at.
+researched_at · D26 LinkedIn connection status on the person, step track and plain next step on
+every row.

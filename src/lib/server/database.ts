@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { backfillCheckinCountry } from './backfill-country.ts';
+import { addLinkedinStatusColumns } from './linkedin.ts';
 import { seedMessageTemplates } from './message-templates.ts';
 import { migrateToV2 } from './migrate-v2.ts';
 import { SCHEMA, SCHEMA_TABLES_VERSION, TABLES, tableExists } from './schema.ts';
@@ -35,7 +36,9 @@ const STEPS: { version: number; run: (db: DB, opts: MigrateOptions) => void }[] 
 	{ version: 4, run: (db) => recordConsentBoxesSince(db) },
 	// Version 5 fills the country of past attendees from the event they walked into (§2.3),
 	// which check-ins between the version-2 migration and this deploy left empty.
-	{ version: 5, run: (db) => backfillCheckinCountry(db) }
+	{ version: 5, run: (db) => backfillCheckinCountry(db) },
+	// Version 6 adds the LinkedIn connection status (D26); a fresh file has the columns already.
+	{ version: 6, run: (db) => addLinkedinStatusColumns(db) }
 ];
 
 /** The version a database is at once every step has run: the last step's, so it can't drift. */

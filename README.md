@@ -104,18 +104,35 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   values read as replies. The _Owner_ column becomes the company's owner when it names a team
   member and the company has none; otherwise it is kept as a note on the company.
 - **To review.** What the research run found (see [Planning](#planning-finding-people-to-invite))
-  waits here with its source link and reason. **Add** makes the person real and shortlists them;
+  waits here with its source link and reason, which stay on the row after **Add** as the reason
+  to invite them. **Add** makes the person real and shortlists them;
   **Skip** hides the row (reversibly). A company header offers **Add all** and **Skip all**.
   Found rows are deleted when the event starts; skipped ones go 90 days later, or sooner with
   **Delete planning data** on the Planning tab.
+- **Steps and next.** Every listed person shows a track of five steps, **Shortlisted →
+  Invited → Replied → Confirmed → Checked in**, with the current one highlighted; the reply step
+  names the answer (_Attending_, _Tentative_, _Declined_), and a no ends there. Under it,
+  **Next** says in plain words what to do (send the invitation, connect on LinkedIn first, wait
+  for an answer, follow up, send the reminder) beside the date the chase rules set. **How this
+  list works** above the list explains the steps, the message menu and LinkedIn.
 - **Replies and messages.** Tap _Attending_, _Tentative_ or _Declined_; tap it again to clear
-  it. Notes save when you leave the field. The WhatsApp button (for numbers in international
-  format) and the email button open a message that fits the reply: an invitation, a
-  confirmation, a follow-up or a thank-you. Nothing is sent until you press send, but the tap is
-  recorded: the row moves to **Invited** and later taps show as _chased ×N_. **Invited via
-  LinkedIn** records an invitation sent elsewhere. Buttons stay hidden for people who may not be
+  it. Notes save when you leave the field. **Message** picks which message the buttons use:
+  _Invitation_, _Chase (no reply yet)_, _Reminder (before the event)_, or the thank-you or
+  follow-up that fits the answer. It is not a step; the right one is picked for you. The
+  WhatsApp button (for numbers in international format) and the email button open it; for
+  someone with neither, **Copy message** puts the text on the clipboard for LinkedIn. Nothing is
+  sent until you press send, but the tap is recorded: the row moves to **Invited** and later
+  taps show as _chased ×N_. **Mark invited on LinkedIn** records an invitation sent there.
+  Buttons stay hidden for people who may not be
   contacted (locked, suppressed by a D365 flag, or past Malaysian attendees who never agreed to
   hear about future events).
+- **LinkedIn connection.** A listed person with a profile shows their connection with you:
+  **Not connected → Request sent → Connected**. Opening their LinkedIn from that status records
+  the request as sent (once; it never undoes a connection), with _Already connected_ and _I
+  didn't send one_ right there to correct it; **They accepted: mark connected** finishes it. The
+  **LinkedIn request sent** filter lists everyone still waiting, so you can check who accepted,
+  and the row menu sets any status by hand. The status belongs to the person, so it carries to
+  every event they are on.
 - **Registration links.** The link button on a row copies that person's registration link to
   paste into WhatsApp, an email or anywhere else (the message buttons already include it). The
   page it opens prefills only their name and company, never an email or mobile: the link
@@ -137,8 +154,7 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   page that marks the row confirmed again; it only re-confirms a yes, and sends anyone else
   to the full form.
 - **Markers.** _Needs details_ (no email and no mobile), _chased ×N_, _locked_, _blocked
-  company_, _suppressed_, _no consent recorded_ (a staff add), _via LinkedIn_,
-  _self-registered, check company owner_.
+  company_, _suppressed_, _no consent recorded_ (a staff add), _self-registered, check company owner_.
 - **Owners.** Each company has an owner, picked from the team names in settings, and a row can
   override it; **Mine** shows the rows that are yours.
 - **Bulk actions.** The tick-list button in the toolbar turns on checkboxes (one per row, one

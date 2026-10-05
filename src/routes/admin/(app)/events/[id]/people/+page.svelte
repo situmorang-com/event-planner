@@ -58,6 +58,8 @@
 	let chips = $state<Chip[]>(data.view?.ended ? ['checked_in', 'no_show'] : []);
 	let mine = $state(false);
 	let due = $state(false);
+	// People with a LinkedIn connection request still waiting (D26), to check for acceptances.
+	let linkedinPending = $state(false);
 	// One list sorted by what is due, or the company groups (§4.2). The phone starts on the
 	// list of what is yours and due (D19) once a name is picked; a laptop keeps the groups.
 	let flat = $state(false);
@@ -150,13 +152,16 @@
 		rows.filter((r) => r.stage !== 'found' && !r.skipped_at && effectiveOwner(r) === data.me)
 	);
 	const mineDue = $derived(mineRows.filter((r) => isDue(r, today)).length);
+	const pendingRows = $derived(
+		rows.filter((r) => r.linkedin_status === 'requested' && r.stage !== 'found' && !r.skipped_at)
+	);
 
 	function toggleChip(chip: Chip) {
 		chips = chips.includes(chip) ? chips.filter((c) => c !== chip) : [...chips, chip];
 	}
 
 	const q = $derived(query.trim().toLowerCase());
-	const filtering = $derived(chips.length > 0 || mine || due || q !== '');
+	const filtering = $derived(chips.length > 0 || mine || due || linkedinPending || q !== '');
 
 	function shows(r: PeopleRow) {
 		const row = settled(r);
@@ -164,6 +169,7 @@
 		if (chips.length && !chips.some((c) => matchesChip(row, c, ended))) return false;
 		if (mine && effectiveOwner(row) !== data.me) return false;
 		if (due && !isDue(row, today)) return false;
+		if (linkedinPending && row.linkedin_status !== 'requested') return false;
 		return (
 			!q ||
 			[row.name, row.company, row.job_title, row.email, row.phone, row.note].some((v) =>
@@ -581,6 +587,17 @@
 					Due
 					<span class="chip-count">{dueRows.length.toLocaleString()}</span>
 				</button>
+				{#if pendingRows.length || linkedinPending}
+					<button
+						class="chip"
+						aria-pressed={linkedinPending}
+						title="People you sent a LinkedIn connection request: check who accepted"
+						onclick={() => (linkedinPending = !linkedinPending)}
+					>
+						LinkedIn request sent
+						<span class="chip-count">{pendingRows.length.toLocaleString()}</span>
+					</button>
+				{/if}
 				<label class="chip toggle">
 					<input type="checkbox" bind:checked={showSkipped} />
 					Show skipped
@@ -613,6 +630,36 @@
 				</button>
 			</div>
 		</div>
+
+		<!-- What the row's parts mean, for anyone picking up the list. -->
+		<details class="guide">
+			<summary>How this list works</summary>
+			<dl>
+				<dt>Steps</dt>
+				<dd>
+					Everyone you add moves along the same five steps: <strong>Shortlisted</strong> →
+					<strong>Invited</strong> → <strong>Replied</strong> (Attending, Tentative or Declined) →
+					<strong>Confirmed</strong> (registered through their link) → <strong>Checked in</strong>.
+					The track on each row shows where they are, and <strong>Next</strong> says what to do.
+				</dd>
+				<dt>Message</dt>
+				<dd>
+					Picks which message the WhatsApp, email and Copy buttons use: the invitation, a chase if
+					they haven't answered, a reminder before the event, or a thank-you or follow-up after they
+					answer. It is not a step. The right one is picked for you; sending it moves them on.
+				</dd>
+				<dt>LinkedIn</dt>
+				<dd>
+					Each person's connection with you: <strong>Not connected</strong> →
+					<strong>Request sent</strong> → <strong>Connected</strong>. Opening their LinkedIn from
+					the row records a request as sent; press <strong>mark connected</strong> once they accept
+					(the
+					<strong>LinkedIn request sent</strong> filter lists who to check), and fix it from the ⋯
+					menu any time. <strong>Mark invited on LinkedIn</strong> records that you sent the invitation
+					there.
+				</dd>
+			</dl>
+		</details>
 
 		{#if problem}<p class="banner banner-warn" role="alert">{problem}</p>{/if}
 		{#if form && 'bulkError' in form && form.bulkError}
@@ -874,7 +921,9 @@
 				<p class="muted">
 					{q ? `No one matches “${query.trim()}”` : 'No one here'}{chips.length
 						? ` under ${chips.map((c) => CHIP_LABEL[c]).join(', ')}`
-						: ''}{due ? ' due today' : ''}{mine ? ' of yours' : ''}.
+						: ''}{due ? ' due today' : ''}{linkedinPending
+						? ' waiting on a LinkedIn request'
+						: ''}{mine ? ' of yours' : ''}.
 				</p>
 				<button
 					class="btn btn-secondary btn-sm"
@@ -883,6 +932,7 @@
 						chips = [];
 						mine = false;
 						due = false;
+						linkedinPending = false;
 					}}>Show everyone</button
 				>
 			</div>
@@ -1287,6 +1337,51 @@
 
 	.banner.hint .btn {
 		margin-left: auto;
+	}
+
+	.guide {
+		margin-bottom: 14px;
+		font-size: 14px;
+		color: var(--text-2);
+	}
+
+	.guide summary {
+		width: fit-content;
+		font-weight: 650;
+		color: var(--brand-text);
+		cursor: pointer;
+	}
+
+	.guide dl {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: 8px 16px;
+		margin: 10px 0 0;
+		padding: 14px 16px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--surface);
+		line-height: 1.5;
+	}
+
+	.guide dt {
+		font-weight: 700;
+		color: var(--text);
+	}
+
+	.guide dd {
+		margin: 0;
+	}
+
+	@media (max-width: 600px) {
+		.guide dl {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 2px;
+		}
+
+		.guide dd + dt {
+			margin-top: 8px;
+		}
 	}
 
 	.pick {

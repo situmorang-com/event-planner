@@ -37,10 +37,11 @@ export type MessageKind =
 	| 'thanks_no'
 	| 'legacy_notice';
 
+// Each name says when the message is for, so the menu reads as "which message", not a stage.
 export const KIND_LABEL: Record<MessageKind, string> = {
 	invitation: 'Invitation',
-	chase: 'Chase',
-	reminder: 'Reminder',
+	chase: 'Chase (no reply yet)',
+	reminder: 'Reminder (before the event)',
 	thanks_yes: 'Thanks (attending)',
 	followup_maybe: 'Follow-up (tentative)',
 	thanks_no: 'Thanks (declined)',
@@ -90,6 +91,126 @@ export const STAGE_LABEL: Record<Stage, string> = {
 	confirmed: 'Confirmed',
 	checked_in: 'Checked in'
 };
+
+/* ───────────────────────── LinkedIn connection (D26) ───────────────────────── */
+
+export type LinkedinStatus = 'none' | 'requested' | 'connected';
+
+export const isLinkedinStatus = (v: unknown): v is LinkedinStatus =>
+	v === 'none' || v === 'requested' || v === 'connected';
+
+export const LINKEDIN_STATUS_LABEL: Record<LinkedinStatus, string> = {
+	none: 'Not connected',
+	requested: 'Request sent',
+	connected: 'Connected'
+};
+
+/* ───────────────────────── Where someone is (§4.2) ───────────────────────── */
+
+export interface PhaseStep {
+	key: Exclude<Stage, 'found'>;
+	label: string;
+	/** done: it happened · current: where they are · missed: passed without it (a walk-in was
+	 * never invited) · todo: still ahead · closed: won't happen (they declined). */
+	state: 'done' | 'current' | 'missed' | 'todo' | 'closed';
+	help: string;
+}
+
+type PhaseRow = Pick<PeopleRow, 'stage' | 'reply' | 'invited_at' | 'confirmed_at'>;
+
+/**
+ * The five steps a listed person moves through, for the track on their row. The reply step
+ * names the answer once there is one, so "Declined" is where a no stops.
+ */
+export function phaseTrack(row: PhaseRow): PhaseStep[] {
+	const at = stageRank(row.stage);
+	const declined = row.reply === 'no';
+	const happened: Record<PhaseStep['key'], boolean> = {
+		shortlisted: true,
+		invited: row.invited_at !== null,
+		replied: row.reply !== 'pending',
+		confirmed: row.confirmed_at !== null,
+		checked_in: row.stage === 'checked_in'
+	};
+	const steps: Omit<PhaseStep, 'state'>[] = [
+		{ key: 'shortlisted', label: 'Shortlisted', help: 'On the list, not invited yet' },
+		{ key: 'invited', label: 'Invited', help: 'Invitation sent, waiting for an answer' },
+		{
+			key: 'replied',
+			label: row.reply === 'pending' ? 'Replied' : REPLY_WORD[row.reply],
+			help: 'They answered: attending, tentative or declined'
+		},
+		{
+			key: 'confirmed',
+			label: 'Confirmed',
+			help: 'Registered through their personal link, or reconfirmed'
+		},
+		{ key: 'checked_in', label: 'Checked in', help: 'Arrived at the event' }
+	];
+	return steps.map((s) => {
+		const rank = stageRank(s.key);
+		let state: PhaseStep['state'];
+		if (rank === at) state = 'current';
+		else if (rank < at) state = happened[s.key] ? 'done' : 'missed';
+		else state = declined && row.stage !== 'checked_in' ? 'closed' : 'todo';
+		return { ...s, state };
+	});
+}
+
+const REPLY_WORD = { yes: 'Attending', maybe: 'Tentative', no: 'Declined' } as const;
+
+type NextRow = Pick<
+	PeopleRow,
+	| 'stage'
+	| 'reply'
+	| 'skipped_at'
+	| 'locked_at'
+	| 'blocked_at'
+	| 'suppressed'
+	| 'email'
+	| 'phone'
+	| 'linkedin'
+	| 'linkedin_status'
+	| 'message'
+>;
+
+/**
+ * What to do next for a listed person, in words anyone on the team can act on. The date, when
+ * the rules set one, is the row's due line beside it; this says what the step is.
+ */
+export function nextStep(row: NextRow): string | null {
+	if (row.stage === 'found' || row.skipped_at || row.locked_at || row.blocked_at || row.suppressed)
+		return null;
+	switch (row.stage) {
+		case 'shortlisted': {
+			if (row.message?.whatsapp || row.message?.email)
+				return 'Send the invitation with the WhatsApp or email button';
+			if ((row.phone || row.email) && row.message?.hint)
+				return 'Set PRIVACY_URL, then send the invitation';
+			if (row.linkedin) {
+				if (row.linkedin_status === 'connected')
+					return row.message?.text
+						? 'Copy the message, send it on LinkedIn, then press “Mark invited on LinkedIn”'
+						: 'Invite them on LinkedIn, then press “Mark invited on LinkedIn”';
+				if (row.linkedin_status === 'requested')
+					return 'Wait for them to accept on LinkedIn, then invite them there';
+				return 'Open their LinkedIn and send a connection request, or add a phone or email';
+			}
+			if (row.phone || row.email) return 'Check their phone or email (Edit), then invite them';
+			return 'Find a phone, email or LinkedIn profile for them (Edit)';
+		}
+		case 'invited':
+			return 'Wait for their answer, then press Attending, Tentative or Declined';
+		case 'replied':
+			if (row.reply === 'yes') return 'Send the thank-you; a reminder follows before the event';
+			if (row.reply === 'maybe') return 'Follow up until they decide';
+			return 'Declined: nothing more to send';
+		case 'confirmed':
+			return 'Send a reminder before the event';
+		case 'checked_in':
+			return null;
+	}
+}
 
 /* ───────────────────────── Chips (§4.2) ───────────────────────── */
 
@@ -186,6 +307,10 @@ export interface PeopleRow extends ChipRow {
 	email: string | null;
 	phone: string | null;
 	linkedin: string | null;
+	/** The person's LinkedIn connection (D26); 'none' while found or not connected. */
+	linkedin_status: LinkedinStatus;
+	linkedin_status_at: number | null;
+	linkedin_status_by: string | null;
 	company: string;
 	company_key: string;
 	/** The company's own phone country (D14); null follows the event. */
@@ -302,8 +427,7 @@ export function markers(row: PeopleRow, day: (ts: number) => string): Marker[] {
 		});
 	if (row.stage === 'checked_in' && row.consent_event_at === null)
 		list.push({ key: 'consent', label: 'No consent recorded', tone: 'warn' });
-	if (row.invited_via === 'linkedin')
-		list.push({ key: 'linkedin', label: 'Via LinkedIn', tone: 'brand' });
+	// "Invited on LinkedIn" is the row's own pressed button, and the track shows Invited.
 	if (!row.contact.whatsapp && !row.contact.email && row.contact.reason === 'not contactable')
 		list.push({ key: 'contact', label: 'Not contactable', tone: 'warn' });
 	if (row.legacy) list.push({ key: 'legacy', label: legacyLabel(row.legacy, day), tone: 'warn' });

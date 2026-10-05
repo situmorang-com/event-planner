@@ -1,6 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import { isReply, linkedinProfile } from '$lib/invitations';
-import { isMessageKind } from '$lib/people';
+import { isLinkedinStatus, isMessageKind } from '$lib/people';
+import { setLinkedinStatus } from '$lib/server/linkedin';
 import { fromLocalInput } from '$lib/time';
 import { logActivity } from '$lib/server/activity-log';
 import {
@@ -459,6 +460,23 @@ export const actions: Actions = {
 		if (form.get('on') === '1') markInvited(db, event.id, id, 'linkedin', { by: locals.who });
 		else unmarkInvited(db, event.id, id, 'linkedin');
 		return { invited: id };
+	},
+
+	// The LinkedIn connection (D26). Opening the profile from the row sends `opened`, which only
+	// moves "not connected" to "request sent", so a connection is never undone by a click.
+	linkedin: async ({ params, request, locals }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		const id = rowId(form);
+		const status = form.get('status');
+		if (id === null || !isLinkedinStatus(status)) return fail(400, { linkedinError: true });
+		const row = getEventPerson(db, event.id, id);
+		if (!row?.person_id) return fail(404, { linkedinError: true });
+		setLinkedinStatus(db, row.person_id, status, {
+			by: locals.who,
+			ifNone: form.get('opened') === '1'
+		});
+		return { linkedin: id };
 	},
 
 	lock: async ({ params, request, locals }) => {

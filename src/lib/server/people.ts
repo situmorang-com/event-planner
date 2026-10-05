@@ -6,6 +6,7 @@ import { stageRank, type Stage } from '../people.ts';
 import { logActivity } from './activity-log.ts';
 import { ensureCompany } from './companies.ts';
 import type { DB } from './database.ts';
+import { linkedinRank } from './linkedin.ts';
 import type { Country } from './settings.ts';
 
 export type Origin = 'self_registered' | 'checkin' | 'd365' | 'typed' | 'research';
@@ -35,6 +36,9 @@ export interface PersonRow {
 	d365_suppressed: 0 | 1;
 	locked_at: number | null;
 	lock_reason: string | null;
+	linkedin_status: 'requested' | 'connected' | null;
+	linkedin_status_at: number | null;
+	linkedin_status_by: string;
 	last_event_at: number | null;
 	created_by: string;
 	created_at: number;
@@ -651,6 +655,13 @@ export function mergeInto(
 			lockReason: loser.lock_reason,
 			originDetail: loser.origin_detail
 		});
+		// The further of the two LinkedIn statuses stays (D26): a connection is never lost to a
+		// duplicate that only had a request, or none.
+		if (linkedinRank(loser.linkedin_status) > linkedinRank(survivor.linkedin_status))
+			db.prepare(
+				`UPDATE people SET linkedin_status = ?, linkedin_status_at = ?, linkedin_status_by = ?
+				WHERE id = ?`
+			).run(loser.linkedin_status, loser.linkedin_status_at, loser.linkedin_status_by, survivorId);
 
 		const loserRows = db
 			.prepare(`${ROW_FOR_MERGE} WHERE person_id = ?`)

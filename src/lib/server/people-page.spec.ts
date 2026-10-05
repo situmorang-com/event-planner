@@ -159,10 +159,9 @@ describe('peopleView', () => {
 			'Needs details',
 			'No consent recorded'
 		]);
-		expect(markers(rows[1], day).map((m) => m.label)).toEqual([
-			'Chased ×1, last day 2000',
-			'Via LinkedIn'
-		]);
+		// Invited on LinkedIn shows as the row's pressed button and its track, not a marker.
+		expect(markers(rows[1], day).map((m) => m.label)).toEqual(['Chased ×1, last day 2000']);
+		expect(rows[1].invited_via).toBe('linkedin');
 		void rina;
 	});
 
