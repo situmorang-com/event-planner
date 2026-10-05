@@ -1,8 +1,10 @@
 // Every CSV leaves through here, so the one rule about locked people (D13, §8) cannot be
 // forgotten by a route: name and company may go, email, mobile and LinkedIn never.
 import { ORIGIN_LABEL } from '../people.ts';
+import { logActivity } from './activity-log.ts';
 import { toCsv } from './csv.ts';
 import type { DB } from './database.ts';
+import { listEventPeople, type EventPersonRow } from './event-people.ts';
 import { listPeople, type PersonListRow } from './people.ts';
 import { keptUntilPerson } from './retention.ts';
 import { consentBoxesSince } from './settings.ts';
@@ -71,4 +73,90 @@ export function poolCsv(db: DB, { prospects = false } = {}) {
 		),
 		count: people.length
 	};
+}
+
+/* ───────────────────────── Partner export (D15, §8) ───────────────────────── */
+
+/** "before" the event: who said yes or confirmed; "after": who checked in. */
+export type PartnerVariant = 'before' | 'after';
+
+export const isPartnerVariant = (v: unknown): v is PartnerVariant =>
+	v === 'before' || v === 'after';
+
+export const PARTNER_HEADERS = ['Name', 'Company', 'Title'];
+export const PARTNER_COUNT_HEADERS = ['Company', 'Count'];
+
+/** Who is in the partner list at all, before the consent split. */
+export function inPartnerList(
+	row: Pick<EventPersonRow, 'stage' | 'reply' | 'skipped_at'>,
+	variant: PartnerVariant
+): boolean {
+	if (row.skipped_at) return false;
+	if (variant === 'after') return row.stage === 'checked_in';
+	return (
+		(row.stage === 'replied' || row.stage === 'confirmed') &&
+		(row.reply === 'yes' || row.stage === 'confirmed')
+	);
+}
+
+export interface PartnerRows {
+	/** Name, company and title: only people who ticked the share box, never a locked person. */
+	named: { name: string; company: string; job_title: string }[];
+	/** Everyone else in the list, as a count per company. */
+	counts: { company: string; count: number }[];
+}
+
+/**
+ * Splits the list the way the co-hosts may see it (§8): a name travels only with the share
+ * consent, and a locked person's never does (D13), so they are counted among the rest.
+ */
+export function partnerRows(rows: EventPersonRow[], variant: PartnerVariant): PartnerRows {
+	const named: PartnerRows['named'] = [];
+	const byCompany = new Map<string, number>();
+	for (const r of rows) {
+		if (!inPartnerList(r, variant)) continue;
+		if (r.consent_share_at !== null && r.locked_at === null)
+			named.push({ name: r.name, company: r.company, job_title: r.job_title });
+		else byCompany.set(r.company, (byCompany.get(r.company) ?? 0) + 1);
+	}
+	const collate = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+	named.sort((a, b) => collate(a.company, b.company) || collate(a.name, b.name));
+	const counts = [...byCompany]
+		.map(([company, count]) => ({ company: company || '(no company)', count }))
+		.sort((a, b) => collate(a.company, b.company));
+	return { named, counts };
+}
+
+/** The partner CSV: the named section, a blank line, then the per-company counts; logged. */
+export function partnerExport(
+	db: DB,
+	eventId: string,
+	variant: PartnerVariant,
+	{ by = '' }: { by?: string } = {},
+	now = Date.now()
+) {
+	const { named, counts } = partnerRows(listEventPeople(db, eventId), variant);
+	const counted = counts.reduce((n, c) => n + c.count, 0);
+	const csv =
+		toCsv(
+			PARTNER_HEADERS,
+			named.map((p) => [p.name, p.company, p.job_title])
+		) +
+		'\r\n' +
+		toCsv(
+			PARTNER_COUNT_HEADERS,
+			counts.map((c) => [c.company, c.count])
+		).replace(/^\uFEFF/, '');
+	logActivity(
+		db,
+		{
+			eventId,
+			kind: 'export',
+			who: by,
+			what: { export: 'partners', variant, named: named.length, counted },
+			rowCount: named.length + counted
+		},
+		now
+	);
+	return { csv, named: named.length, counted };
 }

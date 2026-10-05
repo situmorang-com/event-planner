@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { listActivity } from './activity-log';
 import { createDb } from './database';
 import { lockPerson } from './do-not-contact';
-import { addShortlisted, setReply } from './event-people';
+import { addShortlisted, confirmRow, listEventPeople, setReply } from './event-people';
 import { createEvent } from './events';
-import { exportRow, poolCsv } from './exports';
+import { exportRow, partnerExport, partnerRows, poolCsv } from './exports';
 import { createPerson } from './people';
 
 describe('exportRow', () => {
@@ -65,5 +66,104 @@ describe('poolCsv', () => {
 		// Twelve months after their only date, the moment they were created.
 		const budi = prospects.csv.trim().split('\r\n')[1];
 		expect(budi).toContain('Research,1971-01-01T00:00:02.000Z');
+	});
+});
+
+describe('partnerExport', () => {
+	const setup = () => {
+		const db = createDb(':memory:');
+		const eventId = createEvent(db, {
+			name: 'Launch',
+			venue: '',
+			startsAt: Date.UTC(2026, 10, 1),
+			timezone: 'Asia/Jakarta',
+			qrMode: 'static',
+			coHosts: 'Microsoft'
+		});
+		const guest = (name: string, company: string) => ({
+			name,
+			company,
+			jobTitle: `${name} title`,
+			email: `${name.toLowerCase()}@x.id`,
+			phone: null
+		});
+		addShortlisted(
+			db,
+			eventId,
+			[
+				guest('Rina', 'Batavia'),
+				guest('Andi', 'Batavia'),
+				guest('Budi', 'Batavia'),
+				guest('Citra', 'Selat'),
+				guest('Dewi', 'Selat'),
+				guest('Eka', 'Selat'),
+				guest('Fajar', 'Kopi')
+			],
+			{ source: 'typed' },
+			1_000
+		);
+		const row = (name: string) => listEventPeople(db, eventId).find((r) => r.name === name)!;
+		const share = (name: string) =>
+			db.prepare(`UPDATE event_people SET consent_share_at = 2000 WHERE id = ?`).run(row(name).id);
+		const checkedIn = (name: string) =>
+			db.prepare(`UPDATE event_people SET stage = 'checked_in' WHERE id = ?`).run(row(name).id);
+		// Rina: yes and shared. Andi: yes, no share. Budi: confirmed, shared, but locked.
+		setReply(db, eventId, row('Rina').id, 'yes');
+		share('Rina');
+		setReply(db, eventId, row('Andi').id, 'yes');
+		setReply(db, eventId, row('Budi').id, 'yes');
+		confirmRow(db, eventId, row('Budi').id, 'registration');
+		share('Budi');
+		lockPerson(db, row('Budi').person_id!, { source: 'staff', reason: 'asked' });
+		// Citra: maybe and shared (not in the before list). Dewi: declined. Eka: never replied.
+		setReply(db, eventId, row('Citra').id, 'maybe');
+		share('Citra');
+		setReply(db, eventId, row('Dewi').id, 'no');
+		// Fajar: checked in with the share box ticked; Citra and Eka also came.
+		checkedIn('Fajar');
+		share('Fajar');
+		checkedIn('Citra');
+		checkedIn('Eka');
+		return { db, eventId };
+	};
+
+	it('names only those who agreed to share, and counts the rest per company (before)', () => {
+		const { db, eventId } = setup();
+		expect(partnerRows(listEventPeople(db, eventId), 'before')).toEqual({
+			named: [{ name: 'Rina', company: 'Batavia', job_title: 'Rina title' }],
+			// Andi did not tick the box; Budi did, but a locked person is never named (D13).
+			counts: [{ company: 'Batavia', count: 2 }]
+		});
+	});
+
+	it('switches to who checked in (after)', () => {
+		const { db, eventId } = setup();
+		expect(partnerRows(listEventPeople(db, eventId), 'after')).toEqual({
+			named: [
+				{ name: 'Fajar', company: 'Kopi', job_title: 'Fajar title' },
+				{ name: 'Citra', company: 'Selat', job_title: 'Citra title' }
+			],
+			counts: [{ company: 'Selat', count: 1 }]
+		});
+	});
+
+	it('writes two sections, no channels, and logs the variant with counts only', () => {
+		const { db, eventId } = setup();
+		const { csv, named, counted } = partnerExport(db, eventId, 'before', { by: 'Dewi' }, 9_000);
+		expect({ named, counted }).toEqual({ named: 1, counted: 2 });
+		expect(csv).toBe(
+			'\uFEFFName,Company,Title\r\nRina,Batavia,Rina title\r\n\r\nCompany,Count\r\nBatavia,2\r\n'
+		);
+		expect(csv).not.toContain('@x.id');
+		expect(csv).not.toContain('Budi');
+		const [log] = listActivity(db, eventId);
+		expect(log).toMatchObject({ kind: 'export', who: 'Dewi', at: 9_000, row_count: 3 });
+		expect(JSON.parse(log.what)).toEqual({
+			export: 'partners',
+			variant: 'before',
+			named: 1,
+			counted: 2
+		});
+		expect(log.what).not.toContain('Rina');
 	});
 });

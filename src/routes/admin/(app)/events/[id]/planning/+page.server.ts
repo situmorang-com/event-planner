@@ -1,5 +1,11 @@
 import { error, fail } from '@sveltejs/kit';
-import { DEPARTMENTS, SENIORITY, type Brief } from '$lib/planning';
+import { briefIsEmpty, DEPARTMENTS, SENIORITY, type Brief } from '$lib/planning';
+import {
+	ACCOUNT_COLUMN_LABEL,
+	ACCOUNT_COLUMNS,
+	parseAccounts,
+	readAccountColumns
+} from '$lib/server/accounts-list';
 import { CHASE_FIELDS, chaseFormValues, parseChaseForm } from '$lib/server/chase-form';
 import { countCheckins } from '$lib/server/checkins';
 import { db } from '$lib/server/db';
@@ -18,10 +24,13 @@ import {
 import { rulesFor } from '$lib/server/next-action';
 import { cleanText } from '$lib/server/normalize';
 import {
+	addAccounts,
 	addTargets,
+	copyPlanning,
 	getBrief,
 	listTargets,
 	parseTargets,
+	planningSources,
 	removeTarget,
 	RESEARCH_CAP,
 	researchRefusal,
@@ -85,6 +94,10 @@ export const load: PageServerLoad = ({ params, url }) => {
 	return {
 		event,
 		brief,
+		briefEmpty: briefIsEmpty(brief),
+		// Other events whose brief or companies can be copied here (§4.3), most recent first.
+		sources: planningSources(db, event.id),
+		accountOptions: ACCOUNT_COLUMNS.map((c) => ({ key: c, label: ACCOUNT_COLUMN_LABEL[c] })),
 		targets,
 		ticked: targets.filter((t) => t.ticked).length,
 		cap: RESEARCH_CAP,
@@ -156,6 +169,57 @@ export const actions: Actions = {
 		if (!targets.length) return fail(400, { targetError: 'Add at least one company name.' });
 		const { added, duplicates } = addTargets(db, event.id, targets);
 		return { targetsAdded: added.length, targetDuplicates: duplicates };
+	},
+
+	// Copy brief + targets from another event (§4.3). The page asks before a non-empty brief is
+	// replaced and sends `overwrite`; without it the brief stays and only the companies come.
+	copyFrom: async ({ params, request, locals }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		const from = planningSources(db, event.id).find((s) => s.id === form.get('from'));
+		if (!from) return fail(400, { copyError: 'Pick an event to copy from.' });
+		const result = copyPlanning(db, from.id, event.id, {
+			overwriteBrief: form.get('overwrite') === '1',
+			by: locals.who
+		});
+		return { copied: { ...result, from: from.name } };
+	},
+
+	// A Dynamics 365 accounts export (§6.1). `preview=1`, or a header the app can barely read,
+	// sends the detected mapping back for the organizer to correct before anything is added.
+	accounts: async ({ params, request, locals }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		const text = String(form.get('accounts') ?? '');
+		if (text.length > 2_000_000) return fail(413, { accountsError: 'That paste is too big.' });
+		let columns: ReturnType<typeof readAccountColumns>;
+		try {
+			columns = readAccountColumns(JSON.parse(String(form.get('columns') || 'null')));
+		} catch {
+			columns = undefined;
+		}
+		const parsed = parseAccounts(text, {
+			columns,
+			header: columns ? form.get('header') !== '0' : undefined
+		});
+		const matched = Object.keys(parsed.columns).length;
+		const unsure = !columns && parsed.headers.length >= 2 && matched < 2;
+		if (form.get('preview') === '1' || unsure) {
+			return {
+				accountsPreview: {
+					headers: parsed.headers,
+					header: parsed.header,
+					columns: parsed.columns,
+					count: parsed.accounts.length,
+					skipped: parsed.skipped.length,
+					unsure
+				}
+			};
+		}
+		if (!parsed.accounts.length)
+			return fail(400, { accountsError: 'No company names found. Include the header row.' });
+		const result = addAccounts(db, event.id, parsed.accounts, { by: locals.who });
+		return { accounts: { ...result, skipped: parsed.skipped.length, truncated: parsed.truncated } };
 	},
 
 	focus: async ({ params, request }) => {

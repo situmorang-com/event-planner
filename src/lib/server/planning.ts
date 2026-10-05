@@ -1,7 +1,17 @@
 import { companyKey, linkedinProfile, nameKey } from '../invitations.ts';
-import { briefIsReady, EMPTY_BRIEF, type Brief } from '../planning.ts';
+import { briefIsEmpty, briefIsReady, EMPTY_BRIEF, type Brief } from '../planning.ts';
 import { formatDateTime } from '../time.ts';
-import { ensureCompany } from './companies.ts';
+import type { AccountInput } from './accounts-list.ts';
+import { logActivity } from './activity-log.ts';
+import {
+	appendCompanyNote,
+	ensureCompany,
+	findCompany,
+	getCompany,
+	isBlocked,
+	markCustomer,
+	noteCompanyOwner
+} from './companies.ts';
 import type { DB } from './database.ts';
 import { addFound, listEventPeople } from './event-people.ts';
 import type { EventRow } from './events.ts';
@@ -159,6 +169,183 @@ export function setTargetResearch(db: DB, eventId: string, id: number, research:
 
 export function removeTarget(db: DB, eventId: string, id: number) {
 	db.prepare(`DELETE FROM event_companies WHERE id = ? AND event_id = ?`).run(id, eventId);
+}
+
+/* ───────────────────────── Reuse: copy from an event, paste D365 accounts ───────────────────────── */
+
+export interface PlanningSource {
+	id: string;
+	name: string;
+	starts_at: number | null;
+	timezone: string;
+	/** Whether the event answered "who should come?". */
+	brief: boolean;
+	targets: number;
+}
+
+/** The other events with a brief or target companies to copy (§4.3), most recent first. */
+export function planningSources(db: DB, eventId: string): PlanningSource[] {
+	type Row = Omit<PlanningSource, 'brief'> & {
+		goal: string | null;
+		roles: string | null;
+		seniority: string | null;
+		departments: string | null;
+		avoid: string | null;
+	};
+	const rows = db
+		.prepare(
+			`SELECT e.id, e.name, e.starts_at, e.timezone,
+				(SELECT COUNT(*) FROM event_companies ec WHERE ec.event_id = e.id) AS targets,
+				b.goal, b.roles, b.seniority, b.departments, b.avoid
+			FROM events e LEFT JOIN invite_briefs b ON b.event_id = e.id
+			WHERE e.id <> ? ORDER BY COALESCE(e.starts_at, e.created_at) DESC`
+		)
+		.all(eventId) as Row[];
+	return rows
+		.map(({ goal, roles, seniority, departments, avoid, ...r }) => ({
+			...r,
+			brief:
+				goal !== null &&
+				!briefIsEmpty({
+					goal,
+					roles: roles ?? '',
+					seniority: list(seniority ?? '[]'),
+					departments: list(departments ?? '[]'),
+					perCompany: 3,
+					avoid: avoid ?? ''
+				})
+		}))
+		.filter((r) => r.brief || r.targets > 0);
+}
+
+export interface CopyPlanningResult {
+	/** 'kept': the target already had answers and `overwriteBrief` was not given. */
+	brief: 'copied' | 'kept' | 'empty';
+	added: number;
+	duplicates: number;
+}
+
+/**
+ * Copies another event's brief and target companies onto this one (§4.3, D11). The brief
+ * replaces an empty one freely; replacing answers already given takes `overwriteBrief`, which
+ * the page asks for. Companies already targeted here are left as they are, and a copied one
+ * starts with its research tick on the computed default: the people known have changed since.
+ * Logged once with ids and counts.
+ */
+export function copyPlanning(
+	db: DB,
+	fromEventId: string,
+	toEventId: string,
+	{ overwriteBrief = false, by = '' }: { overwriteBrief?: boolean; by?: string } = {},
+	now = Date.now()
+): CopyPlanningResult {
+	return db.transaction((): CopyPlanningResult => {
+		const source = getBrief(db, fromEventId);
+		let brief: CopyPlanningResult['brief'] = 'empty';
+		if (!briefIsEmpty(source)) {
+			if (overwriteBrief || briefIsEmpty(getBrief(db, toEventId))) {
+				saveBrief(db, toEventId, source, now);
+				brief = 'copied';
+			} else brief = 'kept';
+		}
+		const present = new Set(listTargets(db, toEventId).map((t) => t.company_id));
+		const insert = db.prepare(
+			`INSERT INTO event_companies (event_id, company_id, focus, research, source, created_at)
+			VALUES (?, ?, ?, NULL, 'copied', ?)`
+		);
+		const added: string[] = [];
+		let duplicates = 0;
+		for (const t of listTargets(db, fromEventId)) {
+			if (present.has(t.company_id)) {
+				duplicates++;
+				continue;
+			}
+			insert.run(toEventId, t.company_id, t.focus, now);
+			added.push(t.company_id);
+		}
+		if (brief === 'copied' || added.length)
+			logActivity(
+				db,
+				{
+					eventId: toEventId,
+					kind: 'import',
+					who: by,
+					what: { source: 'copied', fromEventId, brief, companyIds: added, duplicates },
+					rowCount: added.length
+				},
+				now
+			);
+		return { brief, added: added.length, duplicates };
+	})();
+}
+
+export interface AddAccountsResult {
+	added: string[];
+	duplicates: string[];
+	/** Blocked companies are named so the organizer knows, but never targeted (D13). */
+	blocked: string[];
+}
+
+/**
+ * A Dynamics 365 accounts export becomes target companies (§6.1): each account is a customer,
+ * its website fills an empty one, and its owner follows the owner rule (team name → owner when
+ * none, else a note). The industry is kept as a note too. Logged once with ids and counts.
+ */
+export function addAccounts(
+	db: DB,
+	eventId: string,
+	accounts: AccountInput[],
+	{ by = '' }: { by?: string } = {},
+	now = Date.now()
+): AddAccountsResult {
+	return db.transaction((): AddAccountsResult => {
+		const seen = new Set(listTargets(db, eventId).map((t) => t.key));
+		const insert = db.prepare(
+			`INSERT INTO event_companies (event_id, company_id, source, created_at)
+			VALUES (?, ?, 'd365', ?)`
+		);
+		const result: AddAccountsResult = { added: [], duplicates: [], blocked: [] };
+		const ids: string[] = [];
+		for (const a of accounts) {
+			const key = companyKey(a.name);
+			if (!key) continue;
+			if (seen.has(key)) {
+				result.duplicates.push(a.name);
+				continue;
+			}
+			seen.add(key);
+			if (isBlocked(findCompany(db, a.name))) {
+				result.blocked.push(a.name);
+				continue;
+			}
+			const company = ensureCompany(db, a.name, { website: a.website }, now)!;
+			markCustomer(db, company.id, now);
+			if (a.owner) noteCompanyOwner(db, company.id, a.owner, now);
+			if (a.industry)
+				appendCompanyNote(db, getCompany(db, company.id)!, `Industry: ${a.industry}`, now);
+			insert.run(eventId, company.id, now);
+			result.added.push(a.name);
+			ids.push(company.id);
+		}
+		if (ids.length)
+			logActivity(
+				db,
+				{
+					eventId,
+					kind: 'import',
+					who: by,
+					what: {
+						source: 'd365-accounts',
+						companyIds: ids,
+						duplicates: result.duplicates.length,
+						blocked: result.blocked.length
+					},
+					rowCount: ids.length
+				},
+				now
+			);
+		return result;
+	})();
 }
 
 /** Companies a run researches: ticked (or defaulted in, §6.2) and not blocked. */

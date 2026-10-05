@@ -13,7 +13,9 @@
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import Check from '@lucide/svelte/icons/check';
+	import Columns3 from '@lucide/svelte/icons/columns-3';
 	import Copy from '@lucide/svelte/icons/copy';
+	import FileUp from '@lucide/svelte/icons/file-up';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Plus from '@lucide/svelte/icons/plus';
 	import MessageSquareText from '@lucide/svelte/icons/message-square-text';
@@ -48,6 +50,66 @@
 		if (t.researchedAt) return `researched ${formatDate(t.researchedAt, event.timezone)}`;
 		if (t.requestedAt) return `requested ${formatDate(t.requestedAt, event.timezone)}`;
 		return '';
+	}
+
+	// The D365 accounts paste (§6.1): the text stays in the box across a column check, and the
+	// mapping the organizer corrects travels back as JSON with the next submit.
+	let accountsText = $state('');
+	let accountColumns = $state<Record<string, number> | null>(null);
+	let accountHeader = $state(true);
+	let accountsFile = $state<HTMLInputElement | null>(null);
+	const accountsPreview = $derived(form && 'accountsPreview' in form ? form.accountsPreview : null);
+	const accountsResult = $derived(form && 'accounts' in form ? (form.accounts ?? null) : null);
+	const copyResult = $derived(form && 'copied' in form ? (form.copied ?? null) : null);
+	$effect(() => {
+		if (accountsPreview) {
+			accountColumns = { ...accountsPreview.columns };
+			accountHeader = accountsPreview.header;
+		} else if (accountsResult) {
+			// Added: the box empties and the next paste is read on its own headers.
+			accountsText = '';
+			accountColumns = null;
+		}
+	});
+
+	function accountColumnAt(index: number) {
+		return Object.entries(accountColumns ?? {}).find(([, i]) => i === index)?.[0] ?? '';
+	}
+
+	/** The select for one header cell changed: that column feeds `key`, or nothing. */
+	function remapAccount(index: number, key: string) {
+		const next: Record<string, number> = {};
+		for (const [k, i] of Object.entries(accountColumns ?? {})) if (i !== index) next[k] = i;
+		if (key) next[key] = index;
+		accountColumns = next;
+	}
+
+	/** A CSV export goes through the same parser as a paste. */
+	async function pickAccountsFile(e: Event & { currentTarget: HTMLInputElement }) {
+		const file = e.currentTarget.files?.[0];
+		if (!file) return;
+		if (file.size > 2_000_000) {
+			alert('That file is too big. Export fewer rows, or paste the ones you need.');
+			return;
+		}
+		accountsText = await file.text();
+		accountColumns = null;
+		e.currentTarget.value = '';
+	}
+
+	function copiedMessage(c: {
+		brief: 'copied' | 'kept' | 'empty';
+		added: number;
+		duplicates: number;
+		from: string;
+	}) {
+		const companies = `${c.added} ${c.added === 1 ? 'company' : 'companies'}`;
+		const parts = [
+			c.brief === 'copied' ? `Copied the brief and ${companies}` : `Copied ${companies}`,
+			c.duplicates ? `${c.duplicates} already listed` : '',
+			c.brief === 'kept' ? 'your answers kept' : ''
+		].filter(Boolean);
+		return `${parts.join(' · ')} from ${c.from}.`;
 	}
 
 	async function copy(text: string, what: string) {
@@ -366,6 +428,164 @@
 				<button class="btn btn-secondary"><Plus size={16} /> Add companies</button>
 			</div>
 		</form>
+
+		<!-- Reuse (§4.3, D11): another event's brief and companies, or a D365 accounts export. -->
+		<div class="reuse">
+			{#if data.sources.length}
+				<form
+					class="copy-from"
+					method="POST"
+					action="?/copyFrom"
+					use:enhance={({ formData, cancel }) => {
+						const from = data.sources.find((s) => s.id === formData.get('from'));
+						if (!from) {
+							cancel();
+							return;
+						}
+						// Answers already given are only replaced on purpose; the companies come either way.
+						if (from.brief && !data.briefEmpty)
+							formData.set(
+								'overwrite',
+								confirm(
+									`Replace this event’s answers to “Who should come?” with ${from.name}’s? Cancel keeps your answers; the companies are copied either way.`
+								)
+									? '1'
+									: '0'
+							);
+						return async ({ update }) => update({ reset: false });
+					}}
+				>
+					<label class="label" for="copy-from">Copy brief + targets from…</label>
+					<div class="copy-row">
+						<select class="input" id="copy-from" name="from" required>
+							<option value="">Another event</option>
+							{#each data.sources as s (s.id)}
+								<option value={s.id}>
+									{s.name}{s.starts_at ? ` · ${formatDate(s.starts_at, s.timezone)}` : ''} ·
+									{s.targets}
+									{s.targets === 1 ? 'company' : 'companies'}{s.brief ? ' + brief' : ''}
+								</option>
+							{/each}
+						</select>
+						<button class="btn btn-secondary"><Copy size={16} /> Copy</button>
+					</div>
+					{#if form && 'copyError' in form}<p class="error-text">{form.copyError}</p>{/if}
+					{#if copyResult}
+						<p class="muted small"><Check size={14} /> {copiedMessage(copyResult)}</p>
+					{/if}
+				</form>
+			{/if}
+
+			<details class="accounts" open={!!accountsPreview}>
+				<summary>Paste a Dynamics 365 accounts export</summary>
+				<form
+					method="POST"
+					action="?/accounts"
+					use:enhance={() =>
+						async ({ update }) =>
+							update({ reset: false })}
+				>
+					<p class="hint">
+						Open an Accounts view in Dynamics 365, export or copy it with its header row (<em
+							>Account Name</em
+						>, <em>Website</em>, <em>Primary Contact</em>, <em>Owner</em>,
+						<em>Industry</em>, <em>Main Phone</em>) and paste it here. Each account becomes a target
+						company recorded as a customer; its owner becomes the company’s owner when it names a
+						team member and nobody owns it yet, otherwise it is kept as a note. The primary contact
+						and phone are not kept: add people on the People tab.
+					</p>
+					<textarea
+						class="input textarea"
+						name="accounts"
+						rows="4"
+						aria-label="Dynamics 365 accounts export"
+						placeholder={'Account Name\tWebsite\tPrimary Contact\tOwner\tIndustry\tMain Phone\nBatavia Foods\thttps://bataviafoods.co.id\t…'}
+						bind:value={accountsText}></textarea>
+					<input
+						type="hidden"
+						name="columns"
+						value={accountColumns ? JSON.stringify(accountColumns) : ''}
+					/>
+					<input type="hidden" name="header" value={accountHeader ? '1' : '0'} />
+					{#if accountsPreview && accountsPreview.headers.length >= 2}
+						<div class="columns">
+							<p class="hint">
+								{#if accountsPreview.unsure}
+									The app couldn’t tell which column is which. Say what each one holds:
+								{:else}
+									{Object.keys(accountsPreview.columns).length} of {accountsPreview.headers.length}
+									columns recognised, {accountsPreview.count}
+									{accountsPreview.count === 1 ? 'company' : 'companies'} to add. Change any that landed
+									in the wrong place:
+								{/if}
+							</p>
+							<div class="column-grid">
+								{#each accountsPreview.headers as cell, i (i)}
+									<label class="column">
+										<span class="column-header" title={cell}>{cell || `Column ${i + 1}`}</span>
+										<select
+											class="input"
+											value={accountColumnAt(i)}
+											onchange={(e) => remapAccount(i, e.currentTarget.value)}
+										>
+											<option value="">Ignore</option>
+											{#each data.accountOptions as o (o.key)}
+												<option value={o.key}>{o.label}</option>
+											{/each}
+										</select>
+									</label>
+								{/each}
+							</div>
+							<label class="chip">
+								<input type="checkbox" bind:checked={accountHeader} />
+								The first line is a header row, not a company
+							</label>
+						</div>
+					{/if}
+					<div class="actions">
+						{#if form && 'accountsError' in form}<p class="error-text">{form.accountsError}</p>{/if}
+						{#if accountsResult}
+							<p class="muted small">
+								Added {accountsResult.added.length}{accountsResult.duplicates.length
+									? ` · ${accountsResult.duplicates.length} already listed`
+									: ''}{accountsResult.skipped
+									? ` · ${accountsResult.skipped} ${accountsResult.skipped === 1 ? 'line' : 'lines'} without a name`
+									: ''}{accountsResult.truncated ? ' · only the first 1000 lines were read' : ''}.
+								{#if accountsResult.blocked.length}
+									<span class="bad">Blocked, not added: {accountsResult.blocked.join(', ')}.</span>
+								{/if}
+							</p>
+						{/if}
+						<input
+							type="file"
+							accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+							class="sr-only"
+							bind:this={accountsFile}
+							onchange={pickAccountsFile}
+							tabindex="-1"
+						/>
+						<button
+							type="button"
+							class="btn btn-ghost btn-sm"
+							onclick={() => accountsFile?.click()}
+						>
+							<FileUp size={15} /> Open a CSV file
+						</button>
+						<button
+							class="btn btn-ghost btn-sm"
+							name="preview"
+							value="1"
+							disabled={!accountsText.trim()}
+						>
+							<Columns3 size={15} /> Check columns
+						</button>
+						<button class="btn btn-secondary" disabled={!accountsText.trim()}>
+							<Plus size={16} /> Add accounts
+						</button>
+					</div>
+				</form>
+			</details>
+		</div>
 	</section>
 
 	<!-- 3. Run the research -->
@@ -869,6 +1089,83 @@
 		border-color: var(--brand);
 		box-shadow: var(--ring);
 		background: var(--surface);
+	}
+
+	.reuse {
+		display: grid;
+		gap: 14px;
+		padding-top: 16px;
+		border-top: 1px solid var(--border);
+	}
+
+	.copy-from {
+		display: grid;
+		gap: 8px;
+	}
+
+	.copy-row {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.copy-row .input {
+		flex: 1 1 260px;
+		min-width: 0;
+	}
+
+	.copy-from .small {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.accounts summary {
+		cursor: pointer;
+		font-weight: 650;
+		color: var(--text-2);
+	}
+
+	.accounts form {
+		display: grid;
+		gap: 12px;
+		padding-top: 12px;
+	}
+
+	.columns {
+		display: grid;
+		gap: 10px;
+		padding: 12px 14px;
+		border-radius: var(--radius);
+		background: var(--surface-2);
+	}
+
+	.column-grid {
+		display: grid;
+		gap: 8px 10px;
+		grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+	}
+
+	.column {
+		display: grid;
+		gap: 4px;
+		min-width: 0;
+	}
+
+	.column-header {
+		font-size: 12.5px;
+		font-weight: 650;
+		color: var(--muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.column .input {
+		height: 38px;
+		padding: 0 10px;
+		border-radius: 10px;
+		font-size: 14px;
 	}
 
 	.run {

@@ -154,6 +154,13 @@ export function setCompanyOwner(db: DB, id: string, owner: string | null, now = 
 	db.prepare(`UPDATE companies SET owner = ?, updated_at = ? WHERE id = ?`).run(owner, now, id);
 }
 
+/** A D365 accounts export says the company is a customer; that sticks (D11, D15). */
+export function markCustomer(db: DB, id: string, now = Date.now()) {
+	db.prepare(
+		`UPDATE companies SET is_customer = 1, updated_at = ? WHERE id = ? AND is_customer = 0`
+	).run(now, id);
+}
+
 /**
  * The owner column of a D365 export (§6.1): it becomes the company's owner only when nobody
  * owns it yet and the value names a team member; anything else is kept as a note, so a CRM
@@ -168,12 +175,16 @@ export function noteCompanyOwner(db: DB, id: string, owner: string, now = Date.n
 		setCompanyOwner(db, id, team, now);
 		return;
 	}
-	const note = `D365 owner: ${value}`;
-	if (company.d365_note.split('\n').includes(note)) return;
+	appendCompanyNote(db, company, `D365 owner: ${value}`, now);
+}
+
+/** One line more on the company's D365 note, unless that line is already there. */
+export function appendCompanyNote(db: DB, company: CompanyRow, note: string, now = Date.now()) {
+	if (!note || company.d365_note.split('\n').includes(note)) return;
 	db.prepare(`UPDATE companies SET d365_note = ?, updated_at = ? WHERE id = ?`).run(
 		[company.d365_note, note].filter(Boolean).join('\n'),
 		now,
-		id
+		company.id
 	);
 }
 

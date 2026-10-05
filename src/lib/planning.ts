@@ -43,6 +43,17 @@ export function briefIsReady(b: Brief): boolean {
 	return !!(b.roles.trim() || b.seniority.length || b.departments.length);
 }
 
+/** Nothing answered yet (the per-company number alone is a default, not an answer). */
+export function briefIsEmpty(b: Brief): boolean {
+	return !(
+		b.goal.trim() ||
+		b.roles.trim() ||
+		b.seniority.length ||
+		b.departments.length ||
+		b.avoid.trim()
+	);
+}
+
 /** The shell variable the research command reads the API token from (§6.2). */
 export const RESEARCH_TOKEN_VAR = 'EVENT_PLANNER_TOKEN';
 

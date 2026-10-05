@@ -29,6 +29,7 @@
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
 	import Check from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
+	import Handshake from '@lucide/svelte/icons/handshake';
 	import Link from '@lucide/svelte/icons/link';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Search from '@lucide/svelte/icons/search';
@@ -411,6 +412,23 @@
 				<a class="btn btn-secondary" href="/admin/events/{event.id}/people.csv">
 					<Download size={17} /> CSV
 				</a>
+				<!-- The co-hosts' list (D15): names only with the share consent, the rest as counts. -->
+				{#if event.co_hosts.trim()}
+					<a
+						class="btn btn-secondary"
+						href="/admin/events/{event.id}/partners.csv?when=before"
+						title="For {event.co_hosts}: who said yes, by name only with their consent to share"
+					>
+						<Handshake size={17} /> Partner list · before
+					</a>
+					<a
+						class="btn btn-secondary"
+						href="/admin/events/{event.id}/partners.csv?when=after"
+						title="For {event.co_hosts}: who checked in, by name only with their consent to share"
+					>
+						<Handshake size={17} /> Partner list · after
+					</a>
+				{/if}
 			{/if}
 			<button class="btn btn-primary" onclick={openAdd} aria-expanded={adding}>
 				<UserPlus size={18} /> Add people

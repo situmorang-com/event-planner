@@ -535,6 +535,22 @@ Phase A is the largest because the data migration must happen once, with the pro
 copy, and everything that stores personal data must retain and strip correctly from the first
 deploy. `scripts/seed-demo.ts`, the specs and `docs/DEPLOY.md` change in the same phase.
 
+**Status** (branch `people-pipeline`):
+
+- **A — Foundation**: built. The migration, People tab, add form with the D365 people paste,
+  do-not-contact list, Settings, stripped exports (`exportRow`), the Prospects export, the
+  count-only prompt, and the research ticks with the computed default, the 15 cap (409),
+  `research_requested_at` / `researched_at` stamping (`planning.ts`, `planning.spec.ts`).
+- **B — Replies in**: built. Registration links and page, consent boxes, templates, per-event
+  invitation text, event settings fields.
+- **C — Rules and retention**: built. Next actions, Due today, housekeeping, kept-until dates,
+  Delete planning data, the Activity panel, chase overrides, legacy notices.
+- **D — Scale-up**: built. Bulk actions and phone gestures, copy to another event (`bulk.ts`);
+  copy brief + targets, the D365 accounts paste (`accounts-list.ts`, `planning.ts`); the partner
+  export before / after (`exports.ts`, `partners.csv`). The industry from an accounts export is
+  kept as a company note; the primary contact and main phone are read for the mapping but not
+  stored **(builder)**.
+
 ## 10. Out of scope / later
 
 Sending messages from the app (WhatsApp Business API, email); digests or push for due items;

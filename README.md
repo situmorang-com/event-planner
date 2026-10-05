@@ -162,6 +162,12 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   Someone who checks in without being on the list gets a row too. _No-show_ lists who said yes
   or maybe but never came, once the event has ended.
 - **CSV.** The list exports from the People tab (locked people's channels are blanked).
+- **Partner list.** When the event has co-hosts (event settings), two more buttons export what
+  the partners may see: **Partner list · before** (everyone who said yes or confirmed) and
+  **· after** (everyone who checked in). A person appears by name, company and title only if
+  they ticked "share my name, company and title with the co-hosts"; everyone else is a count
+  per company in a second section, and a locked person is never named. Each export is logged
+  with its counts.
 
 ## Planning: finding people to invite
 
@@ -178,6 +184,20 @@ needs a date first: what research finds is kept only until the event starts.
    known there (the "how many per company" number); tick or untick to decide yourself, and
    _default_ puts it back. A run takes at most **15** ticked companies. After a run the company
    shows _researched 2 Oct_. Blocked companies are never researched.
+   - **Copy brief + targets from…** picks another event (most recent first) and copies its
+     answers and its companies, with each company's focus. Companies already listed are
+     skipped, and copied ones start on the default research tick. Answers you have already
+     given are only replaced after a confirmation; cancelling keeps them and still copies the
+     companies.
+   - **Paste a Dynamics 365 accounts export** reads an Accounts view (_Account Name_,
+     _Website_, _Primary Contact_, _Owner_, _Industry_, _Main Phone_, by display or logical
+     name; the hidden _(Do Not Modify)_ columns are dropped) or opens it as a CSV file. Each
+     account becomes a target company recorded as a customer, with its website when the
+     company had none; the _Owner_ follows the same rule as the people paste (the company's
+     owner when it names a team member and nobody owns it yet, otherwise a note), and the
+     industry is kept as a note. The primary contact and phone are not stored. Blocked
+     companies are named but not added. **Check columns** shows the mapping to correct it,
+     and opens by itself when fewer than two columns were recognised.
 3. **Find people with Claude.** Create a token under Settings › API tokens (shown once),
    `export EVENT_PLANNER_TOKEN=…` in your terminal, and run the command the page shows. It runs
    under the SRKK Team/API account. Your terminal fetches the event's research brief, `claude
@@ -324,6 +344,7 @@ src/
     server/
       schema.ts, database.ts  schema (SQLite), versioned migrations run on start
       settings.ts, who.ts     team names, phone-country default; the "me" cookie
+      accounts-list.ts        the Dynamics 365 accounts paste: headers, hidden columns, mapping
       activity-log.ts         exports, deletions, locks and merges, as ids and counts
       migrate-v2.ts           contacts/guest lists → people and event rows (with a .pre-v2 copy)
       people.ts, companies.ts the cross-event pool: identity matching, field precedence, merge
@@ -336,7 +357,8 @@ src/
       guest-list.ts           reading typed, pasted and D365 guest lists; column mapping
       exports.ts              the one export row every CSV goes through (locked people stripped)
       jobs.ts                 the event-start purge, run lazily from the event pages
-      planning.ts             the brief, target companies, research ticks and the count-only prompt
+      planning.ts             the brief, target companies, research ticks, the count-only prompt,
+                              copy from another event and the accounts paste
       qr-token.ts             rotating QR tokens and the 30-minute scan pass
       auth.ts                 signed organizer session
       bus.ts                  in-process pub/sub behind the live stream

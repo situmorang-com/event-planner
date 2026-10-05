@@ -221,7 +221,7 @@ const DO_NOT_MODIFY = /^\(do not modify\)/i;
 const GUID = /^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i;
 
 /** Spreadsheet rows paste tab-separated; typed lines use commas. Quoted cells keep theirs. */
-function splitCells(line: string): string[] {
+export function splitCells(line: string): string[] {
 	const tabbed = line.includes('\t');
 	const cells: string[] = [];
 	let cell = '';
@@ -244,10 +244,11 @@ function splitCells(line: string): string[] {
 
 export type Columns = Partial<Record<Column, number>>;
 
-const squash = (cell: string) => cell.toLowerCase().replace(/[^a-z0-9]/g, '');
+/** A header cell squashed to letters and digits: "E-mail Address" → "emailaddress". */
+export const squash = (cell: string) => cell.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /** How many leading columns are D365's hidden ones: by their header, or by a GUID in the data. */
-function hiddenLeading(header: string[], firstRow: string[] | undefined): number {
+export function hiddenLeading(header: string[], firstRow: string[] | undefined): number {
 	let n = 0;
 	while (
 		n < header.length &&
