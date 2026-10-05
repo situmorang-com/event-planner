@@ -57,8 +57,40 @@
 	--radius-xl: 28px;
 }
 
-/* Dark is opt-in (data-theme="dark" on <html>); the app no longer follows the OS, since a
-   dark list of people was harder on the eyes than a soft light one. */
+/* Dark follows the device (data-theme="system"), unless the header toggle picks one. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		color-scheme: dark;
+		--bg: #080914;
+		--surface: #131629;
+		--surface-2: #1a1d35;
+		--surface-3: #242845;
+		--text: #f1f2ff;
+		--text-2: #b8bcd8;
+		--muted: #8d92b0;
+		--border: #262b4b;
+		--border-strong: #363c64;
+		--brand: #8b7fff;
+		--brand-soft: #221f4d;
+		--brand-text: #aea5ff;
+		--good: #34d399;
+		--good-soft: #0f2e25;
+		--warn: #fbbf24;
+		--warn-soft: #33270b;
+		--bad: #f87171;
+		--bad-soft: #3a1518;
+		--series-1: #8b7fff;
+		--cat-1: #3987e5;
+		--cat-2: #d95926;
+		--cat-3: #199e70;
+		--grid: #22264295;
+		--axis: #3a4068;
+		--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+		--shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+		--ring: 0 0 0 4px rgb(139 127 255 / 0.28);
+	}
+}
+
 :root[data-theme='dark'] {
 	color-scheme: dark;
 	--bg: #080914;

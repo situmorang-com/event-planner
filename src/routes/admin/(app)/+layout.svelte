@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
+	import HeaderToggles from '$lib/components/HeaderToggles.svelte';
 	import Logo from '$lib/components/Logo.svelte';
+	import { t } from '$lib/i18n/t.svelte';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import UserRound from '@lucide/svelte/icons/user-round';
 	import type { LayoutProps } from './$types';
@@ -30,11 +32,11 @@
 <div class="shell">
 	<header>
 		<div class="bar">
-			<a href="/admin" class="home" aria-label="Event Planner home"><Logo size={30} /></a>
+			<a href="/admin" class="home" aria-label={t('Event Planner home')}><Logo size={30} /></a>
 			<nav>
 				{#each links as link (link.href)}
 					<a href={link.href} aria-current={link.active(page.url.pathname) ? 'page' : undefined}>
-						{link.label}
+						{t(link.label)}
 					</a>
 				{/each}
 			</nav>
@@ -43,28 +45,31 @@
 				<form method="POST" action="/admin/who" class="who" use:enhance>
 					<input type="hidden" name="next" value={page.url.pathname + page.url.search} />
 					<UserRound size={17} aria-hidden="true" />
-					<label class="sr-only" for="who">Who are you?</label>
+					<label class="sr-only" for="who">{t('Who are you?')}</label>
 					<select
 						id="who"
 						name="who"
 						class:unset={!data.who}
 						onchange={(e) => e.currentTarget.form?.requestSubmit()}
 					>
-						<option value="" selected={!data.who}>Who are you?</option>
+						<option value="" selected={!data.who}>{t('Who are you?')}</option>
 						{#each data.team as name (name)}
 							<option value={name} selected={name === data.who}>{name}</option>
 						{/each}
 					</select>
-					<noscript><button class="btn btn-ghost btn-sm">Set</button></noscript>
+					<noscript><button class="btn btn-ghost btn-sm">{t('Set')}</button></noscript>
 				</form>
 			{:else}
-				<a class="who-link" href="/admin/settings#team" title="Add team names in Settings">
-					<UserRound size={17} aria-hidden="true" /><span class="label-text">Add your team</span>
+				<a class="who-link" href="/admin/settings#team" title={t('Add team names in Settings')}>
+					<UserRound size={17} aria-hidden="true" /><span class="label-text"
+						>{t('Add your team')}</span
+					>
 				</a>
 			{/if}
+			<HeaderToggles />
 			<form method="POST" action="/admin/logout">
-				<button class="btn btn-ghost btn-sm" aria-label="Sign out"
-					><LogOut size={17} /><span class="label-text">Sign out</span></button
+				<button class="btn btn-ghost btn-sm" aria-label={t('Sign out')}
+					><LogOut size={17} /><span class="label-text">{t('Sign out')}</span></button
 				>
 			</form>
 		</div>

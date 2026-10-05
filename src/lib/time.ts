@@ -7,9 +7,18 @@ export const DAY = 86_400_000;
 // Newer ICU puts a narrow no-break space before AM/PM; normalize so server and client match.
 const tidy = (s: string) => s.replace(/[\u202f\u00a0]/g, ' ');
 
-export function formatTime(ts: number, timeZone: string, withSeconds = false): string {
+/** The admin app's language (the header toggle); dates follow it. */
+export type UiLang = 'en' | 'id';
+const locale = (lang: UiLang, en: string) => (lang === 'id' ? 'id-ID' : en);
+
+export function formatTime(
+	ts: number,
+	timeZone: string,
+	withSeconds = false,
+	lang: UiLang = 'en'
+): string {
 	return tidy(
-		new Intl.DateTimeFormat('en-US', {
+		new Intl.DateTimeFormat(locale(lang, 'en-US'), {
 			timeZone,
 			hour: 'numeric',
 			minute: '2-digit',
@@ -18,9 +27,9 @@ export function formatTime(ts: number, timeZone: string, withSeconds = false): s
 	);
 }
 
-export function formatDate(ts: number, timeZone: string): string {
+export function formatDate(ts: number, timeZone: string, lang: UiLang = 'en'): string {
 	return tidy(
-		new Intl.DateTimeFormat('en-GB', {
+		new Intl.DateTimeFormat(locale(lang, 'en-GB'), {
 			timeZone,
 			weekday: 'short',
 			day: 'numeric',
@@ -31,9 +40,9 @@ export function formatDate(ts: number, timeZone: string): string {
 }
 
 /** "Tue 7 Oct": for due dates, where the weekday matters and the year never does. */
-export function formatDueDay(ts: number, timeZone: string): string {
+export function formatDueDay(ts: number, timeZone: string, lang: UiLang = 'en'): string {
 	return tidy(
-		new Intl.DateTimeFormat('en-GB', {
+		new Intl.DateTimeFormat(locale(lang, 'en-GB'), {
 			timeZone,
 			weekday: 'short',
 			day: 'numeric',
@@ -45,22 +54,27 @@ export function formatDueDay(ts: number, timeZone: string): string {
 }
 
 /** "2 Oct": for markers and chips, where the weekday and year would only add noise. */
-export function formatDay(ts: number, timeZone: string): string {
+export function formatDay(ts: number, timeZone: string, lang: UiLang = 'en'): string {
 	return tidy(
-		new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short' }).format(ts)
+		new Intl.DateTimeFormat(locale(lang, 'en-GB'), {
+			timeZone,
+			day: 'numeric',
+			month: 'short'
+		}).format(ts)
 	);
 }
 
-export function formatDateTime(ts: number, timeZone: string): string {
-	return `${formatDate(ts, timeZone)} · ${formatTime(ts, timeZone)}`;
+export function formatDateTime(ts: number, timeZone: string, lang: UiLang = 'en'): string {
+	return `${formatDate(ts, timeZone, lang)} · ${formatTime(ts, timeZone, false, lang)}`;
 }
 
-export function timeAgo(ts: number, now: number): string {
+export function timeAgo(ts: number, now: number, lang: UiLang = 'en'): string {
 	const s = Math.max(0, Math.round((now - ts) / 1000));
-	if (s < 45) return 'just now';
-	if (s < 3600) return `${Math.round(s / 60)}m ago`;
-	if (s < 86_400) return `${Math.round(s / 3600)}h ago`;
-	return `${Math.round(s / 86_400)}d ago`;
+	const id = lang === 'id';
+	if (s < 45) return id ? 'baru saja' : 'just now';
+	if (s < 3600) return id ? `${Math.round(s / 60)} mnt lalu` : `${Math.round(s / 60)}m ago`;
+	if (s < 86_400) return id ? `${Math.round(s / 3600)} jam lalu` : `${Math.round(s / 3600)}h ago`;
+	return id ? `${Math.round(s / 86_400)} hari lalu` : `${Math.round(s / 86_400)}d ago`;
 }
 
 function zoneOffsetMs(ts: number, timeZone: string): number {
