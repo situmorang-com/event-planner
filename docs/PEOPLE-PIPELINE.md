@@ -283,11 +283,12 @@ become live rows (D13).
 
 Keeps the brief, target companies and the research command. Adds: _Copy brief + targets from…_
 (previous event), paste from a D365 accounts export, a research tick per company (default per
-§6.2) with _researched 2 Oct_, the 15-company cap, a banner after `starts_at` ("research still
-runs, but the list has gone live"), the _kept until_ date and **Delete planning data** button
-(D10), the per-event chase-rule override form (D20) and the per-event invitation text (D21).
-The sentence about the Claude account says: runs under the SRKK Team/API account. Suggestions no
-longer appear here; a counter links to People › To review. API tokens move to Settings.
+§6.2) with _researched 2 Oct_, what the next run takes on (in batches of 15), a banner after
+`starts_at` ("research still runs, but the list has gone live"), the _kept until_ date and
+**Delete planning data** button (D10), the per-event chase-rule override form (D20) and the
+per-event invitation text (D21). The sentence about the Claude account says: runs with the
+organizer's own Claude Code sign-in. Suggestions no longer appear here; a counter links to
+People › To review. API tokens move to Settings.
 
 ### 4.4 Settings (`/admin/settings`, D23)
 
@@ -449,17 +450,26 @@ deleted; touch and activity logs → with the row/event; do-not-contact → fore
   already known; suggest others"_: no names, no URLs. `brief.avoid` and `focus` are passed, but
   any line containing an existing person's `nameKey` is dropped first, and the fields' help text
   says "roles and companies, not names".
-- Companies in a run = ticked `event_companies` that are not blocked, max 15 (409 otherwise).
-  Default tick = `COUNT(people WHERE company_id = X AND locked_at IS NULL) < per_company`.
-  Serving the prompt sets `research_requested_at` on those companies; the matching POST stamps
-  `researched_at` on every company requested in the last 24 h, whether or not it returned anyone.
-- `GET …/prompt` returns 409 when `starts_at IS NULL`, the brief isn't ready, no company is
-  ticked, or more than 15 are. After `starts_at` the prompt carries a warning line and the POST
-  keeps nothing (§5.4).
+- Companies in a run = ticked `event_companies` that are not blocked, taken in batches of 15:
+  `GET …/prompt?batch=<n>` serves the first 15 of those whose `researched_at` is NULL or older
+  than 24 h, in list order. Default tick =
+  `COUNT(people WHERE company_id = X AND locked_at IS NULL) < per_company`; Found rows are not
+  people, so a default tick holds while a run is under way. Serving a batch sets
+  `research_requested_at` on its companies; the matching POST stamps
+  `researched_at` on the companies requested in the last 24 h and not answered since, whether
+  or not they returned anyone, so an answer stamps its own batch and never an earlier one again.
+- `GET …/prompt` returns 409 when `starts_at IS NULL`, the brief isn't ready or no company is
+  ticked; with `batch=0` also when every ticked company was researched in the last 24 h ("All N
+  ticked companies were researched in the last 24 hours…"). With `batch` ≥ 1 and nothing left
+  it returns 204 with no body. Without `batch` (the command from before batches) it serves every
+  ticked company in one prompt and returns 409 above 15. After `starts_at` the prompt carries a
+  warning line and the POST keeps nothing (§5.4).
 - `POST …/suggestions` inserts Found rows (`source = research`), skipping names already live or
   skipped on the event, locked people, blocked companies.
-- The command stays the current pipeline with `EVENT_PLANNER_TOKEN`; new tokens are `ep_…`,
-  `verifyBearer` accepts `^(ep|hdr)_`. The page states the run uses the SRKK Team/API account.
+- The command loops over `?batch=0, 1, …` until a 204 or a failure, piping each brief through
+  `claude -p` and posting the answer back before asking for the next batch, with
+  `EVENT_PLANNER_TOKEN`; new tokens are `ep_…`, `verifyBearer` accepts `^(ep|hdr)_`. The page
+  states the run uses the organizer's own Claude Code sign-in.
 - `PRIVACY_URL` is required for messaging research-origin people: without it their message
   buttons are hidden with a hint, and `docs/DEPLOY.md` lists it.
 
@@ -529,7 +539,7 @@ Each phase is one deploy, independently usable; tests are Vitest on `:memory:` d
 | **A — Foundation**          | use the People tab with stages, chips, markers, "me" and owners (Mine chip); Add/Skip/Remove Found rows from research; type names (Shortlisted), paste big lists (Found); D365 paste/CSV with flags and column mapping; pool picker with Prospects; Don't contact again, blocked companies; Settings (team, tokens, phone default, do-not-contact); stripped exports; count-only research prompt; `EVENT_PLANNER_TOKEN`; Found rows deleted at event start (lazy check); target progress | §2.4 whole migration; `events.target_count`, `phone_country`; `companies`, `event_people`, `event_companies`, `touches`, `do_not_contact`, `activity_log`, `settings` keys | migration on a fixture DB (counts, cascade safety via `foreign_key_check`, invited_at backfill, suggestion mapping, origin rules); `findPerson` order, guards, precedence; D365 headers, hidden columns, Status collision, flags; lock hashing and company-rename re-hash; blocked company refusal; chip counts; touch add/clear; prompt has counts and no names; token prefixes |
 | **B — Replies in**          | copy a personal registration link; guests RSVP with their own email/mobile and consents; Confirmed count; generic link rows flagged; three consent boxes at check-in; templates per language with opt-out appended; per-event invitation text; phone country and language per company; event settings fields                                                                                                                                                                             | `message_templates`; events: `ends_at`, `language`, `co_hosts`, `invitation_text`; `consent_boxes_since`                                                                   | token sign/verify/expiry/date-change; registration merge paths (match, new person, not-me, remove-me, generic); render order of source/opt-out lines; language resolution                                                                                                                                                                                                        |
 | **C — Rules and retention** | see next actions, Due today, Mine-due-today on the phone; reminders with reconfirm; housekeeping (event-start, 90-day, 12-month, legacy); kept-until dates; Delete planning data; Activity panel; per-event chase override; legacy notices                                                                                                                                                                                                                                               | `next_action_*`, `chase_rules`, `started_job_at`, `planning_purged_at`, `chase_defaults`, `legacy_*`                                                                       | `computeNextAction` table cases (working days, caps, stop-before, reminder, contactable); jobs on fixtures; `keptUntil`; scheduler guard                                                                                                                                                                                                                                         |
-| **D — Scale-up**            | research ticks with defaults and `researched_at`, the 15 cap; bulk actions (laptop multi-select, phone swipes, per-company all); copy to another event; copy brief + targets; partner export (before/after); prospects export; D365 accounts paste                                                                                                                                                                                                                                       | `event_companies.research*`                                                                                                                                                | cap 409; requested/researched stamping; bulk transactions; partner export consent filter; copy semantics                                                                                                                                                                                                                                                                         |
+| **D — Scale-up**            | research ticks with defaults and `researched_at`, research in batches of 15; bulk actions (laptop multi-select, phone swipes, per-company all); copy to another event; copy brief + targets; partner export (before/after); prospects export; D365 accounts paste                                                                                                                                                                                                                        | `event_companies.research*`                                                                                                                                                | batches of 15 and the 24 h rule; requested/researched stamping; bulk transactions; partner export consent filter; copy semantics                                                                                                                                                                                                                                                 |
 
 Phase A is the largest because the data migration must happen once, with the production backup
 copy, and everything that stores personal data must retain and strip correctly from the first
@@ -539,7 +549,7 @@ deploy. `scripts/seed-demo.ts`, the specs and `docs/DEPLOY.md` change in the sam
 
 - **A — Foundation**: built. The migration, People tab, add form with the D365 people paste,
   do-not-contact list, Settings, stripped exports (`exportRow`), the Prospects export, the
-  count-only prompt, and the research ticks with the computed default, the 15 cap (409),
+  count-only prompt, and the research ticks with the computed default and the
   `research_requested_at` / `researched_at` stamping (`planning.ts`, `planning.spec.ts`).
 - **B — Replies in**: built. Registration links and page, consent boxes, templates, per-event
   invitation text, event settings fields.
@@ -547,7 +557,10 @@ deploy. `scripts/seed-demo.ts`, the specs and `docs/DEPLOY.md` change in the sam
   Delete planning data, the Activity panel, chase overrides, legacy notices.
 - **D — Scale-up**: built. Bulk actions and phone gestures, copy to another event (`bulk.ts`);
   copy brief + targets, the D365 accounts paste (`accounts-list.ts`, `planning.ts`); the partner
-  export before / after (`exports.ts`, `partners.csv`). The industry from an accounts export is
+  export before / after (`exports.ts`, `partners.csv`); research in batches of 15 (`?batch=<n>`,
+  the 24 h rule, 204 when nothing is left) instead of a 409 above 15 — one `claude -p` session
+  over dozens of companies ran for hours and lost everything when its last step failed
+  **(builder)**. The industry from an accounts export is
   kept as a company note; the primary contact and main phone are read for the mapping but not
   stored **(builder)**. A locked person who ticked the share box is counted, never named, in
   the partner export: stricter than the stripped exports, since the file leaves the
@@ -574,4 +587,5 @@ company drives language · D15 three consent boxes, partner export, legacy reuse
 origin on every person · D17 events need a date; purge at start · D18 retention · D19 phone view
 Mine-due-today · D20 chase rules and in-app due counts · D21 message kinds, languages, templates ·
 D22 bulk actions · D23 settings page and activity log · D24 earlier bindings (no scraping, human
-approval, token API, on-demand research, guided brief) · D25 research ticks, cap, researched_at.
+approval, token API, on-demand research, guided brief) · D25 research ticks, batches of 15,
+researched_at.

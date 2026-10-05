@@ -1,5 +1,12 @@
 import { companyKey, linkedinProfile, nameKey } from '../invitations.ts';
-import { briefIsEmpty, briefIsReady, EMPTY_BRIEF, type Brief } from '../planning.ts';
+import {
+	briefIsEmpty,
+	briefIsReady,
+	EMPTY_BRIEF,
+	RESEARCH_CAP,
+	researchedAllMessage,
+	type Brief
+} from '../planning.ts';
 import { formatDateTime } from '../time.ts';
 import type { AccountInput } from './accounts-list.ts';
 import { logActivity } from './activity-log.ts';
@@ -356,14 +363,38 @@ export function researchTargets(db: DB, eventId: string, perCompany: number): Ta
 	);
 }
 
-export const RESEARCH_CAP = 15;
+export { RESEARCH_CAP };
+
+/** A company answered within this window stays out of the next batch (§6.2). */
+export const RESEARCHED_RECENTLY_MS = 24 * 60 * 60 * 1000;
+
+/** The research targets still waiting for an answer today, in list order. */
+export function researchPending(db: DB, eventId: string, perCompany: number, now = Date.now()) {
+	return researchTargets(db, eventId, perCompany).filter(
+		(t) => t.researched_at === null || t.researched_at < now - RESEARCHED_RECENTLY_MS
+	);
+}
+
+/**
+ * The next batch: the first RESEARCH_CAP pending companies. Found rows are not "known"
+ * (`listTargets.known` counts `people`), so default ticks hold while a run is under way and
+ * nothing has to be frozen between batches.
+ */
+export function researchBatch(db: DB, eventId: string, perCompany: number, now = Date.now()) {
+	return researchPending(db, eventId, perCompany, now).slice(0, RESEARCH_CAP);
+}
 
 /**
  * Why a research run can't start, as the organizer's terminal will print it, or null when the
  * prompt may be served (§6.2). Checked before Claude spends anything on a brief with nothing
- * to research.
+ * to research. The cap only binds the command from before batches (no `?batch=`); a batched
+ * run takes any number, RESEARCH_CAP at a time.
  */
-export function researchRefusal(db: DB, event: EventRow): string | null {
+export function researchRefusal(
+	db: DB,
+	event: EventRow,
+	{ batched = false }: { batched?: boolean } = {}
+): string | null {
 	if (event.starts_at === null) return 'Set the event date first.';
 	const brief = getBrief(db, event.id);
 	if (!briefIsReady(brief))
@@ -372,9 +403,43 @@ export function researchRefusal(db: DB, event: EventRow): string | null {
 		return 'Add at least one target company on the Planning page first.';
 	const targets = researchTargets(db, event.id, brief.perCompany);
 	if (!targets.length) return 'No target company is ticked for research.';
-	if (targets.length > RESEARCH_CAP)
+	if (!batched && targets.length > RESEARCH_CAP)
 		return `At most ${RESEARCH_CAP} companies per run; untick some on the Planning page.`;
 	return null;
+}
+
+export type ResearchBatch =
+	| { kind: 'refused'; message: string }
+	| { kind: 'done' }
+	| { kind: 'batch'; targets: TargetRow[]; prompt: string };
+
+/**
+ * What `GET …/prompt?batch=<n>` serves (§6.2): the next batch, stamped as requested and written
+ * up; 'done' when a run that has had a batch finds nothing left; a refusal when it can't start,
+ * which at batch 0 includes every ticked company having been answered today.
+ */
+export function nextResearchBatch(
+	db: DB,
+	event: EventRow,
+	batch: number,
+	now = Date.now()
+): ResearchBatch {
+	const refusal = researchRefusal(db, event, { batched: true });
+	if (refusal) return { kind: 'refused', message: refusal };
+	const brief = getBrief(db, event.id);
+	const targets = researchBatch(db, event.id, brief.perCompany, now);
+	if (!targets.length) {
+		if (batch > 0) return { kind: 'done' };
+		const ticked = researchTargets(db, event.id, brief.perCompany).length;
+		return { kind: 'refused', message: researchedAllMessage(ticked) };
+	}
+	markResearchRequested(
+		db,
+		event.id,
+		targets.map((t) => t.id),
+		now
+	);
+	return { kind: 'batch', targets, prompt: researchPrompt(db, event, targets, now) };
 }
 
 export function markResearchRequested(db: DB, eventId: string, ids: number[], now = Date.now()) {
@@ -384,12 +449,16 @@ export function markResearchRequested(db: DB, eventId: string, ids: number[], no
 	).run(now, eventId, JSON.stringify(ids));
 }
 
-/** The answer came back: every company asked for in the last day counts as researched. */
+/**
+ * The answer came back: the companies it is for, asked for in the last day and not answered
+ * since, count as researched. An earlier batch keeps its own stamp.
+ */
 export function markResearched(db: DB, eventId: string, now = Date.now()) {
 	db.prepare(
 		`UPDATE event_companies SET researched_at = ?
-		WHERE event_id = ? AND research_requested_at IS NOT NULL AND research_requested_at > ?`
-	).run(now, eventId, now - 86_400_000);
+		WHERE event_id = ? AND research_requested_at > ?
+			AND (researched_at IS NULL OR researched_at < research_requested_at)`
+	).run(now, eventId, now - RESEARCHED_RECENTLY_MS);
 }
 
 /* ───────────────────────── Suggestions (Found rows from research) ───────────────────────── */
@@ -495,14 +564,19 @@ export function addSuggestions(db: DB, eventId: string, raw: unknown[], now = Da
 /* ───────────────────────── The research brief for claude -p ───────────────────────── */
 
 /**
- * Everything the agent needs in one prompt: who to look for, where, how many people are
- * already known per company (counts only, never names: D10), the rules, and the exact JSON to
- * answer with. It has web tools only, so it never sees the API token; the shell pipeline posts
- * its answer back.
+ * Everything the agent needs in one prompt: who to look for, at which `targets` (one batch, or
+ * every ticked company for the command from before batches), how many people are already
+ * known per company (counts only, never names: D10), the rules, and the exact JSON to answer
+ * with. It has web tools only, so it never sees the API token; the shell pipeline posts its
+ * answer back.
  */
-export function researchPrompt(db: DB, event: EventRow, now = Date.now()): string {
+export function researchPrompt(
+	db: DB,
+	event: EventRow,
+	targets: TargetRow[],
+	now = Date.now()
+): string {
 	const brief = getBrief(db, event.id);
-	const targets = researchTargets(db, event.id, brief.perCompany);
 	const rows = listEventPeople(db, event.id);
 	const known = new Map<string, number>();
 	for (const r of rows) known.set(r.company_key, (known.get(r.company_key) ?? 0) + 1);

@@ -5,6 +5,7 @@
 		briefIsReady,
 		DEPARTMENTS,
 		researchCommand,
+		researchedAllMessage,
 		RESEARCH_TOKEN_VAR,
 		SENIORITY
 	} from '$lib/planning';
@@ -43,7 +44,6 @@
 
 	// The agent gets web tools only and never the token: curl fetches its brief and posts its answer.
 	const command = $derived(researchCommand(data.base, event.id));
-	const overCap = $derived(data.ticked > data.cap);
 
 	/** "researched 2 Oct", "requested 2 Oct" or nothing, for a target's research tick. */
 	function researchNote(t: { researchedAt: number | null; requestedAt: number | null }) {
@@ -295,7 +295,8 @@
 					The companies to find people at. Add a focus to change the brief for one company (roles
 					and departments, not names). The tick says whether the next run researches it: by default,
 					until {brief.perCompany} contactable
-					{brief.perCompany === 1 ? 'person is' : 'people are'} known there. At most {data.cap} per run.
+					{brief.perCompany === 1 ? 'person is' : 'people are'} known there. The command takes them
+					{data.cap} at a time.
 				</p>
 			</div>
 		</div>
@@ -595,8 +596,8 @@
 			<div>
 				<h2>Find people with Claude</h2>
 				<p class="muted">
-					Runs in your terminal under the SRKK Team/API account. Claude only gets web search, never
-					your Event Planner token, and everything it finds waits on the People tab for your
+					Runs in your terminal with your own Claude Code sign-in. Claude only gets web search,
+					never your Event Planner token, and everything it finds waits on the People tab for your
 					approval.
 				</p>
 			</div>
@@ -614,16 +615,17 @@
 					? 'Add at least one target company first.'
 					: 'Answer “which roles”, “how senior” or “which departments” above and save first.'}
 			</p>
-		{:else if overCap}
-			<p class="banner banner-warn">
-				{data.ticked} companies are ticked; a run takes at most {data.cap}. Untick some above.
-			</p>
 		{:else if data.refusal}
 			<p class="banner banner-warn">{data.refusal}</p>
+		{:else if data.pending === 0}
+			<!-- Ticked, but all answered today: the command would print this and stop. -->
+			<p class="banner">{researchedAllMessage(data.ticked)}</p>
 		{:else}
 			<p class="muted small">
-				The next run researches {data.ticked}
-				{data.ticked === 1 ? 'company' : 'companies'}.
+				The next run researches {data.pending}
+				{data.pending === 1 ? 'company' : 'companies'}{data.batches > 1
+					? `, in ${data.batches} batches of up to ${data.cap}, posting each batch back before the next`
+					: ''}.
 			</p>
 		{/if}
 
@@ -643,10 +645,11 @@
 				</button>
 			</div>
 			<p class="hint">
-				It takes a few minutes per company. Claude's raw answer is also saved as a
-				<code>event-planner-research-…json</code> file in the folder you run it from, so nothing is lost
-				if the last step fails. Run it again any time: people already invited, suggested or dismissed
-				are skipped.
+				Up to {data.cap} companies per batch, a few minutes per company; each batch is posted back before
+				the next starts, and Claude's raw answers are saved as
+				<code>event-planner-research-…json</code> files in the folder you run it from. If it stops part-way,
+				run it again: companies researched in the last 24 hours are left out, and people already invited,
+				suggested or dismissed are skipped.
 			</p>
 		</div>
 	</section>

@@ -182,8 +182,8 @@ needs a date first: what research finds is kept only until the event starts.
    focus ("only their finance team") when it differs from the brief. Each company has a
    **research tick**: by default a company is researched until enough contactable people are
    known there (the "how many per company" number); tick or untick to decide yourself, and
-   _default_ puts it back. A run takes at most **15** ticked companies. After a run the company
-   shows _researched 2 Oct_. Blocked companies are never researched.
+   _default_ puts it back. The command takes the ticked companies **15** at a time. After a run
+   the company shows _researched 2 Oct_. Blocked companies are never researched.
    - **Copy brief + targets from…** picks another event (most recent first) and copies its
      answers and its companies, with each company's focus. Companies already listed are
      skipped, and copied ones start on the default research tick. Answers you have already
@@ -200,19 +200,23 @@ needs a date first: what research finds is kept only until the event starts.
      and opens by itself when fewer than two columns were recognised.
 3. **Find people with Claude.** Create a token under Settings › API tokens (shown once),
    `export EVENT_PLANNER_TOKEN=…` in your terminal, and run the command the page shows. It runs
-   under the SRKK Team/API account. Your terminal fetches the event's research brief, `claude
--p` researches it with web search and fetch only, and the answer is posted back. Claude never
-   sees the token and has no shell, so a web page that tries to hijack it has nothing to send.
-   It sticks to public sources (company sites, news, search results) and work details only: no
+   with your own Claude Code sign-in. Your terminal fetches a brief for the next 15 ticked
+   companies, `claude -p` researches it with web search and fetch only, the answer is posted
+   back, and the next batch follows until none is left. Companies researched in the last 24
+   hours are left out, so a run that stopped part-way picks up where it was. Claude never sees
+   the token and has no shell, so a web page that tries to hijack it has nothing to send. It
+   sticks to public sources (company sites, news, search results) and work details only: no
    LinkedIn sign-in, no emails or phone numbers. The brief is refused (and the reason printed)
-   while the event has no date, the brief is empty, no company is ticked, or more than 15 are.
+   while the event has no date, the brief is empty, no company is ticked, or every ticked
+   company was researched in the last 24 hours.
 4. **Review what it found.** Each find waits under **To review** on the People tab with its
    title, why it fits, and its source. **Add** puts the person on the list; **Skip** hides them.
    Neither is suggested again, and neither is anyone already on the list, so re-running only
    brings new people. Once the event has started, research still runs but nothing it returns
    is kept, and the Found rows nobody approved are deleted.
 
-The API behind step 3 is `GET /api/research/events/<id>/prompt` and
+The API behind step 3 is `GET /api/research/events/<id>/prompt?batch=<n>` (the brief for
+batch _n_, counting from 0; 204 with no body once nothing is left) and
 `POST /api/research/events/<id>/suggestions`, both with `Authorization: Bearer <token>`.
 Tokens are stored hashed and can be revoked in Settings.
 

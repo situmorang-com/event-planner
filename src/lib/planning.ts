@@ -58,19 +58,36 @@ export function briefIsEmpty(b: Brief): boolean {
 export const RESEARCH_TOKEN_VAR = 'EVENT_PLANNER_TOKEN';
 
 /**
- * The one-line pipeline the organizer runs: curl fetches the brief with the token, claude -p
- * researches it with web tools only, and curl posts the answer back. Claude never sees the
- * token, and the app refuses the brief (printing why) before Claude spends anything.
+ * Companies per batch (§6.2). One `claude -p` session over more than this runs for hours, gives
+ * an answer long enough to be cut off, and loses all of it if the last step fails.
+ */
+export const RESEARCH_CAP = 15;
+
+/** Why a run has nothing to do: every ticked company was answered today (§6.2). */
+export function researchedAllMessage(ticked: number): string {
+	const who = ticked === 1 ? 'The only ticked company was' : `All ${ticked} ticked companies were`;
+	return `${who} researched in the last 24 hours. Tick another company, or remove and re-add one to research it again today.`;
+}
+
+/**
+ * The pipeline the organizer runs, once per batch: curl fetches the next brief with the token,
+ * claude -p researches it with web tools only, and curl posts the answer back before the next
+ * batch is asked for. Claude never sees the token. A refusal (409) at the first batch ends up in
+ * $brief and is printed; an empty body (204) means nothing is left and ends the loop quietly;
+ * a failed claude or POST clears $brief first, so the prompt is never echoed as if it were an
+ * error. Plain POSIX constructs, so it reads the same in zsh and bash.
  */
 export function researchCommand(base: string, eventId: string): string {
 	const auth = `-H "Authorization: Bearer $${RESEARCH_TOKEN_VAR}"`;
 	const promptUrl = `${base}/api/research/events/${eventId}/prompt`;
 	const postUrl = `${base}/api/research/events/${eventId}/suggestions`;
 	return [
-		`brief=$(curl -sS --fail-with-body ${auth} ${promptUrl}) || { echo "$brief" >&2; false; } \\`,
-		`  && printf '%s' "$brief" \\`,
-		`  | claude -p --tools "WebSearch WebFetch" --allowedTools "WebSearch WebFetch" --output-format json \\`,
-		`  | tee "event-planner-research-${eventId}-$(date +%H%M).json" \\`,
-		`  | curl -sS --fail-with-body ${auth} -H "content-type: application/json" --data-binary @- ${postUrl}`
+		`n=0; while brief=$(curl -sS --fail-with-body ${auth} "${promptUrl}?batch=$n") && [ -n "$brief" ]; do`,
+		`  n=$((n+1)); echo "Batch $n: researching up to ${RESEARCH_CAP} companies…" >&2`,
+		`  printf '%s' "$brief" \\`,
+		`    | claude -p --tools "WebSearch WebFetch" --allowedTools "WebSearch WebFetch" --output-format json \\`,
+		`    | tee "event-planner-research-${eventId}-$(date +%H%M%S).json" \\`,
+		`    | curl -sS --fail-with-body ${auth} -H "content-type: application/json" --data-binary @- ${postUrl} || { brief=; break; }`,
+		`done; [ -n "$brief" ] && echo "$brief" >&2; echo "Finished: $n batch(es)."`
 	].join('\n');
 }

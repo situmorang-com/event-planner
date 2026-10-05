@@ -33,6 +33,7 @@ import {
 	planningSources,
 	removeTarget,
 	RESEARCH_CAP,
+	researchPending,
 	researchRefusal,
 	saveBrief,
 	setTargetFocus,
@@ -91,6 +92,9 @@ export const load: PageServerLoad = ({ params, url }) => {
 		};
 	});
 
+	// What the next run takes on: the ticked companies not answered today, RESEARCH_CAP a batch.
+	const pending = researchPending(db, event.id, brief.perCompany, now).length;
+
 	return {
 		event,
 		brief,
@@ -101,7 +105,9 @@ export const load: PageServerLoad = ({ params, url }) => {
 		targets,
 		ticked: targets.filter((t) => t.ticked).length,
 		cap: RESEARCH_CAP,
-		refusal: researchRefusal(db, event),
+		pending,
+		batches: Math.ceil(pending / RESEARCH_CAP),
+		refusal: researchRefusal(db, event, { batched: true }),
 		started: event.starts_at !== null && now >= event.starts_at,
 		toReview: countToReview(db, event.id),
 		accepted: rows.filter((r) => r.stage !== 'found' && r.source === 'research').length,
