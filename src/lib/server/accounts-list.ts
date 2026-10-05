@@ -76,7 +76,7 @@ const MAX_LINES = 1000;
 const LIST_MARKER = /^(?:\d{1,3}[.)]|[-*•])\s+/;
 
 /** "bataviafoods.co.id", "https://www.selat.com/", never a bare word or an email. */
-export const looksLikeWebsite = (cell: string) =>
+const looksLikeWebsite = (cell: string) =>
 	/^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(cell) && !cell.includes('@');
 
 function matchHeader(cells: string[]): AccountColumns {
@@ -95,8 +95,12 @@ function matchHeader(cells: string[]): AccountColumns {
 	return columns;
 }
 
-/** A first line that names the account column and one more is a header. */
-const isHeader = (columns: AccountColumns) => 'name' in columns && Object.keys(columns).length >= 2;
+/**
+ * A first line that names the account column and one more is a header; so is a lone "Account
+ * Name", the one-column view, which would otherwise be read as a company called that.
+ */
+const isHeader = (columns: AccountColumns, cellCount: number) =>
+	'name' in columns && (cellCount === 1 || Object.keys(columns).length >= 2);
 
 function fromColumns(cells: string[], columns: AccountColumns): AccountInput {
 	const get = (c: AccountColumn) => {
@@ -143,7 +147,7 @@ export function parseAccounts(text: string, opts: ParseAccountsOptions = {}): Pa
 		header = opts.header !== false;
 	} else {
 		const detected = matchHeader(headers);
-		header = isHeader(detected);
+		header = isHeader(detected, headers.length);
 		columns = header ? detected : null;
 	}
 

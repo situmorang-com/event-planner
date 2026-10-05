@@ -828,6 +828,26 @@ export function clearLatestTouch(db: DB, eventId: string, id: number, now = Date
 	})();
 }
 
+/**
+ * Every touch of the row goes ("they were never invited after all", §5.3). A legacy notice
+ * among them re-syncs the person's thirty-day clock, as undoing one by one does.
+ */
+export function clearTouches(db: DB, eventId: string, id: number, now = Date.now()) {
+	return db.transaction(() => {
+		if (owned(db, eventId, id) === null) return false;
+		const notice = db
+			.prepare(
+				`SELECT ep.person_id FROM touches t JOIN event_people ep ON ep.id = t.event_person_id
+				WHERE t.event_person_id = ? AND t.kind = 'legacy_notice' LIMIT 1`
+			)
+			.get(id) as { person_id: string | null } | undefined;
+		db.prepare(`DELETE FROM touches WHERE event_person_id = ?`).run(id);
+		if (notice?.person_id) syncLegacyNotice(db, notice.person_id, now);
+		applyChange(db, id, { type: 'recount', touches: [] }, now);
+		return true;
+	})();
+}
+
 /* ───────────────────────── Rows for people already in the pool ───────────────────────── */
 
 /**

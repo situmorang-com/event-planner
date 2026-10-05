@@ -83,20 +83,21 @@ export type PartnerVariant = 'before' | 'after';
 export const isPartnerVariant = (v: unknown): v is PartnerVariant =>
 	v === 'before' || v === 'after';
 
-export const PARTNER_HEADERS = ['Name', 'Company', 'Title'];
-export const PARTNER_COUNT_HEADERS = ['Company', 'Count'];
+const PARTNER_HEADERS = ['Name', 'Company', 'Title'];
+const PARTNER_COUNT_HEADERS = ['Company', 'Count'];
 
-/** Who is in the partner list at all, before the consent split. */
-export function inPartnerList(
-	row: Pick<EventPersonRow, 'stage' | 'reply' | 'skipped_at'>,
+/**
+ * Who is in the partner list at all, before the consent split. "Before" is everyone who said
+ * yes or confirmed, whether or not they have since walked in: the list may be pulled again
+ * once doors open and must not lose people to the check-in desk.
+ */
+function inPartnerList(
+	row: Pick<EventPersonRow, 'stage' | 'reply' | 'confirmed_at' | 'skipped_at'>,
 	variant: PartnerVariant
 ): boolean {
-	if (row.skipped_at) return false;
+	if (row.skipped_at || row.stage === 'found') return false;
 	if (variant === 'after') return row.stage === 'checked_in';
-	return (
-		(row.stage === 'replied' || row.stage === 'confirmed') &&
-		(row.reply === 'yes' || row.stage === 'confirmed')
-	);
+	return row.reply === 'yes' || row.confirmed_at !== null;
 }
 
 export interface PartnerRows {

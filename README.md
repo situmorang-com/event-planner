@@ -349,6 +349,7 @@ src/
       migrate-v2.ts           contacts/guest lists → people and event rows (with a .pre-v2 copy)
       people.ts, companies.ts the cross-event pool: identity matching, field precedence, merge
       event-people.ts         one person on one event: found/shortlisted/invited… rows, touches
+      bulk.ts                 the People page's bulk verbs and copying people between events, one transaction each
       stages.ts               the stage transition table, the only place a stage changes
       do-not-contact.ts       hashed do-not-contact list and person locks
       checkins.ts             check-ins, linked to people and their event rows

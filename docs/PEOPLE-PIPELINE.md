@@ -493,7 +493,7 @@ data sits in a URL.
 | Research findings | Found snapshot; after Add, `people.source_url` + `research_reason`                                    | People › To review; row sheet                  | never                                                                                                                                   | event start (unapproved), +90 d (skipped) |
 | Consent           | `consent_event_at`, `consent_share_at` per row; `consent_future_at` per person; `checkins.consent_at` | row and person                                 | consent columns in the People export                                                                                                    | with the row / person                     |
 | Partner export    |                                                                                                       |                                                | only `consent_share_at` rows (name, company, title); others as per-company counts; _before_ (yes or confirmed) and _after_ (checked in) |                                           |
-| Locked people     | hashes + masked label + reason; `people.locked_at`                                                    | marker; no buttons                             | name and company only, everywhere                                                                                                       | list: staff removal with reason only      |
+| Locked people     | hashes + masked label + reason; `people.locked_at`                                                    | marker; no buttons                             | email, mobile and LinkedIn blanked in every export (§4.5); never named in the partner export, counted instead                           | list: staff removal with reason only      |
 | Blocked companies | flag + reason                                                                                         | warning chip; refused on paste/import/research |                                                                                                                                         | unflag                                    |
 | Origin            | `people.origin`, `origin_detail`, `event_people.source`                                               | row sheet                                      | Origin column                                                                                                                           | with the person                           |
 | Logs              | `activity_log` with ids and counts only                                                               | Activity panel                                 | never                                                                                                                                   | with the event                            |
@@ -549,7 +549,9 @@ deploy. `scripts/seed-demo.ts`, the specs and `docs/DEPLOY.md` change in the sam
   copy brief + targets, the D365 accounts paste (`accounts-list.ts`, `planning.ts`); the partner
   export before / after (`exports.ts`, `partners.csv`). The industry from an accounts export is
   kept as a company note; the primary contact and main phone are read for the mapping but not
-  stored **(builder)**.
+  stored **(builder)**. A locked person who ticked the share box is counted, never named, in
+  the partner export: stricter than the stripped exports, since the file leaves the
+  organization **(builder)**. The _before_ list keeps a yes-sayer who has since checked in.
 
 ## 10. Out of scope / later
 

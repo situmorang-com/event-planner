@@ -25,6 +25,7 @@ import {
 	type GuestInput
 } from './event-people';
 import { createEvent } from './events';
+import { getPerson } from './people';
 
 const TZ = 'Asia/Jakarta';
 const at = (local: string) => fromLocalInput(local, TZ)!;
@@ -171,6 +172,18 @@ describe('bulk actions', () => {
 			expect(byName('Budi Santoso').skipped_at).toBeNull();
 			expect(logged(db, 'bulk')[0].what).toMatchObject({ action: 'skip' });
 		});
+
+		it('leaves a row already skipped as it was', () => {
+			addFound(db, eventId, [guest('Rina Wijaya')], { source: 'paste' }, NOW);
+			const id = byName('Rina Wijaya').id;
+			bulkSkip(db, eventId, [id], { by: 'Edmund' }, NOW);
+			expect(bulkSkip(db, eventId, [id], { by: 'Budi' }, NOW + 5)).toEqual({
+				done: 0,
+				refused: [{ id, reason: 'skipped' }]
+			});
+			expect(byName('Rina Wijaya')).toMatchObject({ skipped_at: NOW, skipped_by: 'Edmund' });
+			expect(logged(db, 'bulk')).toHaveLength(1);
+		});
 	});
 
 	describe('bulkMarkInvited', () => {
@@ -300,6 +313,23 @@ describe('bulk actions', () => {
 				action: 'stage',
 				stage: 'shortlisted'
 			});
+		});
+
+		it('takes the legacy-notice clock away with the touches it came from (§5.4)', () => {
+			const row = byName('Rina Wijaya');
+			markInvited(db, eventId, row.id, 'whatsapp', {}, NOW);
+			addTouch(db, eventId, row.id, { kind: 'legacy_notice', via: 'whatsapp' }, NOW + 1);
+			expect(getPerson(db, row.person_id!)!.legacy_notice_at).toBe(NOW + 1);
+			expect(bulkSetStage(db, eventId, [row.id], 'shortlisted', {}, NOW + 2).done).toBe(1);
+			expect(byName('Rina Wijaya').touch_count).toBe(0);
+			expect(getPerson(db, row.person_id!)!.legacy_notice_at).toBeNull();
+		});
+
+		it('refuses a stage the rows could never reach', () => {
+			expect(() =>
+				bulkSetStage(db, eventId, [byName('Rina Wijaya').id], 'confirmed' as never, {}, NOW)
+			).toThrow('bulk stage');
+			expect(logged(db, 'bulk')).toHaveLength(0);
 		});
 
 		it('never moves a reply or a confirmation', () => {

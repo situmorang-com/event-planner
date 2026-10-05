@@ -30,6 +30,8 @@ import {
 	countLive,
 	countToReview,
 	getEventPerson,
+	hasEnded,
+	listEventPeople,
 	lockRow,
 	markInvited,
 	removeRow,
@@ -75,10 +77,13 @@ const isVia = (v: unknown): v is Via => VIAS.includes(v as Via);
 const BULK_ACTIONS: BulkAction[] = ['shortlist', 'skip', 'invited', 'owner', 'stage', 'copy'];
 const isBulkAction = (v: unknown): v is BulkAction => BULK_ACTIONS.includes(v as BulkAction);
 
-/** The other events a selection can be copied to (D22): dated ones, most recent first. */
+/**
+ * The other events a selection can be copied to (D22): dated ones that haven't ended, most
+ * recent first. A finished event could never give the copied rows a next action (§5.2).
+ */
 function copyTargets(eventId: string) {
 	return listEvents(db)
-		.filter((e) => e.id !== eventId && e.starts_at !== null)
+		.filter((e) => e.id !== eventId && e.starts_at !== null && !hasEnded(e))
 		.map((e) => ({ id: e.id, name: e.name, starts_at: e.starts_at!, timezone: e.timezone }));
 }
 
@@ -369,6 +374,8 @@ export const actions: Actions = {
 			return fail(400, { bulkError: 'Pick some rows first.' });
 		const by = locals.who;
 		const via = form.get('via');
+		// Names before the batch runs: a Found row folded into the live person is gone after.
+		const names = new Map(listEventPeople(db, event.id).map((r) => [r.id, r.name]));
 		let result: BulkResult;
 		let to: { id: string; name: string } | null = null;
 		switch (action) {
@@ -400,10 +407,7 @@ export const actions: Actions = {
 				break;
 			}
 		}
-		const refused = result.refused.map((r) => ({
-			...r,
-			name: getEventPerson(db, event.id, r.id)?.name ?? `#${r.id}`
-		}));
+		const refused = result.refused.map((r) => ({ ...r, name: names.get(r.id) ?? `#${r.id}` }));
 		return { bulk: { action, done: result.done, refused, to } };
 	},
 

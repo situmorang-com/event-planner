@@ -63,6 +63,13 @@ describe('parseAccounts', () => {
 		expect(parsed.skipped).toEqual([', nothing']);
 	});
 
+	it('takes a lone "Account Name" line as the header of a one-column view', () => {
+		const parsed = parseAccounts('Account Name\nBatavia Foods\nSelat Energy');
+		expect(parsed.header).toBe(true);
+		expect(parsed.columns).toEqual({ name: 0 });
+		expect(parsed.accounts.map((a) => a.name)).toEqual(['Batavia Foods', 'Selat Energy']);
+	});
+
 	it('takes the organizer’s own mapping over the detected one, and ignores a bad website', () => {
 		const text = 'Perusahaan;Situs;PIC\nBatavia Foods;not a site;Rina\nSelat Energy;selat.com;Andi';
 		// "Perusahaan" alone names a company column: one match is not a header on its own.

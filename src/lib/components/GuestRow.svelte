@@ -272,9 +272,11 @@
 		dx = Math.max(-120, Math.min(canAdd ? 120 : 24, x));
 	}
 
+	// A cancel (the scroll took over, a call came in) is the platform saying the gesture never
+	// finished: the row springs back and nothing is submitted.
 	function swipeEnd(e: PointerEvent) {
 		if (!origin || e.pointerId !== origin.id) return;
-		const landed = dragging ? dx : 0;
+		const landed = dragging && e.type !== 'pointercancel' ? dx : 0;
 		origin = null;
 		dragging = false;
 		dx = 0;

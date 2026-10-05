@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import AddGuests from '$lib/components/AddGuests.svelte';
 	import EventTabs from '$lib/components/EventTabs.svelte';
@@ -277,6 +277,15 @@
 		shownRows.length > 0 && shownRows.every((r) => selected.has(r.id))
 	);
 
+	// A row that a chip, a search or a filter hides leaves the selection too: the bar acts
+	// only on what can be seen. Tracks the shown rows alone, so selecting never re-runs it.
+	$effect(() => {
+		const shown = new Set(shownRows.map((r) => r.id));
+		untrack(() => {
+			for (const id of [...selected]) if (!shown.has(id)) selected.delete(id);
+		});
+	});
+
 	function setSelected(ids: number[], on: boolean) {
 		for (const id of ids)
 			if (on) selected.add(id);
@@ -352,6 +361,8 @@
 		group: { name: string; rows: PeopleRow[]; waiting: number }
 	) {
 		if (!phone || !group.waiting) return;
+		// Holding the header's checkbox or Rename button is a tap on it, not a press.
+		if ((e.target as HTMLElement).closest('button, a, input, select')) return;
 		clearTimeout(pressTimer);
 		pressAt = { x: e.clientX, y: e.clientY };
 		pressTimer = setTimeout(() => {
@@ -1009,7 +1020,9 @@
 										name="to"
 										disabled={!selected.size}
 										onchange={(e) => {
+											// enhance reads the form as it submits, so the pick can go straight after.
 											if (e.currentTarget.value) runBulk('copy');
+											e.currentTarget.selectedIndex = 0;
 										}}
 									>
 										<option value="" disabled selected>Copy to event…</option>

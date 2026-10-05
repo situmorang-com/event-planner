@@ -119,9 +119,10 @@ describe('partnerExport', () => {
 		setReply(db, eventId, row('Citra').id, 'maybe');
 		share('Citra');
 		setReply(db, eventId, row('Dewi').id, 'no');
-		// Fajar: checked in with the share box ticked; Citra and Eka also came.
+		// Fajar: checked in with the share box ticked; Rina, Citra and Eka also came.
 		checkedIn('Fajar');
 		share('Fajar');
+		checkedIn('Rina');
 		checkedIn('Citra');
 		checkedIn('Eka');
 		return { db, eventId };
@@ -130,6 +131,7 @@ describe('partnerExport', () => {
 	it('names only those who agreed to share, and counts the rest per company (before)', () => {
 		const { db, eventId } = setup();
 		expect(partnerRows(listEventPeople(db, eventId), 'before')).toEqual({
+			// Rina said yes and stays on the list after she walked in.
 			named: [{ name: 'Rina', company: 'Batavia', job_title: 'Rina title' }],
 			// Andi did not tick the box; Budi did, but a locked person is never named (D13).
 			counts: [{ company: 'Batavia', count: 2 }]
@@ -140,6 +142,7 @@ describe('partnerExport', () => {
 		const { db, eventId } = setup();
 		expect(partnerRows(listEventPeople(db, eventId), 'after')).toEqual({
 			named: [
+				{ name: 'Rina', company: 'Batavia', job_title: 'Rina title' },
 				{ name: 'Fajar', company: 'Kopi', job_title: 'Fajar title' },
 				{ name: 'Citra', company: 'Selat', job_title: 'Citra title' }
 			],

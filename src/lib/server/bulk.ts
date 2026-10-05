@@ -3,6 +3,7 @@ import type { DB } from './database.ts';
 import { check as doNotContact } from './do-not-contact.ts';
 import {
 	addRowForPerson,
+	clearTouches,
 	findRow,
 	getEventPerson,
 	markInvited,
@@ -14,7 +15,7 @@ import {
 } from './event-people.ts';
 import { recomputeRow } from './next-action.ts';
 import { touchLastEvent } from './people.ts';
-import { applyChange, type Via } from './stages.ts';
+import type { Via } from './stages.ts';
 
 /*
  * Bulk actions on the People page (§4.2, D22). Each one is one transaction over the rows the
@@ -56,7 +57,8 @@ const unique = (ids: number[]) => [...new Set(ids)];
 
 /**
  * Runs `each` over the rows inside one transaction and writes the log entry. `what` carries
- * only ids and counts: the log must never hold a name (§8).
+ * only ids and counts: the log must never hold a name (§8). `extra` is read after the loop, so
+ * a verb may fill it as it goes; `logEventId` is for a verb whose effect lands on another event.
  */
 function batch(
 	db: DB,
@@ -66,7 +68,10 @@ function batch(
 	{ by = '' }: Opts,
 	now: number,
 	each: (id: number, row: EventPersonRow | undefined) => BulkReason | null,
-	extra: Record<string, unknown> = {}
+	{
+		extra = {},
+		logEventId = eventId
+	}: { extra?: Record<string, unknown>; logEventId?: string } = {}
 ): BulkResult {
 	return db.transaction((): BulkResult => {
 		const done: number[] = [];
@@ -80,7 +85,7 @@ function batch(
 			logActivity(
 				db,
 				{
-					eventId,
+					eventId: logEventId,
 					kind: 'bulk',
 					who: by,
 					what: { action, ids: done, refused: refused.map((r) => r.id), ...extra },
@@ -131,6 +136,8 @@ export function bulkSkip(
 	return batch(db, eventId, 'skip', ids, opts, now, (id, row) => {
 		if (!row) return 'not on this event';
 		if (row.stage !== 'found') return 'already on the list';
+		// Skipping again would rewrite who skipped them and when.
+		if (row.skipped_at) return 'skipped';
 		skipRow(db, eventId, id, { by: opts.by }, now);
 		return null;
 	});
@@ -162,7 +169,7 @@ export function bulkMarkInvited(
 			markInvited(db, eventId, id, via, { by: opts.by }, now);
 			return null;
 		},
-		{ via }
+		{ extra: { via } }
 	);
 }
 
@@ -199,6 +206,8 @@ export function bulkSetStage(
 	now = Date.now()
 ): BulkResult {
 	if (stage === 'invited') return bulkMarkInvited(db, eventId, ids, via, { by }, now);
+	// The type says so, but the log must never record a stage the rows never reached.
+	if (stage !== 'shortlisted') throw new Error('bulk stage must be shortlisted or invited');
 	return batch(
 		db,
 		eventId,
@@ -213,11 +222,10 @@ export function bulkSetStage(
 			if (row.stage !== 'invited') return 'not at that stage';
 			const reason = closed(row);
 			if (reason) return reason;
-			db.prepare(`DELETE FROM touches WHERE event_person_id = ?`).run(id);
-			applyChange(db, id, { type: 'recount', touches: [] }, now);
+			clearTouches(db, eventId, id, now);
 			return null;
 		},
-		{ stage }
+		{ extra: { stage } }
 	);
 }
 
@@ -236,45 +244,27 @@ export function copyToEvent(
 	{ by = '' }: Opts = {},
 	now = Date.now()
 ): BulkResult {
-	return db.transaction((): BulkResult => {
-		const done: number[] = [];
-		const created: number[] = [];
-		const refused: BulkResult['refused'] = [];
-		for (const id of unique(ids)) {
-			const row = getEventPerson(db, fromEventId, id);
+	const created: number[] = [];
+	return batch(
+		db,
+		fromEventId,
+		'copy',
+		ids,
+		{ by },
+		now,
+		(id, row) => {
 			const reason = copyRefusal(db, toEventId, row);
-			if (reason || !row?.person_id) {
-				refused.push({ id, reason: reason ?? 'not on the list yet' });
-				continue;
-			}
+			if (reason || !row?.person_id) return reason ?? 'not on the list yet';
 			const newId = addRowForPerson(db, toEventId, row.person_id, { source: 'copied', by }, now);
 			if (row.owner)
 				db.prepare(`UPDATE event_people SET owner = ? WHERE id = ?`).run(row.owner, newId);
 			recomputeRow(db, newId, now);
 			touchLastEvent(db, row.person_id, now);
-			done.push(id);
 			created.push(newId);
-		}
-		if (done.length)
-			logActivity(
-				db,
-				{
-					eventId: toEventId,
-					kind: 'bulk',
-					who: by,
-					what: {
-						action: 'copy',
-						fromEventId,
-						ids: done,
-						created,
-						refused: refused.map((r) => r.id)
-					},
-					rowCount: done.length
-				},
-				now
-			);
-		return { done: done.length, refused };
-	})();
+			return null;
+		},
+		{ extra: { fromEventId, created }, logEventId: toEventId }
+	);
 }
 
 function copyRefusal(
