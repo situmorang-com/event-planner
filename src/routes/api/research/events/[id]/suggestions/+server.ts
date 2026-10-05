@@ -45,6 +45,8 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 		error(422, `No {"suggestions": [...]} list in Claude's answer. It said: ${said}`);
 	}
 
+	// Stamped before the started return below, or a batched run is served these companies again
+	// at every batch and never ends (§6.2).
 	markResearched(db, event.id);
 	// Research after the start creates no Found rows: the list has gone live (§5.4).
 	if (event.starts_at !== null && Date.now() >= event.starts_at)

@@ -75,19 +75,25 @@ export function researchedAllMessage(ticked: number): string {
  * batch is asked for. Claude never sees the token. A refusal (409) at the first batch ends up in
  * $brief and is printed; an empty body (204) means nothing is left and ends the loop quietly;
  * a failed claude or POST clears $brief first, so the prompt is never echoed as if it were an
- * error. Plain POSIX constructs, so it reads the same in zsh and bash.
+ * error, and the run names the batch that failed instead of saying it finished. `n` counts
+ * posted batches only, the error body curl prints has no newline of its own, and the last line
+ * leaves a status of 0 only after a clean end. Plain POSIX constructs, so it reads the same in
+ * zsh and bash.
  */
 export function researchCommand(base: string, eventId: string): string {
 	const auth = `-H "Authorization: Bearer $${RESEARCH_TOKEN_VAR}"`;
 	const promptUrl = `${base}/api/research/events/${eventId}/prompt`;
 	const postUrl = `${base}/api/research/events/${eventId}/suggestions`;
 	return [
-		`n=0; while brief=$(curl -sS --fail-with-body ${auth} "${promptUrl}?batch=$n") && [ -n "$brief" ]; do`,
-		`  n=$((n+1)); echo "Batch $n: researching up to ${RESEARCH_CAP} companies…" >&2`,
+		`n=0; failed=; while brief=$(curl -sS --fail-with-body ${auth} "${promptUrl}?batch=$n") && [ -n "$brief" ]; do`,
+		`  echo "Batch $((n+1)): researching up to ${RESEARCH_CAP} companies…" >&2`,
 		`  printf '%s' "$brief" \\`,
 		`    | claude -p --tools "WebSearch WebFetch" --allowedTools "WebSearch WebFetch" --output-format json \\`,
 		`    | tee "event-planner-research-${eventId}-$(date +%H%M%S).json" \\`,
-		`    | curl -sS --fail-with-body ${auth} -H "content-type: application/json" --data-binary @- ${postUrl} || { brief=; break; }`,
-		`done; [ -n "$brief" ] && echo "$brief" >&2; echo "Finished: $n batch(es)."`
+		`    | curl -sS --fail-with-body ${auth} -H "content-type: application/json" --data-binary @- ${postUrl} || { brief=; failed=1; echo; break; }`,
+		`  n=$((n+1))`,
+		`done; [ -n "$brief" ] && echo "$brief" >&2`,
+		`[ -n "$failed" ] && echo "Batch $((n+1)) failed after $n posted; run the command again to resume." >&2`,
+		`[ -z "$brief" ] && [ -z "$failed" ] && echo "Finished: $n batch(es)."`
 	].join('\n');
 }

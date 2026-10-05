@@ -45,6 +45,21 @@
 	// The agent gets web tools only and never the token: curl fetches its brief and posts its answer.
 	const command = $derived(researchCommand(data.base, event.id));
 
+	// Step 3's line on the next run (§6.2): how many companies, in how many batches, and how many
+	// ticked ones sit it out because they were answered in the last 24 hours.
+	const forecast = $derived.by(() => {
+		const out = data.ticked - data.pending;
+		const batches =
+			data.batches > 1
+				? `, in ${data.batches} batches of up to ${data.cap}, posting each batch back before the next`
+				: '';
+		const left =
+			out > 0
+				? `; ${out === 1 ? 'the other ticked company was' : `the other ${out} ticked companies were`} researched in the last 24 hours and ${out === 1 ? 'is' : 'are'} left out`
+				: '';
+		return `The next run researches ${data.pending} ${data.pending === 1 ? 'company' : 'companies'}${batches}${left}.`;
+	});
+
 	/** "researched 2 Oct", "requested 2 Oct" or nothing, for a target's research tick. */
 	function researchNote(t: { researchedAt: number | null; requestedAt: number | null }) {
 		if (t.researchedAt) return `researched ${formatDate(t.researchedAt, event.timezone)}`;
@@ -295,8 +310,8 @@
 					The companies to find people at. Add a focus to change the brief for one company (roles
 					and departments, not names). The tick says whether the next run researches it: by default,
 					until {brief.perCompany} contactable
-					{brief.perCompany === 1 ? 'person is' : 'people are'} known there. The command takes them
-					{data.cap} at a time.
+					{brief.perCompany === 1 ? 'person is' : 'people are'} known there. A company researched in the
+					last 24 hours is left out of the next run; the command takes the rest {data.cap} at a time.
 				</p>
 			</div>
 		</div>
@@ -621,12 +636,7 @@
 			<!-- Ticked, but all answered today: the command would print this and stop. -->
 			<p class="banner">{researchedAllMessage(data.ticked)}</p>
 		{:else}
-			<p class="muted small">
-				The next run researches {data.pending}
-				{data.pending === 1 ? 'company' : 'companies'}{data.batches > 1
-					? `, in ${data.batches} batches of up to ${data.cap}, posting each batch back before the next`
-					: ''}.
-			</p>
+			<p class="muted small">{forecast}</p>
 		{/if}
 
 		<div class="run">

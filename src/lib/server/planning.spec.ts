@@ -277,6 +277,37 @@ describe('planning', () => {
 			// A day after its answer the first batch is due again; the later ones are not yet.
 			expect(served(0, T0 + HOUR + 25 * HOUR)).toEqual(all.slice(0, 15));
 			expect(researchPending(db, eventId, 1, T0 + HOUR + 25 * HOUR)).toHaveLength(15);
+			// Its new answer re-stamps it over yesterday's stamp, so the day-2 run moves on and ends
+			// instead of being served the same 15 at every batch.
+			markResearched(db, eventId, T0 + 27 * HOUR);
+			expect(stamps('researched_at')).toEqual([
+				...Array(15).fill(T0 + 27 * HOUR),
+				...Array(15).fill(T0 + 3 * HOUR),
+				T0 + 5 * HOUR
+			]);
+			expect(served(1, T0 + 27 * HOUR)).toEqual({ kind: 'done' });
+		});
+
+		it('keeps a company out for exactly 24 hours after its answer', () => {
+			served(0, T0);
+			markResearched(db, eventId, T0 + HOUR);
+			const due = T0 + HOUR + 24 * HOUR;
+			expect(researchPending(db, eventId, 1, due)).toHaveLength(16);
+			expect(researchPending(db, eventId, 1, due + 1)).toHaveLength(31);
+		});
+
+		it('moves on after the event has started, when answers are stamped but not kept', () => {
+			db.prepare(`UPDATE events SET starts_at = ? WHERE id = ?`).run(T0 - 24 * HOUR, eventId);
+			const first = nextResearchBatch(db, event(), 0, T0);
+			expect(first.kind === 'batch' ? names(first.targets) : first).toEqual(all.slice(0, 15));
+			expect(first.kind === 'batch' ? first.prompt : '').toContain('already started');
+			// The POST stamps before it decides to keep nothing (§5.4), so batch 1 is the next 15.
+			markResearched(db, eventId, T0 + HOUR);
+			expect(served(1, T0 + HOUR)).toEqual(all.slice(15, 30));
+			markResearched(db, eventId, T0 + 2 * HOUR);
+			expect(served(2, T0 + 2 * HOUR)).toEqual([all[30]]);
+			markResearched(db, eventId, T0 + 3 * HOUR);
+			expect(served(3, T0 + 3 * HOUR)).toEqual({ kind: 'done' });
 		});
 
 		it('writes the prompt for the batch only', () => {
@@ -330,12 +361,13 @@ describe('planning', () => {
 		const day = 86_400_000;
 		markResearchRequested(db, eventId, [batavia.id], 10 * day);
 		markResearchRequested(db, eventId, [selat.id], 8 * day);
-		// An answer two days after Selat's prompt was served belongs to Batavia's run only.
-		markResearched(db, eventId, 10 * day + 3_600_000);
-		expect(listTargets(db, eventId).map((t) => t.researched_at)).toEqual([
-			10 * day + 3_600_000,
-			null
-		]);
+		const researched = () => listTargets(db, eventId).map((t) => t.researched_at);
+		// Exactly a day after Batavia's prompt was served, an answer belongs to no run any more.
+		markResearched(db, eventId, 11 * day);
+		expect(researched()).toEqual([null, null]);
+		// A millisecond earlier it is Batavia's, and never Selat's, served two days before that.
+		markResearched(db, eventId, 11 * day - 1);
+		expect(researched()).toEqual([11 * day - 1, null]);
 	});
 
 	describe('copy brief + targets from another event', () => {

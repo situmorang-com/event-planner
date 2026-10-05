@@ -18,6 +18,14 @@ const markdown = (prompt: string) =>
 		headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'no-store' }
 	});
 
+// A refusal is echoed by the command as it arrives, so it is the bare sentence: error() would
+// negotiate curl's `Accept: */*` into kit's {"message": …} envelope.
+const refuse = (status: number, message: string) =>
+	text(message, {
+		status,
+		headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
+	});
+
 /**
  * The research brief for one event, piped straight into `claude -p`. With `?batch=<n>` it is
  * the next RESEARCH_CAP companies not answered today, 204 once a run has nothing left (§6.2);
@@ -34,7 +42,7 @@ export const GET: RequestHandler = ({ params, request, url }) => {
 	if (batch === null) {
 		// Stop before Claude spends anything on a brief with nothing to research (§6.2).
 		const refusal = researchRefusal(db, event);
-		if (refusal) error(409, refusal);
+		if (refusal) return refuse(409, refusal);
 		const targets = researchTargets(db, event.id, getBrief(db, event.id).perCompany);
 		markResearchRequested(
 			db,
@@ -43,9 +51,9 @@ export const GET: RequestHandler = ({ params, request, url }) => {
 		);
 		return markdown(researchPrompt(db, event, targets));
 	}
-	if (!/^\d{1,9}$/.test(batch)) error(400, 'batch must be a whole number, counting from 0');
+	if (!/^\d{1,9}$/.test(batch)) return refuse(400, 'batch must be a whole number, counting from 0');
 	const next = nextResearchBatch(db, event, Number(batch));
-	if (next.kind === 'refused') error(409, next.message);
+	if (next.kind === 'refused') return refuse(409, next.message);
 	if (next.kind === 'done') return new Response(null, { status: 204 });
 	return markdown(next.prompt);
 };

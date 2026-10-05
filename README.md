@@ -203,7 +203,8 @@ needs a date first: what research finds is kept only until the event starts.
    with your own Claude Code sign-in. Your terminal fetches a brief for the next 15 ticked
    companies, `claude -p` researches it with web search and fetch only, the answer is posted
    back, and the next batch follows until none is left. Companies researched in the last 24
-   hours are left out, so a run that stopped part-way picks up where it was. Claude never sees
+   hours are left out, so a run that stopped part-way picks up where it was; if a batch fails,
+   the command says which one and stops, and running it again resumes. Claude never sees
    the token and has no shell, so a web page that tries to hijack it has nothing to send. It
    sticks to public sources (company sites, news, search results) and work details only: no
    LinkedIn sign-in, no emails or phone numbers. The brief is refused (and the reason printed)

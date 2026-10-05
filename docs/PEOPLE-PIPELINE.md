@@ -460,16 +460,21 @@ deleted; touch and activity logs → with the row/event; do-not-contact → fore
   or not they returned anyone, so an answer stamps its own batch and never an earlier one again.
 - `GET …/prompt` returns 409 when `starts_at IS NULL`, the brief isn't ready or no company is
   ticked; with `batch=0` also when every ticked company was researched in the last 24 h ("All N
-  ticked companies were researched in the last 24 hours…"). With `batch` ≥ 1 and nothing left
-  it returns 204 with no body. Without `batch` (the command from before batches) it serves every
-  ticked company in one prompt and returns 409 above 15. After `starts_at` the prompt carries a
-  warning line and the POST keeps nothing (§5.4).
+  ticked companies were researched in the last 24 hours…", or "The only ticked company was…"
+  for one). The refusal is plain text, not kit's JSON envelope, since the command echoes it as
+  it arrives. With `batch` ≥ 1 and nothing left it returns 204 with no body. Without `batch`
+  (the command from before batches) it serves every ticked company in one prompt and returns
+  409 above 15. After `starts_at` the prompt carries a warning line and the POST keeps nothing
+  (§5.4), but still stamps `researched_at` first, or the loop would never move on.
 - `POST …/suggestions` inserts Found rows (`source = research`), skipping names already live or
   skipped on the event, locked people, blocked companies.
 - The command loops over `?batch=0, 1, …` until a 204 or a failure, piping each brief through
   `claude -p` and posting the answer back before asking for the next batch, with
-  `EVENT_PLANNER_TOKEN`; new tokens are `ep_…`, `verifyBearer` accepts `^(ep|hdr)_`. The page
-  states the run uses the organizer's own Claude Code sign-in.
+  `EVENT_PLANNER_TOKEN`; new tokens are `ep_…`, `verifyBearer` accepts `^(ep|hdr)_`. It ends
+  with "Finished: n batch(es)." and status 0 only after a 204; a failed `claude -p` or POST
+  prints "Batch n failed after n−1 posted; run the command again to resume." and a refusal its
+  sentence, both with status 1. The page states the run uses the organizer's own Claude Code
+  sign-in, and says how many ticked companies sit out the next run as researched today.
 - `PRIVACY_URL` is required for messaging research-origin people: without it their message
   buttons are hidden with a hint, and `docs/DEPLOY.md` lists it.
 
