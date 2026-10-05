@@ -115,9 +115,9 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   **Next** says in plain words what to do (send the invitation, connect on LinkedIn first, wait
   for an answer, follow up, send the reminder) beside the date the chase rules set. **How this
   list works** above the list explains the steps, the message menu and LinkedIn.
-- **Acting on a person.** The right side of a row has three labelled lines. **Answer**:
+- **Acting on a person.** The right side of a row is one panel. First the answer:
   _Attending_, _Tentative_ or _Declined_ (tap again to clear), with the owner and the ⋯ menu.
-  **Send**: which message (_Invitation_, _Chase (no reply yet)_, _Reminder (before the event)_,
+  Then the send line: which message (_Invitation_, _Chase (no reply yet)_, _Reminder (before the event)_,
   or the thank-you or follow-up that fits the answer; it is not a step, and the right one is
   picked for you), then the channel: **WhatsApp** (numbers in international format), **Email**
   or **LinkedIn**, plus copy-the-text and copy-the-registration-link. LinkedIn takes no message
@@ -140,7 +140,7 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   name after it skips Muhammad, M., Moch., initials and Balinese birth-order names (_Pak Faiz_ for
   Muhammad Faiz Azhari); **Edit › Call name** changes it. Messages greet with `{salutation}`;
   `{name}` is the call name alone.
-- **LinkedIn connection.** The third line, **LinkedIn**, is your connection with the person:
+- **LinkedIn connection.** At the end of the send line is your connection with the person:
   **Not connected → Request sent → Connected**. It sits with the channels rather than with the
   person's details because it decides whether the LinkedIn send button works (LinkedIn only lets
   you message connections). **Connect** opens their profile to send the request there and

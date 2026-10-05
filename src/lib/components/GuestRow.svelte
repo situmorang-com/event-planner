@@ -906,7 +906,7 @@
 					</p>
 				{/if}
 				<!-- Why research suggested them stays after Add: it is the reason to invite them. -->
-				{#if row.reason}<p class="reason">{row.reason}</p>{/if}
+				{#if row.reason}<p class="reason" title={row.reason}>{row.reason}</p>{/if}
 
 				{#if track.length}
 					<ol class="track" aria-label="Where {first} is">
@@ -1025,7 +1025,7 @@
 			     reached on, and the LinkedIn connection that opens that channel (D26). -->
 			<div class="act">
 				<div class="line answer-line">
-					<span class="line-label">Answer</span>
+					<span class="sr-only">Answer</span>
 					<div class="line-body">
 						<form
 							class="reply-form"
@@ -1091,9 +1091,9 @@
 					</div>
 				</div>
 
-				{#if listed && (row.message || row.registration_link)}
+				{#if listed && (row.message || row.registration_link || linkedinOpen)}
 					<div class="line send-line">
-						<span class="line-label">Send</span>
+						<span class="sr-only">Send</span>
 						<div class="line-body">
 							{#if row.message?.text}
 								<!-- Which message the buttons send (§7); the rules' suggestion is picked already.
@@ -1182,6 +1182,41 @@
 									>
 								</button>
 							{/if}
+							{#if linkedinOpen}
+								<!-- The LinkedIn connection (D26), beside the channel it opens. -->
+								<span class="li-group">
+									<span class="sr-only">LinkedIn connection</span>
+									<a
+										class="li-status {linkedinStatus}"
+										href={row.linkedin}
+										target="_blank"
+										rel="noreferrer"
+										title="Open {first}’s LinkedIn profile"
+									>
+										<span class="in" aria-hidden="true">in</span>
+										{linkedinLabel}
+										{#if linkedinStatus === 'connected'}<Check size={13} strokeWidth={3} />{/if}
+									</a>
+									{#if linkedinStatus === 'none'}
+										<button
+											type="button"
+											class="btn btn-soft btn-sm connect-btn"
+											title="Open {first}’s profile to send a connection request there; it is recorded as sent"
+											onclick={connect}
+										>
+											Connect
+										</button>
+										{@render linkedinButton('connected', 'Already connected')}
+									{:else if linkedinStatus === 'requested'}
+										{@render linkedinButton('connected', 'They accepted')}
+										{#if requestNote}
+											<!-- Just recorded by Connect: a look that sent nothing takes it back here. -->
+											<span class="connect-note">Recorded as sent.</span>
+											{@render linkedinButton('none', 'Undo')}
+										{/if}
+									{/if}
+								</span>
+							{/if}
 						</div>
 					</div>
 					{#if sent}
@@ -1212,43 +1247,6 @@
 							<button type="button" class="link-btn" onclick={() => (sent = null)}>OK</button>
 						</div>
 					{/if}
-				{/if}
-
-				{#if linkedinOpen}
-					<div class="line connect-line">
-						<span class="line-label">LinkedIn</span>
-						<div class="line-body">
-							<a
-								class="li-status {linkedinStatus}"
-								href={row.linkedin}
-								target="_blank"
-								rel="noreferrer"
-								title="Open {first}’s LinkedIn profile"
-							>
-								<span class="in" aria-hidden="true">in</span>
-								{linkedinLabel}
-								{#if linkedinStatus === 'connected'}<Check size={13} strokeWidth={3} />{/if}
-							</a>
-							{#if linkedinStatus === 'none'}
-								<button
-									type="button"
-									class="btn btn-soft btn-sm connect-btn"
-									title="Open {first}’s profile to send a connection request there; it is recorded as sent"
-									onclick={connect}
-								>
-									Connect
-								</button>
-								{@render linkedinButton('connected', 'Already connected')}
-							{:else if linkedinStatus === 'requested'}
-								{@render linkedinButton('connected', 'They accepted')}
-								{#if requestNote}
-									<!-- Just recorded by Connect: a look that sent nothing takes it back here. -->
-									<span class="connect-note">Recorded as sent.</span>
-									{@render linkedinButton('none', 'Undo')}
-								{/if}
-							{/if}
-						</div>
-					</div>
 				{/if}
 
 				<form
@@ -1424,7 +1422,8 @@
 	}
 
 	.person-name {
-		font-weight: 650;
+		font-size: 15px;
+		font-weight: 700;
 	}
 
 	/* The greeting (D27): solid once someone has said, dashed with a ? while it is a guess. */
@@ -1507,8 +1506,13 @@
 	}
 
 	.reason {
-		color: var(--text-2);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 		max-width: 72ch;
+		color: var(--text-2);
 	}
 
 	/* The track (§4.2): five steps, the current one named, a no ending at Declined. */
@@ -1645,34 +1649,37 @@
 	}
 
 	/* The right side: Answer, Send and LinkedIn, each a label and its controls. */
+	/* The right side is one panel: the answer, then the message and its channels, then the note. */
 	.act {
 		grid-area: act;
 		display: grid;
 		gap: 8px;
 		min-width: 0;
+		padding: 10px 12px;
+		border-radius: 14px;
+		background: var(--surface-2);
 	}
 
 	.line {
-		display: grid;
-		grid-template-columns: 4.6rem minmax(0, 1fr);
-		align-items: center;
-		gap: 10px;
-	}
-
-	.line-label {
-		font-size: 12px;
-		font-weight: 700;
-		letter-spacing: 0.02em;
-		text-transform: uppercase;
-		color: var(--muted);
-	}
-
-	.line-body {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 4px 6px;
 		min-width: 0;
+	}
+
+	.line-body {
+		display: contents;
+	}
+
+	.li-group {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 6px;
+		margin-left: auto;
+		padding-left: 10px;
+		border-left: 1px solid var(--border-strong);
 	}
 
 	.line-end {
@@ -1708,7 +1715,6 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 4px 10px;
-		margin-left: calc(4.6rem + 10px);
 		padding: 8px 10px;
 		border-radius: 10px;
 		background: var(--brand-soft);
@@ -1727,10 +1733,6 @@
 		text-decoration: underline;
 		text-underline-offset: 2px;
 		cursor: pointer;
-	}
-
-	.note-form {
-		margin-left: calc(4.6rem + 10px);
 	}
 
 	.li-status {
@@ -1865,7 +1867,7 @@
 		padding: 0 10px;
 		border-radius: 10px;
 		border: 1px solid transparent;
-		background: transparent;
+		background: var(--surface);
 		color: var(--text-2);
 		/* 16px or iOS Safari zooms the page on focus. */
 		font-size: 16px;
@@ -1881,7 +1883,7 @@
 	}
 
 	.note:hover {
-		background: var(--surface-2);
+		border-color: var(--border-strong);
 	}
 
 	.note:focus {
@@ -1897,7 +1899,7 @@
 		gap: 3px;
 		padding: 3px;
 		border-radius: 12px;
-		background: var(--surface-2);
+		background: var(--surface);
 	}
 
 	.choice {
@@ -1922,7 +1924,7 @@
 	}
 
 	.choice:hover {
-		background: var(--surface);
+		background: var(--surface-2);
 		color: var(--text);
 	}
 
@@ -2136,9 +2138,9 @@
 		color: var(--muted);
 	}
 
-	@media (max-width: 900px) {
-		/* The person reads first and in full; the actions get a line of their own under the
-		   answer buttons rather than squeezing the name. */
+	/* Under 1100px the panel would squeeze the name and the track: it goes under the person,
+	   full width, as on a phone. */
+	@media (max-width: 1100px) {
 		.row {
 			grid-template-columns: minmax(0, 1fr);
 			grid-template-areas:
@@ -2148,13 +2150,10 @@
 			padding: 14px 16px;
 		}
 
-		.line {
-			grid-template-columns: 4rem minmax(0, 1fr);
-		}
-
-		.sent-note,
-		.note-form {
+		.li-group {
 			margin-left: 0;
+			padding-left: 0;
+			border-left: 0;
 		}
 
 		/* The answer buttons share the line; the owner and the menu sit after them. */
@@ -2173,10 +2172,12 @@
 			flex: 1;
 		}
 
-		.note {
-			background: var(--surface-2);
+		.kind-select {
+			max-width: 160px;
 		}
+	}
 
+	@media (max-width: 600px) {
 		/* On a phone the track names only where they are; the dots show the rest. */
 		.step:not(.current) .step-label {
 			display: none;
@@ -2185,10 +2186,6 @@
 		.step + .step::before {
 			width: 8px;
 			margin: 0 3px;
-		}
-
-		.kind-select {
-			max-width: 160px;
 		}
 	}
 
