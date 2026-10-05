@@ -1,14 +1,14 @@
-import type { EventPersonRow } from './event-people.ts';
+import { DAY } from '../time.ts';
 import type { EventRow } from './events.ts';
 import { countryOf, isLegacy, type PersonRow } from './people.ts';
 
 /*
- * The retention rules (§5.4, D10, D17, D18) as pure functions: when a person or a Found row
- * will be deleted by housekeeping. The jobs, the Settings table, the Contacts page and the
- * exports all read these, so the date shown is the date the job acts on, never a near copy.
+ * The retention rules (§5.4, D10, D17, D18) as pure functions: when a person will be deleted
+ * by housekeeping, and when an event's planning data goes. The jobs, the Settings table, the
+ * Contacts page and the exports all read these, so the date shown is the date the job acts
+ * on, never a near copy.
  */
 
-export const DAY = 86_400_000;
 /** Found rows, skipped included, go this long after the event starts (D10). */
 export const PLANNING_PURGE_DAYS = 90;
 /** Research and typed prospects who never replied go this long after their last event (D18). */
@@ -17,7 +17,7 @@ export const PROSPECT_MONTHS = 12;
 export const LEGACY_NOTICE_DAYS = 30;
 
 /** Calendar months on, so "12 months" lands on the same day of the month. */
-export function addMonths(ts: number, months: number): number {
+function addMonths(ts: number, months: number): number {
 	const d = new Date(ts);
 	d.setUTCMonth(d.getUTCMonth() + months);
 	return d.getTime();
@@ -65,25 +65,22 @@ export function isLegacyIndonesian(person: LegacyPerson, since: number | null): 
 	return isLegacy(person, since) && countryOf(person) === 'ID';
 }
 
-/** Still on the legacy clock: told or not, they haven't answered since. */
-export function underLegacyRule(person: LegacyPerson, since: number | null): boolean {
-	return isLegacyIndonesian(person, since) && !person.legacy_kept_at;
-}
-
 /**
- * Which rule holds a person and the date it acts on (§5.4). A legacy attendee is on the clock
- * from the notice unless they answered since; anyone with a relationship or a reply is kept
- * until deleted by hand; the rest are prospects on the twelve-month clock.
+ * Which rule holds a person and the date it acts on (§5.4). Anyone with a relationship or a
+ * reply is kept until deleted by hand, a legacy attendee included: a customer or someone who
+ * answered on any event has given the app a reason to keep them (§2.3). A legacy attendee
+ * without one is on the clock from the notice; the rest are prospects on the twelve-month clock.
  */
 export function personRetention(person: RetentionPerson, facts: PersonFacts): PersonRetention {
-	if (underLegacyRule(person, facts.since))
+	const answered = facts.replied || !!person.legacy_kept_at;
+	if (isLegacyIndonesian(person, facts.since) && !answered && !person.is_customer)
 		return {
 			rule: 'legacy',
 			until: person.legacy_notice_at ? person.legacy_notice_at + LEGACY_NOTICE_DAYS * DAY : null
 		};
 	const kept =
 		facts.attendee ||
-		facts.replied ||
+		answered ||
 		!!person.is_customer ||
 		!!person.consent_future_at ||
 		(person.origin !== 'research' && person.origin !== 'typed');
@@ -99,25 +96,11 @@ export function keptUntilPerson(person: RetentionPerson, facts: PersonFacts): nu
 	return personRetention(person, facts).until;
 }
 
-/* ───────────────────────── Rows and events ───────────────────────── */
-
-export type RetentionEvent = Pick<EventRow, 'starts_at' | 'planning_purged_at'>;
+/* ───────────────────────── Events ───────────────────────── */
 
 /** When the planning purge runs for an event: 90 days after it starts; null without a date. */
 export function planningKeptUntil(event: Pick<EventRow, 'starts_at'>): number | null {
 	return event.starts_at === null ? null : event.starts_at + PLANNING_PURGE_DAYS * DAY;
-}
-
-/**
- * When a row goes on its own (§5.4): a Found row nobody approved at the event start, a skipped
- * one with the planning purge. A live row is the person's, so it follows the person's rule.
- */
-export function keptUntilRow(
-	row: Pick<EventPersonRow, 'stage' | 'skipped_at'>,
-	event: Pick<EventRow, 'starts_at'>
-): number | null {
-	if (row.stage !== 'found' || event.starts_at === null) return null;
-	return row.skipped_at === null ? event.starts_at : planningKeptUntil(event);
 }
 
 /* ───────────────────────── The table (§5.4) ───────────────────────── */

@@ -269,7 +269,8 @@ describe('nextState', () => {
 		skipped_at: null,
 		skipped_by: null,
 		next_action_at: 30,
-		next_action_kind: 'reminder'
+		next_action_kind: 'reminder',
+		next_action_overridden: 0
 	};
 
 	it('returns to the stage the row came from', () => {

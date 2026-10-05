@@ -175,6 +175,8 @@ export const actions: Actions = {
 			return fail(400, { unblockId: id, unblockError: 'Say why it comes off the list.' });
 		if (!removeEntry(db, id, { by: locals.who, reason }))
 			return fail(400, { unblockError: 'That entry is gone.' });
+		// Whoever the entry alone locked is contactable again: their due dates come back.
+		recomputeAll(db);
 		return { unblocked: id };
 	}
 };

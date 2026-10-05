@@ -488,7 +488,7 @@
 					<span class="saved"><Check size={16} /> Deleted {form.purged}</span>
 				{/if}
 			</p>
-			{#if !event.planning_purged_at || data.retention.found}
+			{#if data.retention.found}
 				<form
 					method="POST"
 					action="?/purge"

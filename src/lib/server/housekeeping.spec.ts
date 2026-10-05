@@ -14,7 +14,7 @@ import {
 	setReply,
 	skipRow
 } from './event-people';
-import { createEvent, getEvent } from './events';
+import { createEvent, getEvent, updateEvent } from './events';
 import {
 	expirePeople,
 	expiring,
@@ -36,14 +36,9 @@ import {
 	saveBrief
 } from './planning';
 import { submitRegistration } from './registration';
-import {
-	DAY,
-	keptUntilPerson,
-	keptUntilRow,
-	personRetention,
-	planningKeptUntil
-} from './retention';
+import { keptUntilPerson, personRetention, planningKeptUntil } from './retention';
 import { consentBoxesSince } from './settings';
+import { DAY } from '../time';
 
 const START = Date.UTC(2026, 10, 1, 2);
 const MONTH = 31 * DAY;
@@ -129,6 +124,9 @@ describe('keptUntil', () => {
 		});
 		expect(keptUntilPerson({ ...legacy, legacy_kept_at: 1 }, facts)).toBeNull();
 		expect(keptUntilPerson({ ...legacy, consent_future_at: 1 }, facts)).toBeNull();
+		// A customer, or someone who replied on any event before the notice, is kept (§2.3).
+		expect(personRetention({ ...legacy, is_customer: 1 }, facts).rule).toBe('kept');
+		expect(personRetention(legacy, { ...facts, replied: true }).rule).toBe('kept');
 		// Checked in after the boxes shipped: they were offered the box, so not legacy.
 		expect(keptUntilPerson({ ...legacy, created_at: since + 1 }, facts)).toBeNull();
 		// Malaysia and unknown countries get no notice and no clock (D15).
@@ -139,13 +137,8 @@ describe('keptUntil', () => {
 		);
 	});
 
-	it('gives Found rows the event start, skipped ones ninety days after it, live rows nothing', () => {
-		const event = { starts_at: START };
-		expect(keptUntilRow({ stage: 'found', skipped_at: null }, event)).toBe(START);
-		expect(keptUntilRow({ stage: 'found', skipped_at: 1 }, event)).toBe(START + 90 * DAY);
-		expect(keptUntilRow({ stage: 'shortlisted', skipped_at: null }, event)).toBeNull();
-		expect(keptUntilRow({ stage: 'found', skipped_at: null }, { starts_at: null })).toBeNull();
-		expect(planningKeptUntil(event)).toBe(START + 90 * DAY);
+	it('purges planning data ninety days after the start; nothing without a date', () => {
+		expect(planningKeptUntil({ starts_at: START })).toBe(START + 90 * DAY);
 		expect(planningKeptUntil({ starts_at: null })).toBeNull();
 	});
 });
@@ -229,8 +222,16 @@ describe('planning jobs', () => {
 			row_count: 2
 		});
 		expect(purgePlanning(db, 'nope')).toBeNull();
-		// Already purged: the daily job has nothing left to do for this event.
-		expect(runHousekeeping(db, START + 91 * DAY).purged).toBe(0);
+		// Research re-run before the start leaves Found rows the button never saw: the deadline
+		// purge still comes for them, once.
+		addFound(db, eventId, [guest('Citra')], { source: 'research' });
+		expect(
+			retentionCounts(db, START + 91 * DAY).find((r) => r.key === 'found_unapproved')
+		).toMatchObject({ total: 1, due: 1 });
+		expect(runHousekeeping(db, START + 91 * DAY).purged).toBe(1);
+		expect(rows()).toEqual([['Rina', 'shortlisted', false]]);
+		expect(getEvent(db, eventId)!.planning_purged_at).toBe(START + 91 * DAY);
+		expect(runHousekeeping(db, START + 92 * DAY).purged).toBe(0);
 	});
 });
 
@@ -300,6 +301,25 @@ describe('prospect expiry', () => {
 		expect(expiring(db, 'prospect', since)).toEqual([]);
 		expect(runHousekeeping(db, since).prospects).toBe(0);
 		expect(names(db)).toHaveLength(6);
+	});
+
+	it('follows an event that is re-dated: a prospect on an upcoming list is not expired', () => {
+		const old = since - 14 * MONTH;
+		const prospect = person('Andi', 'typed', old);
+		const undated = newEvent(db, null);
+		addRowForPerson(db, undated, prospect, { source: 'pool' });
+		touchLastEvent(db, prospect, old);
+		expect(expiring(db, 'prospect', since)).toEqual([prospect]);
+		updateEvent(db, undated, {
+			name: 'Launch',
+			venue: '',
+			startsAt: since + MONTH,
+			timezone: 'Asia/Jakarta',
+			qrMode: 'static'
+		});
+		expect(getPerson(db, prospect)!.last_event_at).toBe(since + MONTH);
+		expect(expiring(db, 'prospect', since)).toEqual([]);
+		expect(runHousekeeping(db, since).prospects).toBe(0);
 	});
 
 	it('deletes a locked prospect but keeps the do-not-contact entries that lock them', () => {
@@ -405,6 +425,8 @@ describe('legacy notices', () => {
 		for (const { id } of [replied, cameAgain, registered])
 			expect(getPerson(db, id)!.legacy_kept_at).not.toBeNull();
 		expect(getPerson(db, silent.id)!.legacy_kept_at).toBeNull();
+		// Nothing is due for the ones who never answered: the notice was their one message (§8).
+		expect(getEventPerson(db, eventId, silent.rowId)!.next_action_at).toBeNull();
 
 		const now = noticeAt + 30 * DAY;
 		expect(expiring(db, 'legacy', now - 1)).toEqual([]);
@@ -419,6 +441,19 @@ describe('legacy notices', () => {
 		// The one told later goes on its own day.
 		expect(runHousekeeping(db, now + 20 * DAY).legacy).toBe(1);
 		expect(names(db)).not.toContain('Fresh');
+	});
+
+	it('keeps a legacy attendee who replied before the notice, and a customer, without one', () => {
+		const early = legacy('Early', '+6281234567890');
+		setReply(db, eventId, early.rowId, 'yes', since);
+		expect(getPerson(db, early.id)!.legacy_kept_at).toBe(since);
+		addTouch(db, eventId, early.rowId, { kind: 'legacy_notice', via: 'whatsapp' }, since + DAY);
+		const customer = legacy('Customer', '+6289999999999');
+		db.prepare(`UPDATE people SET is_customer = 1 WHERE id = ?`).run(customer.id);
+		addTouch(db, eventId, customer.rowId, { kind: 'legacy_notice', via: 'whatsapp' }, since + DAY);
+		expect(expiring(db, 'legacy', since + 40 * DAY)).toEqual([]);
+		expect(runHousekeeping(db, since + 40 * DAY).legacy).toBe(0);
+		expect(names(db)).toEqual(['Customer', 'Early']);
 	});
 
 	it('leaves a legacy attendee alone before any notice, and after a future-events tick', () => {

@@ -2,8 +2,9 @@ import { fail } from '@sveltejs/kit';
 import { countContacts, deleteContact, listContacts } from '$lib/server/contacts';
 import { db } from '$lib/server/db';
 import { check } from '$lib/server/do-not-contact';
-import { mergeInto, setPersonCountry } from '$lib/server/people';
+import { recomputePerson } from '$lib/server/next-action';
 import { cleanText } from '$lib/server/normalize';
+import { mergeInto, setPersonCountry } from '$lib/server/people';
 import { personRetention } from '$lib/server/retention';
 import { consentBoxesSince, isCountry } from '$lib/server/settings';
 import type { Actions, PageServerLoad } from './$types';
@@ -36,12 +37,16 @@ export const actions: Actions = {
 		return { deleted: true };
 	},
 
-	// The country drives the consent rules (§2.3); an empty value means "unknown" again.
+	// The country drives the consent rules (§2.3); an empty value means "unknown" again. It
+	// can open or close a legacy attendee's channels, so their due dates follow.
 	country: async ({ request }) => {
 		const form = await request.formData();
 		const id = cleanText(form.get('id'), 40);
 		const country = form.get('country');
-		if (id) setPersonCountry(db, id, isCountry(country) ? country : null);
+		if (id) {
+			setPersonCountry(db, id, isCountry(country) ? country : null);
+			recomputePerson(db, id);
+		}
 		return { country: id };
 	},
 
@@ -53,6 +58,8 @@ export const actions: Actions = {
 		if (!loser || !survivor) return fail(400, { mergeError: 'Pick who to keep.' });
 		if (!mergeInto(db, loser, survivor, { by: locals.who }))
 			return fail(409, { mergeError: 'Those two can’t be merged.' });
+		// The survivor may have gained a relationship or a lock; their rows follow.
+		recomputePerson(db, survivor);
 		return { merged: loser };
 	}
 };

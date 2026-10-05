@@ -1,7 +1,7 @@
-import type { MessageKind, Reply, Stage } from '../people.ts';
-import { endOfDay } from '../time.ts';
+import type { MessageKind, NextActionKind, Reply, Stage } from '../people.ts';
+import { DAY, endOfDay } from '../time.ts';
 import type { DB } from './database.ts';
-import { contactBlock, type PersonRow } from './people.ts';
+import { contactBlock, isLegacy, type PersonRow } from './people.ts';
 import {
 	chaseDefaults,
 	consentBoxesSince,
@@ -17,7 +17,6 @@ import {
  * every write to a row, its touches or its event, and the daily job runs them for everyone.
  */
 
-export type NextActionKind = 'chase' | 'reminder';
 export type NextAction = { kind: NextActionKind; at: number } | null;
 
 /** The touch kinds the rules count; `manual` and the thank-yous never advance a clock. */
@@ -36,7 +35,7 @@ export interface RuleRow {
 	next_action_kind: NextActionKind | null;
 	next_action_overridden: 0 | 1;
 	/** Every touch on the row, any order. */
-	touches: { kind: TouchKind }[];
+	touches: { kind: TouchKind; at: number }[];
 }
 
 /** The person behind the row, with the one fact the row can't tell: whether they ever attended. */
@@ -49,6 +48,8 @@ export type RulePerson = Pick<
 	| 'is_customer'
 	| 'origin'
 	| 'consent_future_at'
+	| 'legacy_notice_at'
+	| 'legacy_kept_at'
 	| 'created_at'
 	| 'country'
 	| 'phone'
@@ -56,8 +57,6 @@ export type RulePerson = Pick<
 
 export type RuleCompany = { never_invite_at: number | null } | null;
 export type RuleEvent = { starts_at: number | null; timezone: string };
-
-export const DAY = 86_400_000;
 
 const weekdayFormat = new Map<string, Intl.DateTimeFormat>();
 
@@ -71,14 +70,14 @@ function weekday(ts: number, timeZone: string): string {
 	return f.format(ts);
 }
 
-export function isWorkingDay(ts: number, timeZone: string): boolean {
+function isWorkingDay(ts: number, timeZone: string): boolean {
 	const day = weekday(ts, timeZone);
 	return day !== 'Sat' && day !== 'Sun';
 }
 
 /**
  * `n` working days (Mon–Fri in the event's zone; public holidays are not modelled) after
- * `ts`, at the same time of day. A weekend start counts from the Monday.
+ * `ts`, at the same time of day. From a weekend, Monday is the first working day counted.
  */
 export function addWorkingDays(ts: number, n: number, timeZone: string): number {
 	let t = ts;
@@ -90,15 +89,28 @@ export function addWorkingDays(ts: number, n: number, timeZone: string): number 
 }
 
 /** §2.3: a customer, an attendee or someone who ticked "future events" gets the longer cap. */
-export function hasRelationship(
+function hasRelationship(
 	person: Pick<RulePerson, 'is_customer' | 'consent_future_at' | 'attendee'>
 ): boolean {
 	return !!person.is_customer || person.attendee || !!person.consent_future_at;
 }
 
-/** The kinds that count against the cap on each path (§5.2). */
-const CHASE_TOUCHES: TouchKind[] = ['invitation', 'chase'];
-const MAYBE_TOUCHES: TouchKind[] = ['invitation', 'chase', 'followup_maybe'];
+/**
+ * The kinds that count against the cap on each path (§5.2). The legacy notice is a legacy
+ * attendee's invitation (§8), so it counts as one.
+ */
+const CHASE_TOUCHES: TouchKind[] = ['invitation', 'chase', 'legacy_notice'];
+const MAYBE_TOUCHES: TouchKind[] = ['invitation', 'chase', 'followup_maybe', 'legacy_notice'];
+
+/** The organizer's own date is a date only: the kind follows the row's answer (§4.2). */
+export function overrideKind(row: Pick<RuleRow, 'reply' | 'stage'>): NextActionKind {
+	return row.reply === 'yes' || row.stage === 'confirmed' ? 'reminder' : 'chase';
+}
+
+/** An override only holds while the organizer's date and its kind are both still stored. */
+const overrideHolds = (
+	row: Pick<RuleRow, 'next_action_overridden' | 'next_action_at' | 'next_action_kind'>
+) => !!row.next_action_overridden && row.next_action_at !== null && !!row.next_action_kind;
 
 /**
  * §5.2, line by line. `consentBoxesSince` feeds contactable(); `now` floors the reminder and
@@ -123,9 +135,12 @@ export function computeNextAction(
 		return null;
 	if (row.stage === 'found' || row.stage === 'checked_in' || row.skipped_at) return null;
 	if (row.reply === 'no') return null;
+	// A legacy attendee gets one message, the notice, and is kept only if they answer it (§8):
+	// nothing is due until they do.
+	if (isLegacy(person, consentBoxesSince) && person.legacy_notice_at && !person.legacy_kept_at)
+		return null;
 
-	if (row.next_action_overridden && row.next_action_at !== null && row.next_action_kind)
-		return { kind: row.next_action_kind, at: row.next_action_at };
+	if (overrideHolds(row)) return { kind: overrideKind(row), at: row.next_action_at! };
 
 	const cap = rules.maxTouches[hasRelationship(person) ? 'relationship' : 'none'];
 	const stop = starts_at - rules.stopDaysBeforeEvent * DAY;
@@ -138,9 +153,12 @@ export function computeNextAction(
 	if (row.stage === 'shortlisted') return null;
 	if (row.stage === 'invited')
 		return chase(CHASE_TOUCHES, row.last_contacted_at ?? row.invited_at ?? now);
-	if (row.reply === 'maybe' && !row.confirmed_at)
-		// The clock starts at the reply, and restarts at each follow-up sent since.
-		return chase(MAYBE_TOUCHES, Math.max(row.replied_at ?? 0, row.last_contacted_at ?? 0) || now);
+	if (row.reply === 'maybe' && !row.confirmed_at) {
+		// The clock starts at the reply and restarts at each counted follow-up sent since; a
+		// manual note or a thank-you doesn't move it.
+		const sent = row.touches.filter((t) => MAYBE_TOUCHES.includes(t.kind)).map((t) => t.at);
+		return chase(MAYBE_TOUCHES, Math.max(row.replied_at ?? 0, ...sent) || now);
+	}
 	if (row.reply === 'yes' || row.stage === 'confirmed') {
 		if (row.touches.some((t) => t.kind === 'reminder')) return null;
 		return { kind: 'reminder', at: Math.max(now, starts_at - rules.reminderDaysBefore * DAY) };
@@ -170,13 +188,15 @@ interface StoredRow extends Omit<RuleRow, 'touches'> {
 	is_customer: 0 | 1 | null;
 	origin: PersonRow['origin'] | null;
 	consent_future_at: number | null;
+	legacy_notice_at: number | null;
+	legacy_kept_at: number | null;
 	person_created_at: number | null;
 	country: PersonRow['country'];
 	phone: string | null;
 	attendee: 0 | 1;
 	never_invite_at: number | null;
-	/** JSON array of touch kinds. */
-	touch_kinds: string;
+	/** JSON array of {kind, at}. */
+	touches_json: string;
 }
 
 interface StoredEvent extends RuleEvent, RulesEvent {
@@ -187,10 +207,12 @@ const ROW_SELECT = `SELECT ep.id, ep.event_id, ep.person_id, ep.stage, ep.reply,
 	ep.invited_at, ep.last_contacted_at, ep.confirmed_at, ep.skipped_at, ep.next_action_at,
 	ep.next_action_kind, ep.next_action_overridden,
 	p.locked_at, p.d365_suppressed, p.d365_no_email, p.d365_no_phone, p.is_customer, p.origin,
-	p.consent_future_at, p.created_at AS person_created_at, p.country, p.phone,
+	p.consent_future_at, p.legacy_notice_at, p.legacy_kept_at, p.created_at AS person_created_at,
+	p.country, p.phone,
 	EXISTS (SELECT 1 FROM checkins c WHERE c.person_id = p.id) AS attendee,
 	co.never_invite_at,
-	(SELECT json_group_array(t.kind) FROM touches t WHERE t.event_person_id = ep.id) AS touch_kinds
+	(SELECT json_group_array(json_object('kind', t.kind, 'at', t.at)) FROM touches t
+		WHERE t.event_person_id = ep.id) AS touches_json
 	FROM event_people ep
 		LEFT JOIN people p ON p.id = ep.person_id
 		LEFT JOIN companies co ON co.id = COALESCE(p.company_id, ep.company_id)`;
@@ -207,6 +229,8 @@ function personOf(r: StoredRow): RulePerson | null {
 		is_customer: r.is_customer ?? 0,
 		origin: r.origin,
 		consent_future_at: r.consent_future_at,
+		legacy_notice_at: r.legacy_notice_at,
+		legacy_kept_at: r.legacy_kept_at,
 		created_at: r.person_created_at ?? 0,
 		country: r.country,
 		phone: r.phone,
@@ -226,11 +250,11 @@ function storeRow(
 	since: number | null,
 	now: number
 ): NextAction {
-	const touches = (JSON.parse(r.touch_kinds) as TouchKind[]).map((kind) => ({ kind }));
+	const touches = JSON.parse(r.touches_json) as RuleRow['touches'];
 	const next = computeNextAction({ ...r, touches }, personOf(r), r, event, rules, now, since);
-	// An override only survives while the rules still have something to say (a no, a lock or
-	// a check-in ends it); otherwise the stored flag keeps the date the organizer picked.
-	const overridden = next && r.next_action_overridden ? 1 : 0;
+	// The flag survives only when the organizer's date was actually kept: a stale flag beside a
+	// nulled date (a lock since lifted) must not turn the rules' own answer into an override.
+	const overridden = next && overrideHolds(r) ? 1 : 0;
 	const unchanged =
 		(next?.at ?? null) === r.next_action_at &&
 		(next?.kind ?? null) === r.next_action_kind &&
@@ -260,6 +284,17 @@ export function recomputeRow(db: DB, rowId: number, now = Date.now()): NextActio
 		StoredEvent | undefined;
 	if (!event) return null;
 	return storeRow(db, r, event, rulesFor(db, event), consentBoxesSince(db), now);
+}
+
+/**
+ * After a write to the person that every row of theirs reads (a lock lifted, a country, a
+ * consent, a check-in elsewhere, a merge): each of their rows follows.
+ */
+export function recomputePerson(db: DB, personId: string, now = Date.now()) {
+	const rows = db.prepare(`SELECT id FROM event_people WHERE person_id = ?`).all(personId) as {
+		id: number;
+	}[];
+	for (const { id } of rows) recomputeRow(db, id, now);
 }
 
 /** After a write to the event (date, rules) or to something many rows share: every row. */
@@ -306,25 +341,25 @@ export function setNextActionOverride(
 ): NextAction {
 	return db.transaction(() => {
 		const r = db
-			.prepare(
-				`SELECT next_action_kind, reply, stage FROM event_people WHERE id = ? AND event_id = ?`
-			)
-			.get(rowId, eventId) as Pick<StoredRow, 'next_action_kind' | 'reply' | 'stage'> | undefined;
+			.prepare(`SELECT reply, stage FROM event_people WHERE id = ? AND event_id = ?`)
+			.get(rowId, eventId) as Pick<StoredRow, 'reply' | 'stage'> | undefined;
 		if (!r) return null;
-		if (at === null) {
-			db.prepare(UPDATE).run({ id: rowId, at: null, kind: null, overridden: 0 });
-		} else {
-			// A date without a computed kind takes the one the row's answer calls for.
-			const kind: NextActionKind =
-				r.next_action_kind ?? (r.reply === 'yes' || r.stage === 'confirmed' ? 'reminder' : 'chase');
-			db.prepare(UPDATE).run({ id: rowId, at, kind, overridden: 1 });
-		}
+		if (at === null) db.prepare(UPDATE).run({ id: rowId, at: null, kind: null, overridden: 0 });
+		else db.prepare(UPDATE).run({ id: rowId, at, kind: overrideKind(r), overridden: 1 });
 		return recomputeRow(db, rowId, now);
 	})();
 }
 
-/** Rows due by the end of today in the event's zone (D20): the card's "Due today k". */
-export function countDue(db: DB, event: { id: string; timezone: string }, now = Date.now()) {
+/**
+ * Rows due by the end of today in the event's zone (D20): the card's "Due today k". Reads
+ * what the rules stored, so an event that has begun since the last pass counts nothing.
+ */
+export function countDue(
+	db: DB,
+	event: { id: string; timezone: string; starts_at: number | null },
+	now = Date.now()
+) {
+	if (event.starts_at === null || now >= event.starts_at) return 0;
 	return (
 		db
 			.prepare(

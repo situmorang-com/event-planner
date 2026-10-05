@@ -30,6 +30,7 @@ const guest = (name: string, extra: Partial<GuestInput> = {}): GuestInput => ({
 });
 
 const START = Date.UTC(2026, 10, 1, 2);
+const DAY = 86_400_000;
 const ENV = {
 	org: 'SRKK',
 	privacyUrl: 'https://srkk.test/privacy',
@@ -165,6 +166,23 @@ describe('peopleView', () => {
 		void rina;
 	});
 
+	it('suggests the thank-you for a fresh yes and the reminder only once it is due (§7)', () => {
+		addShortlisted(db, eventId, [guest('Rina', { phone: '+6281234567890' })], { source: 'typed' });
+		const [row] = listEventPeople(db, eventId);
+		addTouch(db, eventId, row.id, { kind: 'invitation', via: 'whatsapp' }, START - 14 * DAY);
+		setReply(db, eventId, row.id, 'yes', START - 14 * DAY);
+		const twoWeeksOut = view(START - 14 * DAY).rows[0];
+		expect(twoWeeksOut).toMatchObject({
+			next_action_kind: 'reminder',
+			suggested_kind: 'thanks_yes'
+		});
+		expect(twoWeeksOut.message?.kind).toBe('thanks_yes');
+		// Two days before: the rules' reminder is due, so it is what the buttons open.
+		expect(view(START - 2 * DAY).rows[0].suggested_kind).toBe('reminder');
+		confirmRow(db, eventId, row.id, 'registration', START - 14 * DAY);
+		expect(view(START - 14 * DAY).rows[0].suggested_kind).toBe('reminder');
+	});
+
 	it('shows a legacy Malaysian attendee as not contactable until they register', () => {
 		// Legacy means created before the consent boxes shipped (the version-4 stamp) without a tick.
 		const since = consentBoxesSince(db)!;
@@ -226,6 +244,8 @@ describe('peopleView', () => {
 		expect(row.stage).toBe('invited');
 		expect(row.legacy).toEqual({ notice_at: 3_000, kept_at: null });
 		expect(row.suggested_kind).toBe('chase');
+		// The notice was their one message: nothing comes due until they answer (§8).
+		expect(row.next_action_at).toBeNull();
 		expect(markers(row, day).map((m) => m.label)).toEqual([
 			'Legacy: notice sent day 3000, kept if they reply'
 		]);

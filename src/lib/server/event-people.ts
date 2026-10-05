@@ -3,7 +3,7 @@ import { CHIPS, chipCounts, matchesChip, type Chip, type ChipRow, type Source } 
 import { logActivity } from './activity-log.ts';
 import { ensureCompany, findCompany, isBlocked, noteCompanyOwner } from './companies.ts';
 import type { DB } from './database.ts';
-import { recomputeRow } from './next-action.ts';
+import { recomputePerson, recomputeRow } from './next-action.ts';
 import { addEntry, check as doNotContact, lockPerson, type DncSource } from './do-not-contact.ts';
 import {
 	createPerson,
@@ -767,8 +767,9 @@ export function addTouch(
 		const { lastInsertRowid } = db
 			.prepare(`INSERT INTO touches (event_person_id, kind, via, at, by) VALUES (?, ?, ?, ?, ?)`)
 			.run(id, kind, via, now, by);
-		applyChange(db, id, { type: 'touch', touch: { kind, via, at: now } }, now);
+		// The notice stamp first: the recompute inside applyChange reads it (§8).
 		if (kind === 'legacy_notice' && row.person_id) syncLegacyNotice(db, row.person_id, now);
+		applyChange(db, id, { type: 'touch', touch: { kind, via, at: now } }, now);
 		return Number(lastInsertRowid);
 	})();
 }
@@ -820,9 +821,9 @@ export function clearLatestTouch(db: DB, eventId: string, id: number, now = Date
 			.get(id) as { id: number; kind: TouchKind; person_id: string | null } | undefined;
 		if (!latest) return false;
 		db.prepare(`DELETE FROM touches WHERE id = ?`).run(latest.id);
-		applyChange(db, id, { type: 'recount', touches: listTouches(db, id) }, now);
 		if (latest.kind === 'legacy_notice' && latest.person_id)
 			syncLegacyNotice(db, latest.person_id, now);
+		applyChange(db, id, { type: 'recount', touches: listTouches(db, id) }, now);
 		return true;
 	})();
 }
@@ -916,6 +917,8 @@ export function linkCheckin(
 				`UPDATE event_people SET consent_share_at = COALESCE(consent_share_at, ?) WHERE id = ?`
 			).run(consentShareAt, row.id);
 		touchLastEvent(db, personId, now);
+		// An attendee now (§2.3): their rows on other events get the relationship cap.
+		recomputePerson(db, personId, now);
 		return row.id;
 	})();
 }

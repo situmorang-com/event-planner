@@ -12,6 +12,7 @@ import {
 	type EventPersonRow
 } from './event-people.ts';
 import { getEvent, type EventRow } from './events.ts';
+import { recomputePerson } from './next-action.ts';
 import {
 	createPerson,
 	detailsAgree,
@@ -131,11 +132,14 @@ export function submitRegistration(
 			{ origin: 'self_registered' },
 			now
 		);
-		answer(db, row.id, input.rsvp, 'registration', now);
+		// Consents first: the answer's next action is computed with the relationship they give.
 		recordConsents(db, row.id, personId, event, input, now);
+		answer(db, row.id, input.rsvp, 'registration', now);
 		if (input.note) appendNote(db, row.id, input.note, now);
 		if (twin) flagReview(db, row.id, now);
 		touchLastEvent(db, personId, now);
+		// The person changed (consent, details), so their rows on other events follow too.
+		recomputePerson(db, personId, now);
 		return { status: 'saved', rowId: row.id, personId };
 	})();
 }
@@ -181,9 +185,10 @@ export function registerGeneric(
 			flagReview(db, rowId, now);
 			if (input.note) appendNote(db, rowId, input.note, now);
 		}
-		answer(db, rowId, 'yes', 'registration', now);
 		recordConsents(db, rowId, personId, event, input, now);
+		answer(db, rowId, 'yes', 'registration', now);
 		touchLastEvent(db, personId, now);
+		recomputePerson(db, personId, now);
 		return { status: 'saved', rowId, personId };
 	})();
 }
@@ -224,7 +229,7 @@ export function notMe(
 		// A live row has no "skip" transition (§5.3); the person said so themselves, so it is set here.
 		db.prepare(
 			`UPDATE event_people SET skipped_at = ?, skipped_by = 'not me', next_action_at = NULL,
-				next_action_kind = NULL, updated_at = ? WHERE id = ?`
+				next_action_kind = NULL, next_action_overridden = 0, updated_at = ? WHERE id = ?`
 		).run(now, now, row.id);
 		logActivity(
 			db,

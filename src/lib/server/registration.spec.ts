@@ -167,6 +167,25 @@ describe('registration', () => {
 			});
 		});
 
+		it('counts the future-events tick before the answer: a maybe gets the relationship cap', () => {
+			// Invitation and one chase: the cap for a stranger (2) is reached, for a relationship (3) not.
+			const day = 86_400_000;
+			addTouch(db, eventId, row().id, { kind: 'invitation', via: 'whatsapp' }, START - 9 * day);
+			addTouch(db, eventId, row().id, { kind: 'chase', via: 'whatsapp' }, START - 8 * day);
+			// Tuesday 6 Oct, 09:00 Jakarta: three working days land before the stop window.
+			submitRegistration(
+				db,
+				ctx(),
+				answer({ rsvp: 'maybe', consentFuture: true }),
+				START - 7 * day
+			);
+			expect(row()).toMatchObject({
+				reply: 'maybe',
+				next_action_kind: 'chase',
+				next_action_at: START - 4 * day
+			});
+		});
+
 		it('records maybe and no as replies, and a no takes a confirmation back', () => {
 			submitRegistration(db, ctx(), answer({ rsvp: 'maybe' }), NOW);
 			expect(row()).toMatchObject({ stage: 'replied', reply: 'maybe', confirmed_at: null });

@@ -1,6 +1,9 @@
 // Every timestamp is formatted in the event's own timezone so the server render and the
 // browser render agree (and a venue laptop set to the wrong zone can't confuse anyone).
 
+/** One day in milliseconds: what the retention and chase clocks count in. */
+export const DAY = 86_400_000;
+
 // Newer ICU puts a narrow no-break space before AM/PM; normalize so server and client match.
 const tidy = (s: string) => s.replace(/[\u202f\u00a0]/g, ' ');
 

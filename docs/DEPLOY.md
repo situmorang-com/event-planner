@@ -132,7 +132,11 @@ someone has already edited under Settings › Message defaults is left as it is.
 version 4** stamps `consent_boxes_since` in `settings` the moment the three consent boxes ship
 (§4.7 of the design): a past attendee created before that stamp who never ticked "future
 events" is treated as legacy. Rolling back past version 4 is safe; rolling forward again does
-not move the stamp. Guest-list rows whose email was shared with a clearly different name in
+not move the stamp. **Schema version 5** fills `people.country` for past attendees who checked
+in between the version-2 migration and this deploy without a phone that says where they are,
+from the time zone of the event they walked into (§2.3), so the legacy rules know who is
+Indonesian; from this version a check-in stores it as it creates the person. Rolling back
+past version 5 is safe. Guest-list rows whose email was shared with a clearly different name in
 the pool become their own person, marked for review on the People tab, so nothing is folded
 together silently.
 

@@ -1,10 +1,10 @@
+import { DAY } from '../time.ts';
 import { logActivity } from './activity-log.ts';
 import type { DB } from './database.ts';
 import { getEvent } from './events.ts';
 import { runEventStart } from './jobs.ts';
 import { recomputeAll } from './next-action.ts';
 import {
-	DAY,
 	personRetention,
 	PLANNING_PURGE_DAYS,
 	RETENTION_RULES,
@@ -22,7 +22,7 @@ import { consentBoxesSince, getSetting, setSetting } from './settings.ts';
  * changes nothing, and each deletion is logged with ids and counts only (§8).
  */
 
-export interface HousekeepingReport {
+interface HousekeepingReport {
 	/** Events whose unapproved Found rows were just deleted. */
 	started: number;
 	/** Events whose planning data was just purged. */
@@ -45,11 +45,8 @@ export function runHousekeeping(db: DB, now = Date.now()): HousekeepingReport {
 		for (const { id } of starting) if (runEventStart(db, id, now) !== null) started++;
 
 		const purging = db
-			.prepare(
-				`SELECT id FROM events WHERE starts_at IS NOT NULL AND starts_at + ? <= ?
-				AND planning_purged_at IS NULL`
-			)
-			.all(PLANNING_PURGE_DAYS * DAY, now) as { id: string }[];
+			.prepare(`SELECT e.id FROM events e WHERE ${PURGE_DUE}`)
+			.all({ purgeAfter: PLANNING_PURGE_DAYS * DAY, now }) as { id: string }[];
 		let purged = 0;
 		for (const { id } of purging) if (purgePlanning(db, id, {}, now) !== null) purged++;
 
@@ -69,6 +66,14 @@ export function housekeepingRanAt(db: DB): number | null {
 }
 
 /* ───────────────────────── Planning purge (D10) ───────────────────────── */
+
+/**
+ * Events (aliased `e`) whose planning purge is due: ninety days after the start, once. The
+ * button may have run earlier, before research was re-run; the deadline purge still comes,
+ * so Found rows added since go with it. Takes @purgeAfter and @now.
+ */
+const PURGE_DUE = `e.starts_at IS NOT NULL AND e.starts_at + @purgeAfter <= @now
+	AND (e.planning_purged_at IS NULL OR e.planning_purged_at < e.starts_at + @purgeAfter)`;
 
 /**
  * Deletes what research left behind: every remaining Found row, skipped ones included, and
@@ -174,8 +179,9 @@ export interface RetentionCount extends RetentionRule {
 
 /** The §5.4 table with counts of what is held and what the next run removes. */
 export function retentionCounts(db: DB, now = Date.now()): RetentionCount[] {
-	const count = (sql: string, ...params: unknown[]) =>
-		(db.prepare(`SELECT COUNT(*) AS n ${sql}`).get(...params) as { n: number }).n;
+	const count = (sql: string, params: Record<string, unknown> = {}) =>
+		(db.prepare(`SELECT COUNT(*) AS n ${sql}`).get(params) as { n: number }).n;
+	const clocks = { purgeAfter: PLANNING_PURGE_DAYS * DAY, now };
 	const people = retentionOfEveryone(db);
 	const under = (rule: PersonRule) => people.filter((p) => p.rule === rule);
 	const dueUnder = (rule: PersonRule) =>
@@ -184,21 +190,20 @@ export function retentionCounts(db: DB, now = Date.now()): RetentionCount[] {
 	const counts: Record<RetentionRule['key'], { total: number | null; due: number | null }> = {
 		found_unapproved: {
 			total: count(`FROM event_people WHERE stage = 'found' AND skipped_at IS NULL`),
+			// The start job takes them, or the purge where a row was added after the start.
 			due: count(
 				`FROM event_people ep JOIN events e ON e.id = ep.event_id
 				WHERE ep.stage = 'found' AND ep.skipped_at IS NULL AND e.starts_at IS NOT NULL
-					AND e.starts_at <= ? AND e.started_job_at IS NULL`,
-				now
+					AND ((e.starts_at <= @now AND e.started_job_at IS NULL) OR (${PURGE_DUE}))`,
+				clocks
 			)
 		},
 		found_skipped: {
 			total: count(`FROM event_people WHERE stage = 'found' AND skipped_at IS NOT NULL`),
 			due: count(
 				`FROM event_people ep JOIN events e ON e.id = ep.event_id
-				WHERE ep.stage = 'found' AND ep.skipped_at IS NOT NULL AND e.starts_at IS NOT NULL
-					AND e.starts_at + ? <= ? AND e.planning_purged_at IS NULL`,
-				PLANNING_PURGE_DAYS * DAY,
-				now
+				WHERE ep.stage = 'found' AND ep.skipped_at IS NOT NULL AND (${PURGE_DUE})`,
+				clocks
 			)
 		},
 		prospect: { total: under('prospect').length, due: dueUnder('prospect') },

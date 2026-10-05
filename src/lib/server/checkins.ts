@@ -1,6 +1,8 @@
 import type { DB } from './database.ts';
 import { linkCheckin, unlinkCheckin } from './event-people.ts';
 import {
+	countryFromPhone,
+	countryFromTimezone,
 	createPerson,
 	findPerson,
 	setConsentFuture,
@@ -64,7 +66,12 @@ export function checkIn(
 			personId = hit.id;
 			updatePerson(db, personId, input, { origin }, now);
 		} else {
-			personId = createPerson(db, input, { origin, by: meta.by }, now);
+			// Country per §2.3: the phone's calling code, else the event they walked into. Stored
+			// now, so the consent rules (D15) never see a check-in without one.
+			const event = db.prepare(`SELECT timezone FROM events WHERE id = ?`).get(eventId) as
+				{ timezone: string } | undefined;
+			const country = countryFromPhone(input.phone) ?? countryFromTimezone(event?.timezone);
+			personId = createPerson(db, input, { origin, by: meta.by, country }, now);
 		}
 
 		const position = db.prepare(

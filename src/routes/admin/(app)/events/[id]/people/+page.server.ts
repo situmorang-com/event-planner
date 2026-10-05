@@ -40,7 +40,7 @@ import { parseGuestList } from '$lib/server/guest-list';
 import { eventPageLoad } from '$lib/server/jobs';
 import { countryResolver } from '$lib/server/messaging';
 import { messagingEnv } from '$lib/server/messaging-env';
-import { recomputeEvent, setNextActionOverride } from '$lib/server/next-action';
+import { recomputeEvent, recomputePerson, setNextActionOverride } from '$lib/server/next-action';
 import { genericRegistrationUrl } from '$lib/server/registration-token';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from '$lib/server/normalize';
 import { getPeople, mergeInto } from '$lib/server/people';
@@ -405,6 +405,8 @@ export const actions: Actions = {
 		if (!row?.person_id || !survivor) return fail(400, { mergeError: 'Pick who to keep.' });
 		if (!mergeInto(db, row.person_id, survivor, { by: locals.who }))
 			return fail(409, { mergeError: 'Those two can’t be merged.' });
+		// The survivor may have gained a relationship or a lock; their rows follow.
+		recomputePerson(db, survivor);
 		return { merged: id };
 	}
 };

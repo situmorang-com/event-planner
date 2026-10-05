@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { companyKey, nameKey } from '../invitations.ts';
+// The stage order comes from the shared module, not stages.ts, which would close a cycle
+// through next-action.ts (stages → next-action → people → stages).
+import { stageRank, type Stage } from '../people.ts';
 import { logActivity } from './activity-log.ts';
 import { ensureCompany } from './companies.ts';
 import type { DB } from './database.ts';
 import type { Country } from './settings.ts';
-import { stageRank, type Stage } from './stages.ts';
 
 export type Origin = 'self_registered' | 'checkin' | 'd365' | 'typed' | 'research';
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { backfillCheckinCountry } from './backfill-country';
 import { checkIn, listAttendees, type ContactInput } from './checkins';
 import { listContacts } from './contacts';
 import { createDb, type DB } from './database';
@@ -140,6 +141,24 @@ describe('checkIn', () => {
 			consent_share_at: null
 		});
 		expect(getPerson(db, staff.personId)!.consent_future_at).toBeNull();
+	});
+
+	it('stores the country from the phone, else from the event walked into (§2.3)', () => {
+		const byPhone = checkIn(db, eventId, person({ phone: '+60123456789' }), meta);
+		expect(getPerson(db, byPhone.personId)!.country).toBe('MY');
+		const byEvent = checkIn(
+			db,
+			eventId,
+			person({ name: 'Dewi', email: 'dewi@example.com', phone: null }),
+			meta
+		);
+		expect(getPerson(db, byEvent.personId)!.country).toBe('ID');
+
+		// Older check-ins stored none; the version-5 step fills them from their last event.
+		db.prepare(`UPDATE people SET country = NULL`).run();
+		backfillCheckinCountry(db);
+		expect(getPerson(db, byPhone.personId)!.country).toBe('MY');
+		expect(getPerson(db, byEvent.personId)!.country).toBe('ID');
 	});
 
 	it('marks people who attended an earlier event as returning', () => {

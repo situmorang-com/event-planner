@@ -297,7 +297,9 @@ existed never saw the "future events" box. Their row offers a _Legacy notice_ as
 message: it says their details come from a past event and invites them to this one, with the
 opt-out line. Sending it starts the 30-day clock shown on the row ("Legacy: notice sent 3 Oct,
 kept if they reply"); a reply, a registration or a check-in keeps them, and silence deletes
-them. The same attendee in Malaysia is _not contactable_ until they register themselves.
+them. It is their one message: no chase comes due until they answer. A legacy attendee who is
+a customer, or who already replied on some event, is kept like anyone else and needs no
+notice. The same attendee in Malaysia is _not contactable_ until they register themselves.
 
 ## Project layout
 

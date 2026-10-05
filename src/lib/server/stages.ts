@@ -8,7 +8,7 @@ import { recomputeRow } from './next-action.ts';
  * the transition table lives in one function and can be tested without a database.
  */
 
-export type { Reply, Stage, Via } from '../people.ts';
+export { STAGES, stageRank, type Reply, type Stage, type Via } from '../people.ts';
 export type TouchKind =
 	| 'invitation'
 	| 'chase'
@@ -19,16 +19,6 @@ export type TouchKind =
 	| 'legacy_notice'
 	| 'manual';
 export type ConfirmedVia = 'registration' | 'reconfirm';
-
-export const STAGES: Stage[] = [
-	'found',
-	'shortlisted',
-	'invited',
-	'replied',
-	'confirmed',
-	'checked_in'
-];
-export const stageRank = (stage: Stage) => STAGES.indexOf(stage);
 
 /** The columns a transition may touch. */
 export interface StageState {
@@ -46,6 +36,7 @@ export interface StageState {
 	skipped_by: string | null;
 	next_action_at: number | null;
 	next_action_kind: 'chase' | 'reminder' | null;
+	next_action_overridden: 0 | 1;
 }
 
 export type Touch = { kind: TouchKind; via: Via; at: number };
@@ -82,6 +73,21 @@ export function suggestedTouchKind(row: Pick<StageState, 'stage' | 'reply'>): Me
 }
 
 const none = { confirmed_at: null, confirmed_via: null } as const;
+/** Nothing due and no organizer's date left to keep (§5.3). */
+const nothingDue = {
+	next_action_at: null,
+	next_action_kind: null,
+	next_action_overridden: 0
+} as const;
+
+/** The touches that do what a due date asked for; a note or a thank-you fulfils nothing. */
+const ACTION_TOUCHES: TouchKind[] = [
+	'invitation',
+	'chase',
+	'reminder',
+	'followup_maybe',
+	'legacy_notice'
+];
 
 /** What the row becomes; null when the change doesn't apply at its current stage. */
 export function nextState(
@@ -106,15 +112,24 @@ export function nextState(
 			if (stage === 'found') return null;
 			const { kind, via, at } = change.touch;
 			const last_contacted_at = Math.max(row.last_contacted_at ?? 0, at);
+			// A message sent on or after the organizer's own date is what that date asked for:
+			// the override is done and the rules take over from this touch.
+			const done =
+				!!row.next_action_overridden &&
+				row.next_action_at !== null &&
+				at >= row.next_action_at &&
+				ACTION_TOUCHES.includes(kind);
+			const override = done ? { next_action_overridden: 0 as const } : {};
 			// Anything sent to someone not yet invited is the invitation, whatever it was called.
 			if (stage === 'shortlisted' || kind === 'invitation')
 				return {
 					stage: stage === 'shortlisted' ? 'invited' : stage,
 					invited_at: row.invited_at ?? at,
 					invited_via: row.invited_via ?? via,
-					last_contacted_at
+					last_contacted_at,
+					...override
 				};
-			return { last_contacted_at };
+			return { last_contacted_at, ...override };
 		}
 
 		case 'reply': {
@@ -172,8 +187,7 @@ export function nextState(
 				consent_event_at: change.consentAt,
 				skipped_at: null,
 				skipped_by: null,
-				next_action_at: null,
-				next_action_kind: null
+				...nothingDue
 			};
 
 		case 'checkout': {
@@ -212,7 +226,7 @@ export function nextState(
 		}
 
 		case 'lock':
-			return { next_action_at: null, next_action_kind: null };
+			return { ...nothingDue };
 	}
 }
 
@@ -230,7 +244,8 @@ const COLUMNS: (keyof StageState)[] = [
 	'skipped_at',
 	'skipped_by',
 	'next_action_at',
-	'next_action_kind'
+	'next_action_kind',
+	'next_action_overridden'
 ];
 
 export function getStageState(db: DB, rowId: number): (StageState & { id: number }) | undefined {
@@ -272,14 +287,15 @@ const answers = (change: StageChange) =>
 	(change.type === 'reply' && change.reply !== 'pending');
 
 /**
- * A legacy attendee who answers after the notice is kept (§5.4, D15). Stamped here, on the
- * one path every answer takes, so the staff reply button, the registration pages and the
- * check-in page can't disagree about what counts.
+ * A legacy attendee who answers is kept (§5.4, D15), whether the notice went out before or
+ * after: an answer is an answer. Stamped here, on the one path every answer takes, so the
+ * staff reply button, the registration pages and the check-in page can't disagree about
+ * what counts. Only past attendees can be legacy, so only they are stamped.
  */
 function keepLegacy(db: DB, rowId: number, now: number) {
 	db.prepare(
 		`UPDATE people SET legacy_kept_at = @now, updated_at = @now
 		WHERE id = (SELECT person_id FROM event_people WHERE id = @id)
-			AND legacy_notice_at IS NOT NULL AND legacy_kept_at IS NULL`
+			AND origin = 'checkin' AND legacy_kept_at IS NULL`
 	).run({ id: rowId, now });
 }

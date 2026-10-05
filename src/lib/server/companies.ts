@@ -133,7 +133,8 @@ export function blockCompany(
 			updated_at = ? WHERE id = ?`
 	).run(now, reason, by, now, id);
 	db.prepare(
-		`UPDATE event_people SET next_action_at = NULL, next_action_kind = NULL, updated_at = ?
+		`UPDATE event_people SET next_action_at = NULL, next_action_kind = NULL,
+			next_action_overridden = 0, updated_at = ?
 		WHERE company_id = ? OR person_id IN (SELECT id FROM people WHERE company_id = ?)`
 	).run(now, id, id);
 }

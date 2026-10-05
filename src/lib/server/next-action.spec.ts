@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fromLocalInput } from '../time';
 import { createDb, type DB } from './database';
+import { blockByHand, removeEntry } from './do-not-contact';
 import {
 	addShortlisted,
 	addTouch,
@@ -43,12 +44,17 @@ const person = (extra: Partial<RulePerson> = {}): RulePerson => ({
 	is_customer: 0,
 	origin: 'typed',
 	consent_future_at: null,
+	legacy_notice_at: null,
+	legacy_kept_at: null,
 	created_at: at('2026-09-01T09:00'),
 	country: 'ID',
 	phone: '+628123456789',
 	attendee: false,
 	...extra
 });
+
+/** A touch of `kind`, sent at `when` (the invitation's time by default). */
+const sent = (kind: RuleRow['touches'][number]['kind'], when = NOW) => ({ kind, at: when });
 
 const invited = (extra: Partial<RuleRow> = {}): RuleRow => ({
 	stage: 'invited',
@@ -61,7 +67,7 @@ const invited = (extra: Partial<RuleRow> = {}): RuleRow => ({
 	next_action_at: null,
 	next_action_kind: null,
 	next_action_overridden: 0,
-	touches: [{ kind: 'invitation' }],
+	touches: [sent('invitation')],
 	...extra
 });
 
@@ -97,20 +103,20 @@ describe('computeNextAction', () => {
 			chaseOn('2026-10-06T10:00')
 		],
 		[
-			'invited on a Saturday: counted from the Monday',
+			'invited on a Saturday: Monday is the first working day',
 			() => compute(invited({ last_contacted_at: at('2026-10-03T10:00') })),
 			chaseOn('2026-10-07T10:00')
 		],
 		[
 			'cap for someone new: two messages, then nothing',
-			() => compute(invited({ touches: [{ kind: 'invitation' }, { kind: 'chase' }] })),
+			() => compute(invited({ touches: [sent('invitation'), sent('chase')] })),
 			null
 		],
 		[
 			'cap for a customer: three',
 			() =>
 				compute(
-					invited({ touches: [{ kind: 'invitation' }, { kind: 'chase' }] }),
+					invited({ touches: [sent('invitation'), sent('chase')] }),
 					person({ is_customer: 1 })
 				),
 			chaseOn('2026-10-06T10:00')
@@ -119,7 +125,7 @@ describe('computeNextAction', () => {
 			'an attendee has a relationship',
 			() =>
 				compute(
-					invited({ touches: [{ kind: 'invitation' }, { kind: 'chase' }] }),
+					invited({ touches: [sent('invitation'), sent('chase')] }),
 					person({ attendee: true })
 				),
 			chaseOn('2026-10-06T10:00')
@@ -128,17 +134,14 @@ describe('computeNextAction', () => {
 			'so does someone who ticked "future events"',
 			() =>
 				compute(
-					invited({ touches: [{ kind: 'invitation' }, { kind: 'chase' }] }),
+					invited({ touches: [sent('invitation'), sent('chase')] }),
 					person({ consent_future_at: NOW })
 				),
 			chaseOn('2026-10-06T10:00')
 		],
 		[
 			'manual and thank-you touches never count',
-			() =>
-				compute(
-					invited({ touches: [{ kind: 'invitation' }, { kind: 'manual' }, { kind: 'thanks_yes' }] })
-				),
+			() => compute(invited({ touches: [sent('invitation'), sent('manual'), sent('thanks_yes')] })),
 			chaseOn('2026-10-06T10:00')
 		],
 		[
@@ -198,7 +201,7 @@ describe('computeNextAction', () => {
 						stage: 'replied',
 						reply: 'yes',
 						replied_at: NOW,
-						touches: [{ kind: 'invitation' }, { kind: 'reminder' }]
+						touches: [sent('invitation'), sent('reminder')]
 					})
 				),
 			null
@@ -225,11 +228,25 @@ describe('computeNextAction', () => {
 						reply: 'maybe',
 						replied_at: at('2026-10-02T10:00'),
 						last_contacted_at: at('2026-10-05T10:00'),
-						touches: [{ kind: 'invitation' }, { kind: 'followup_maybe' }]
+						touches: [sent('invitation'), sent('followup_maybe', at('2026-10-05T10:00'))]
 					}),
 					person({ is_customer: 1 })
 				),
 			chaseOn('2026-10-08T10:00')
+		],
+		[
+			'maybe: a manual note or a thank-you does not restart the clock',
+			() =>
+				compute(
+					invited({
+						stage: 'replied',
+						reply: 'maybe',
+						replied_at: at('2026-10-02T10:00'),
+						last_contacted_at: at('2026-10-06T10:00'),
+						touches: [sent('invitation'), sent('manual', at('2026-10-06T10:00'))]
+					})
+				),
+			chaseOn('2026-10-07T10:00')
 		],
 		[
 			'maybe: the cap counts invitations, chases and follow-ups',
@@ -239,7 +256,7 @@ describe('computeNextAction', () => {
 						stage: 'replied',
 						reply: 'maybe',
 						replied_at: at('2026-10-02T10:00'),
-						touches: [{ kind: 'invitation' }, { kind: 'followup_maybe' }]
+						touches: [sent('invitation'), sent('followup_maybe')]
 					})
 				),
 			null
@@ -255,6 +272,26 @@ describe('computeNextAction', () => {
 					})
 				),
 			chaseOn('2026-10-09T09:00')
+		],
+		[
+			'an override is a date: after a yes it is the reminder, not the chase it was set as',
+			() =>
+				compute(
+					invited({
+						stage: 'replied',
+						reply: 'yes',
+						replied_at: NOW,
+						next_action_overridden: 1,
+						next_action_kind: 'chase',
+						next_action_at: at('2026-10-09T09:00')
+					})
+				),
+			{ kind: 'reminder', at: at('2026-10-09T09:00') }
+		],
+		[
+			'a stale flag beside no date is no override',
+			() => compute(invited({ next_action_overridden: 1 })),
+			chaseOn('2026-10-06T10:00')
 		],
 		[
 			'but not past a no',
@@ -296,13 +333,48 @@ describe('computeNextAction', () => {
 			null
 		],
 		[
-			'a legacy Indonesian attendee is still chased',
+			'a legacy Indonesian attendee invited the ordinary way is chased like anyone',
 			() =>
 				compute(
 					invited(),
 					person({ origin: 'checkin', country: 'ID', created_at: at('2026-09-01T09:00') })
 				),
 			chaseOn('2026-10-06T10:00')
+		],
+		[
+			'after the legacy notice: nothing until they answer it (§8)',
+			() =>
+				compute(
+					invited({ touches: [sent('legacy_notice')] }),
+					person({
+						origin: 'checkin',
+						country: 'ID',
+						created_at: at('2026-09-01T09:00'),
+						legacy_notice_at: NOW
+					})
+				),
+			null
+		],
+		[
+			'a legacy attendee who answered maybe: the notice was the invitation, so it counts',
+			() =>
+				compute(
+					invited({
+						stage: 'replied',
+						reply: 'maybe',
+						replied_at: at('2026-10-02T10:00'),
+						touches: [sent('legacy_notice'), sent('followup_maybe', at('2026-10-05T10:00'))]
+					}),
+					person({
+						origin: 'checkin',
+						country: 'ID',
+						created_at: at('2026-09-01T09:00'),
+						legacy_notice_at: NOW,
+						legacy_kept_at: at('2026-10-02T10:00'),
+						attendee: true
+					})
+				),
+			chaseOn('2026-10-08T10:00')
 		],
 		[
 			'both channels refused by D365: nothing',
@@ -433,6 +505,37 @@ describe('recompute hooks', () => {
 		expect(row()).toMatchObject({ next_action_at: null, next_action_overridden: 0 });
 	});
 
+	it('drops an override with the lock that cleared it, so the rules apply again when it lifts', () => {
+		markInvited(db, eventId, row().id, 'whatsapp', {}, NOW);
+		setNextActionOverride(db, eventId, row().id, at('2026-10-12T09:00'), NOW);
+		const entry = blockByHand(db, { kind: 'phone', value: '+628123456789', reason: '' }, NOW)!;
+		expect(row()).toMatchObject({ next_action_at: null, next_action_overridden: 0 });
+		removeEntry(db, entry.id, { reason: 'wrong number' }, NOW);
+		recomputeEvent(db, eventId, NOW);
+		expect(row()).toMatchObject({
+			next_action_at: at('2026-10-06T10:00'),
+			next_action_overridden: 0
+		});
+		// Not frozen: a rules change moves it.
+		setChaseDefaults(db, { ...CHASE_DEFAULTS, chaseAfterWorkingDays: 1 });
+		recomputeEvent(db, eventId, NOW);
+		expect(row().next_action_at).toBe(at('2026-10-02T10:00'));
+	});
+
+	it('ends an override once a message goes out on its day; the rules resume from there', () => {
+		db.prepare(`UPDATE people SET is_customer = 1`).run();
+		markInvited(db, eventId, row().id, 'whatsapp', {}, NOW);
+		const own = at('2026-10-09T09:00');
+		setNextActionOverride(db, eventId, row().id, own, NOW);
+		addTouch(db, eventId, row().id, { kind: 'manual', via: 'whatsapp' }, own);
+		expect(row()).toMatchObject({ next_action_at: own, next_action_overridden: 1 });
+		addTouch(db, eventId, row().id, { kind: 'chase', via: 'whatsapp' }, at('2026-10-09T10:00'));
+		expect(row()).toMatchObject({
+			next_action_at: at('2026-10-14T10:00'),
+			next_action_overridden: 0
+		});
+	});
+
 	it('follows the event date, and clears everything once the event has begun', () => {
 		markInvited(db, eventId, row().id, 'whatsapp', {}, NOW);
 		updateEvent(
@@ -483,5 +586,7 @@ describe('recompute hooks', () => {
 		expect(view.today).toEqual({ start: at('2026-10-06T00:00'), end: at('2026-10-07T00:00') - 1 });
 		expect(countDue(db, event(), tuesdayMorning)).toBe(1);
 		expect(countDue(db, event(), at('2026-10-07T23:30'))).toBe(2);
+		// Once the event has begun nothing is due, even before the daily pass has nulled the rows.
+		expect(countDue(db, event(), START + 3_600_000)).toBe(0);
 	});
 });

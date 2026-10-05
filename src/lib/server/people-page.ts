@@ -5,6 +5,7 @@ import {
 	chipCounts,
 	isDue,
 	type Chip,
+	type MessageKind,
 	type PeopleRow,
 	type RowMessage,
 	type Today
@@ -26,7 +27,6 @@ import type { EventRow } from './events.ts';
 import { countryOf, type CountryOption } from './guest-list.ts';
 import { contactPerson, registrationUrl, rowMessage, type MessagingEnv } from './messaging.ts';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
-import type { MessageKind } from '../people.ts';
 import { contactBlock, type PersonRow } from './people.ts';
 import { isLegacyIndonesian } from './retention.ts';
 import { consentBoxesSince, type Country } from './settings.ts';
@@ -67,19 +67,29 @@ export function legacyOf(row: EventPersonRow, since: number | null): PeopleRow['
 }
 
 /**
- * The kind the row's buttons open first (§7): the next action's, else what the stage calls
- * for; for a legacy attendee not yet told, the notice is the invitation (§8).
+ * The kind the row's buttons open first (§7): the invitation until they have one (for a
+ * legacy attendee not yet told, the notice is the invitation, §8); then the reminder once the
+ * rules say it is due, by `dueBy` (the end of today); otherwise what their answer calls for.
+ * A yes two weeks out gets the thank-you, not a reminder sent early and then never again.
  */
-export function suggestedKind(row: EventPersonRow, since: number | null): MessageKind {
-	if (row.next_action_kind) return row.next_action_kind;
-	const legacy = legacyOf(row, since);
-	if (legacy && !legacy.notice_at && row.stage === 'shortlisted') return 'legacy_notice';
+export function suggestedKind(
+	row: EventPersonRow,
+	since: number | null,
+	dueBy: number
+): MessageKind {
+	if (row.stage === 'shortlisted') {
+		const legacy = legacyOf(row, since);
+		return legacy && !legacy.notice_at && !legacy.kept_at ? 'legacy_notice' : 'invitation';
+	}
+	const due = row.next_action_at !== null && row.next_action_at <= dueBy;
+	if (due && row.next_action_kind === 'reminder') return 'reminder';
 	return suggestedTouchKind(row);
 }
 
 export function toView(
 	row: EventPersonRow,
 	since: number | null,
+	dueBy: number,
 	message: RowMessage | null = null,
 	registrationLink: string | null = null
 ): PeopleRow {
@@ -135,7 +145,7 @@ export function toView(
 		next_action_at: row.next_action_at,
 		next_action_kind: row.next_action_kind,
 		next_action_overridden: !!row.next_action_overridden,
-		suggested_kind: suggestedKind(row, since),
+		suggested_kind: suggestedKind(row, since, dueBy),
 		legacy: legacyOf(row, since)
 	};
 }
@@ -176,6 +186,7 @@ export function peopleView(
 	now = Date.now()
 ): PeopleView {
 	const since = consentBoxesSince(db);
+	const today = { start: startOfDay(now, event.timezone), end: endOfDay(now, event.timezone) };
 	// A link needs the event's date (its expiry) and a person behind the row to answer for;
 	// a blocked company's people get none (D13).
 	const linkable = env && event.starts_at !== null;
@@ -183,13 +194,15 @@ export function peopleView(
 		toView(
 			r,
 			since,
-			env ? rowMessage(db, { row: r, event, since }, env, suggestedKind(r, since)) : null,
+			today.end,
+			env
+				? rowMessage(db, { row: r, event, since }, env, suggestedKind(r, since, today.end))
+				: null,
 			linkable && r.stage !== 'found' && !r.blocked_at ? registrationUrl(r, event, env) : null
 		)
 	);
 	// A row skipped by "not me" is nobody's reply (D8).
 	const live = rows.filter((r) => r.stage !== 'found' && !r.skipped_at);
-	const today = { start: startOfDay(now, event.timezone), end: endOfDay(now, event.timezone) };
 	return {
 		rows,
 		groups: groupRows(rows),

@@ -243,7 +243,8 @@ export function markLocked(db: DB, personId: string, reason: string, now = Date.
 			updated_at = @now WHERE id = @id`
 	).run({ id: personId, reason, now });
 	db.prepare(
-		`UPDATE event_people SET next_action_at = NULL, next_action_kind = NULL, updated_at = ?
+		`UPDATE event_people SET next_action_at = NULL, next_action_kind = NULL,
+			next_action_overridden = 0, updated_at = ?
 		WHERE person_id = ?`
 	).run(now, personId);
 }

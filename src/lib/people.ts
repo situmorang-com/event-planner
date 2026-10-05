@@ -7,6 +7,16 @@ export type Via = 'whatsapp' | 'email' | 'linkedin' | 'other';
 export type Source =
 	'typed' | 'paste' | 'd365' | 'pool' | 'research' | 'self_registered' | 'walk_in' | 'copied';
 
+export const STAGES: Stage[] = [
+	'found',
+	'shortlisted',
+	'invited',
+	'replied',
+	'confirmed',
+	'checked_in'
+];
+export const stageRank = (stage: Stage) => STAGES.indexOf(stage);
+
 export type Origin = 'self_registered' | 'checkin' | 'd365' | 'typed' | 'research';
 
 /** How a person first entered the pool (D16), as the Contacts page and the exports say it. */

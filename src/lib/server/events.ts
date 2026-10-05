@@ -102,7 +102,11 @@ export function createEvent(db: DB, input: EventInput, now = Date.now()): string
 	return id;
 }
 
-/** The settings form; fields it doesn't carry keep their values. Due dates follow the date. */
+/**
+ * The settings form; fields it doesn't carry keep their values. Due dates follow the date, and
+ * so does `people.last_event_at` for everyone on the list (§2.2): a prospect's twelve-month
+ * clock must follow an event that is re-dated, not the date it was first picked onto.
+ */
 export function updateEvent(db: DB, id: string, input: EventInput, now = Date.now()) {
 	db.prepare(
 		`UPDATE events SET name = @name, venue = @venue, starts_at = @startsAt, timezone = @timezone,
@@ -127,6 +131,18 @@ export function updateEvent(db: DB, id: string, input: EventInput, now = Date.no
 		keepText: input.invitationText === undefined ? 1 : 0,
 		keepRules: input.chaseRules === undefined ? 1 : 0
 	});
+	// The same expression as touchLastEvent() in people.ts, for every person on this event in
+	// one statement; people.ts isn't imported here because it leads back to this module.
+	db.prepare(
+		`UPDATE people SET last_event_at = (
+			SELECT MAX(t) FROM (
+				SELECT MAX(e.starts_at) AS t FROM event_people ep JOIN events e ON e.id = ep.event_id
+					WHERE ep.person_id = people.id
+				UNION ALL SELECT MAX(checked_in_at) FROM checkins WHERE person_id = people.id
+			)
+		), updated_at = @now
+		WHERE id IN (SELECT person_id FROM event_people WHERE event_id = @id AND person_id IS NOT NULL)`
+	).run({ id, now });
 	recomputeEvent(db, id, now);
 }
 
