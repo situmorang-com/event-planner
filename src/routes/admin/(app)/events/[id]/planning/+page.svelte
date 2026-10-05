@@ -361,31 +361,45 @@
 		{#if data.targets.length}
 			<ul class="targets">
 				{#each data.targets as target (target.id)}
-					<li class="target" class:unticked={!target.ticked}>
-						<form
-							method="POST"
-							action="?/research"
-							class="tick-form"
-							use:enhance={() =>
-								async ({ update }) =>
-									update({ reset: false })}
-						>
-							<input type="hidden" name="id" value={target.id} />
-							<!-- The hidden value is what the next click sends: the opposite of the tick. -->
-							<input type="hidden" name="research" value={target.ticked ? '0' : '1'} />
-							<label
-								class="tick"
-								title={target.blocked ? t('Blocked company') : t('Research this company')}
+					{@const done = !!target.researchedAt && !target.ticked && !target.blocked}
+					<li class="target" class:unticked={!target.ticked && !done}>
+						{#if done}
+							<!-- Researched and out of the queue: a status, not a box to tick. -->
+							<span
+								class="done"
+								title={t('Researched {date}', {
+									date: formatDate(target.researchedAt!, event.timezone, lang())
+								})}
 							>
-								<input
-									type="checkbox"
-									checked={target.ticked}
-									disabled={target.blocked}
-									onchange={(e) => e.currentTarget.form?.requestSubmit()}
-								/>
-								<span class="sr-only">{t('Research {company}', { company: target.name })}</span>
-							</label>
-						</form>
+								<Check size={15} strokeWidth={3} />
+								<span class="sr-only">{t('Researched')}</span>
+							</span>
+						{:else}
+							<form
+								method="POST"
+								action="?/research"
+								class="tick-form"
+								use:enhance={() =>
+									async ({ update }) =>
+										update({ reset: false })}
+							>
+								<input type="hidden" name="id" value={target.id} />
+								<!-- The hidden value is what the next click sends: the opposite of the tick. -->
+								<input type="hidden" name="research" value={target.ticked ? '0' : '1'} />
+								<label
+									class="tick"
+									title={target.blocked ? t('Blocked company') : t('Research this company')}
+								>
+									<input
+										type="checkbox"
+										checked={target.ticked}
+										disabled={target.blocked}
+										onchange={(e) => e.currentTarget.form?.requestSubmit()}
+									/>
+									<span class="sr-only">{t('Research {company}', { company: target.name })}</span>
+								</label>
+							</form>
+						{/if}
 						<div class="target-name">
 							<strong>{target.name}</strong>
 							{#if target.website}
@@ -409,14 +423,37 @@
 								{/if}
 								{#if target.blocked}
 									· <span class="bad">{t('blocked')}</span>
+								{:else if done}
+									· <span class="done-text"
+										>{t('Researched {date}', {
+											date: formatDate(target.researchedAt!, event.timezone, lang())
+										})}</span
+									>
 								{:else if target.research === null}
 									· {target.ticked
 										? t('research by default')
 										: t('{n} known, not researched', { n: target.known })}
 								{/if}
-								{#if researchNote(target)}· {researchNote(target)}{/if}
+								{#if !done && researchNote(target)}· {researchNote(target)}{/if}
 							</span>
-							{#if target.research !== null}
+							{#if done}
+								<form
+									method="POST"
+									action="?/research"
+									use:enhance={() =>
+										async ({ update }) =>
+											update({ reset: false })}
+								>
+									<input type="hidden" name="id" value={target.id} />
+									<input type="hidden" name="research" value="1" />
+									<button
+										class="btn btn-ghost btn-sm reset"
+										title={t('Put it back in the queue for the next run')}
+									>
+										{t('Research again')}
+									</button>
+								</form>
+							{:else if target.research !== null}
 								<form
 									method="POST"
 									action="?/research"
@@ -1145,6 +1182,28 @@
 
 	.tick-form {
 		display: flex;
+	}
+
+	/* Researched: a filled check where the box was, so done and queued can't be mistaken. */
+	.done {
+		display: grid;
+		place-items: center;
+		width: 28px;
+		height: 28px;
+	}
+
+	.done :global(svg) {
+		padding: 2px;
+		border-radius: 50%;
+		background: var(--good);
+		color: var(--surface);
+		width: 20px;
+		height: 20px;
+	}
+
+	.done-text {
+		color: var(--good);
+		font-weight: 650;
 	}
 
 	.tick {

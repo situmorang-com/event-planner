@@ -226,8 +226,10 @@ needs a date first: what research finds is kept only until the event starts.
    focus ("only their finance team") when it differs from the brief. Each company has a
    **research tick**: by default a company is researched until enough contactable people are
    known there (the "how many per company" number); tick or untick to decide yourself, and
-   _default_ puts it back. The command takes the ticked companies **15** at a time. After a run
-   the company shows _researched 2 Oct_. Blocked companies are never researched.
+   _default_ puts it back. The command takes the ticked companies **15** at a time. When a
+   batch's answer comes back its companies leave the queue: the tick turns into a green ✓ with
+   _Researched 5 Oct_, and **Research again** puts one back for the next run. Blocked
+   companies are never researched.
    - **Copy brief + targets from…** picks another event (most recent first) and copies its
      answers and its companies, with each company's focus. Companies already listed are
      skipped, and copied ones start on the default research tick. Answers you have already

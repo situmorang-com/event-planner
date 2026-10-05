@@ -486,17 +486,18 @@ deleted; touch and activity logs → with the row/event; do-not-contact → fore
   any line containing an existing person's `nameKey` is dropped first, and the fields' help text
   says "roles and companies, not names".
 - Companies in a run = ticked `event_companies` that are not blocked, taken in batches of 15:
-  `GET …/prompt?batch=<n>` serves the first 15 of those whose `researched_at` is NULL or older
-  than 24 h, in list order. Default tick =
+  `GET …/prompt?batch=<n>` serves the first 15 ticked, in list order. Default tick =
   `COUNT(people WHERE company_id = X AND locked_at IS NULL) < per_company`; Found rows are not
   people, so a default tick holds while a run is under way. Serving a batch sets
-  `research_requested_at` on its companies; the matching POST stamps
-  `researched_at` on the companies requested in the last 24 h and not answered since, whether
-  or not they returned anyone, so an answer stamps its own batch and never an earlier one again.
+  `research_requested_at` on its companies; the matching POST stamps `researched_at` on the
+  companies requested in the last 24 h and not answered since, and sets `research = 0`: an
+  answered company leaves the queue (the page shows a green ✓ _Researched_ with **Research
+  again**, which sets the tick back), so a run moves on by itself and a rerun resumes where it
+  stopped. Schema v8 unticks the companies answered before this rule.
 - `GET …/prompt` returns 409 when `starts_at IS NULL`, the brief isn't ready or no company is
-  ticked; with `batch=0` also when every ticked company was researched in the last 24 h ("All N
-  ticked companies were researched in the last 24 hours…", or "The only ticked company was…"
-  for one). The refusal is plain text, not kit's JSON envelope, since the command echoes it as
+  ticked ("Every ticked company has been researched…" when some were, else "No target company
+  is ticked…"), and with `batch` ≥ 1 either of those means the run is done: 204 with no body.
+  The refusal is plain text, not kit's JSON envelope, since the command echoes it as
   it arrives. With `batch` ≥ 1 and nothing left it returns 204 with no body. Without `batch`
   (the command from before batches) it serves every ticked company in one prompt and returns
   409 above 15. After `starts_at` the prompt carries a warning line and the POST keeps nothing

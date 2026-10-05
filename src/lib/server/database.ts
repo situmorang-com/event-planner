@@ -48,6 +48,17 @@ const STEPS: { version: number; run: (db: DB, opts: MigrateOptions) => void }[] 
 			addSalutationColumns(db);
 			upgradeGreetings(db);
 		}
+	},
+	// Version 8: a researched company leaves the queue (its tick comes off with the answer);
+	// the ones researched before that rule get the same.
+	{
+		version: 8,
+		run: (db) =>
+			db.exec(
+				`UPDATE event_companies SET research = 0
+				WHERE researched_at IS NOT NULL AND (research IS NULL OR research = 1)
+					AND (research_requested_at IS NULL OR research_requested_at <= researched_at)`
+			)
 	}
 ];
 

@@ -369,11 +369,13 @@ export { RESEARCH_CAP };
 /** A company answered within this window stays out of the next batch (§6.2). */
 export const RESEARCHED_RECENTLY_MS = 24 * 60 * 60 * 1000;
 
-/** The research targets still waiting for an answer today, in list order. */
-export function researchPending(db: DB, eventId: string, perCompany: number, now = Date.now()) {
-	return researchTargets(db, eventId, perCompany).filter(
-		(t) => t.researched_at === null || t.researched_at < now - RESEARCHED_RECENTLY_MS
-	);
+/**
+ * The research targets still waiting for an answer, in list order: the ticked ones. An answer
+ * takes its batch's ticks off (markResearched), so a run moves on by itself, an interrupted
+ * run resumes where it stopped, and "Research again" counts at once.
+ */
+export function researchPending(db: DB, eventId: string, perCompany: number, _now = Date.now()) {
+	return researchTargets(db, eventId, perCompany);
 }
 
 /**
@@ -384,6 +386,10 @@ export function researchPending(db: DB, eventId: string, perCompany: number, now
 export function researchBatch(db: DB, eventId: string, perCompany: number, now = Date.now()) {
 	return researchPending(db, eventId, perCompany, now).slice(0, RESEARCH_CAP);
 }
+
+const NOTHING_TICKED = 'No target company is ticked for research.';
+const ALL_RESEARCHED =
+	'Every ticked company has been researched. Press Research again on a company, or add new ones, to research more.';
 
 /**
  * Why a research run can't start, as the organizer's terminal will print it, or null when the
@@ -403,7 +409,10 @@ export function researchRefusal(
 	if (!listTargets(db, event.id).length)
 		return 'Add at least one target company on the Planning page first.';
 	const targets = researchTargets(db, event.id, brief.perCompany);
-	if (!targets.length) return 'No target company is ticked for research.';
+	if (!targets.length)
+		return listTargets(db, event.id).some((t) => t.researched_at !== null && !t.blocked_at)
+			? ALL_RESEARCHED
+			: NOTHING_TICKED;
 	if (!batched && targets.length > RESEARCH_CAP)
 		return `At most ${RESEARCH_CAP} companies per run; untick some on the Planning page.`;
 	return null;
@@ -426,6 +435,10 @@ export function nextResearchBatch(
 	now = Date.now()
 ): ResearchBatch {
 	const refusal = researchRefusal(db, event, { batched: true });
+	// A run that has worked through its queue ends cleanly: each answer took its batch's ticks
+	// off, so "nothing is ticked" after batch 0 means done, not a mistake to report.
+	if ((refusal === NOTHING_TICKED || refusal === ALL_RESEARCHED) && batch > 0)
+		return { kind: 'done' };
 	if (refusal) return { kind: 'refused', message: refusal };
 	const brief = getBrief(db, event.id);
 	const targets = researchBatch(db, event.id, brief.perCompany, now);
@@ -455,8 +468,10 @@ export function markResearchRequested(db: DB, eventId: string, ids: number[], no
  * since, count as researched. An earlier batch keeps its own stamp.
  */
 export function markResearched(db: DB, eventId: string, now = Date.now()) {
+	// Done means out of the queue: the tick comes off, so the page shows the company as
+	// researched and the next run moves on to others. Ticking it again sends it once more.
 	db.prepare(
-		`UPDATE event_companies SET researched_at = ?
+		`UPDATE event_companies SET researched_at = ?, research = 0
 		WHERE event_id = ? AND research_requested_at > ?
 			AND (researched_at IS NULL OR researched_at < research_requested_at)`
 	).run(now, eventId, now - RESEARCHED_RECENTLY_MS);

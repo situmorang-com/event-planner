@@ -225,7 +225,13 @@ const id: Record<string, string> = {
 	'Most messages to a customer or past guest': 'Pesan maksimal ke pelanggan atau tamu sebelumnya',
 	'Most messages to someone new': 'Pesan maksimal ke orang baru',
 	'{field}: a whole number from 0 to {max}.': '{field}: bilangan bulat dari 0 sampai {max}.',
-	'Save chase rules': 'Simpan aturan tindak lanjut'
+	'Save chase rules': 'Simpan aturan tindak lanjut',
+	'Researched {date}': 'Sudah diriset {date}',
+	Researched: 'Sudah diriset',
+	'Research again': 'Riset lagi',
+	'Put it back in the queue for the next run': 'Masukkan lagi ke antrean riset berikutnya',
+	'Every ticked company has been researched. Press Research again on a company, or add new ones, to research more.':
+		'Semua perusahaan yang dicentang sudah diriset. Tekan Riset lagi pada sebuah perusahaan, atau tambahkan perusahaan baru, untuk riset berikutnya.'
 };
 
 export default id;

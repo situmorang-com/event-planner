@@ -69,6 +69,6 @@ describe('GET /api/research/events/[id]/prompt', () => {
 
 		const again = await get('?batch=0');
 		expect(again.status).toBe(409);
-		expect(await again.text()).toMatch(/^The only ticked company was researched/);
+		expect(await again.text()).toMatch(/^Every ticked company has been researched\./);
 	});
 });

@@ -266,34 +266,30 @@ describe('planning', () => {
 			expect(served(2, T0 + 4 * HOUR)).toEqual([all[30]]);
 			markResearched(db, eventId, T0 + 5 * HOUR);
 			expect(served(3, T0 + 6 * HOUR)).toEqual({ kind: 'done' });
-			// Starting over the same day has nothing to do, and says so instead of looping.
+			// Each answer took its batch's ticks off: starting over has nothing to do, and says so
+			// instead of looping, however much later it is.
+			expect(listTargets(db, eventId).every((t) => t.research === 0)).toBe(true);
 			expect(served(0, T0 + 6 * HOUR)).toEqual({
 				kind: 'refused',
-				message: expect.stringMatching(
-					/^All 31 ticked companies were researched in the last 24 hours\./
-				)
+				message: expect.stringMatching(/^Every ticked company has been researched\./)
 			});
+			expect(served(0, T0 + 30 * 24 * HOUR)).toMatchObject({ kind: 'refused' });
 
-			// A day after its answer the first batch is due again; the later ones are not yet.
-			expect(served(0, T0 + HOUR + 25 * HOUR)).toEqual(all.slice(0, 15));
-			expect(researchPending(db, eventId, 1, T0 + HOUR + 25 * HOUR)).toHaveLength(15);
-			// Its new answer re-stamps it over yesterday's stamp, so the day-2 run moves on and ends
-			// instead of being served the same 15 at every batch.
-			markResearched(db, eventId, T0 + 27 * HOUR);
-			expect(stamps('researched_at')).toEqual([
-				...Array(15).fill(T0 + 27 * HOUR),
-				...Array(15).fill(T0 + 3 * HOUR),
-				T0 + 5 * HOUR
-			]);
-			expect(served(1, T0 + 27 * HOUR)).toEqual({ kind: 'done' });
+			// "Research again" ticks one back, and the next run takes it at once.
+			const again = listTargets(db, eventId)[3];
+			setTargetResearch(db, eventId, again.id, 1);
+			expect(served(0, T0 + 7 * HOUR)).toEqual([again.name]);
+			markResearched(db, eventId, T0 + 8 * HOUR);
+			expect(served(1, T0 + 8 * HOUR)).toEqual({ kind: 'done' });
 		});
 
-		it('keeps a company out for exactly 24 hours after its answer', () => {
+		it('takes an answered company out of the queue, but not one that never got an answer', () => {
 			served(0, T0);
 			markResearched(db, eventId, T0 + HOUR);
-			const due = T0 + HOUR + 24 * HOUR;
-			expect(researchPending(db, eventId, 1, due)).toHaveLength(16);
-			expect(researchPending(db, eventId, 1, due + 1)).toHaveLength(31);
+			expect(researchPending(db, eventId, 1, T0 + HOUR)).toHaveLength(16);
+			// A batch asked for whose answer never came stays ticked: the rerun picks it up.
+			served(1, T0 + 2 * HOUR);
+			expect(researchPending(db, eventId, 1, T0 + 3 * HOUR)).toHaveLength(16);
 		});
 
 		it('moves on after the event has started, when answers are stamped but not kept', () => {
