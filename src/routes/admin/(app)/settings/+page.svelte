@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { lang, plural, t } from '$lib/i18n/t.svelte';
 	import { timeAgo } from '$lib/time';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import Check from '@lucide/svelte/icons/check';
@@ -42,6 +43,7 @@
 			: null
 	);
 
+	// Translated where they are shown, so the toggle switches them too.
 	const KIND_LABEL = { email: 'Email', phone: 'Mobile', name_company: 'Name + company' } as const;
 	const SOURCE_LABEL = {
 		staff: 'Staff',
@@ -58,17 +60,17 @@
 	}
 
 	// The settings page has no event, so timestamps are relative with the exact time on hover.
-	const when = (ts: number) => timeAgo(ts, data.now);
+	const when = (ts: number) => timeAgo(ts, data.now, lang());
 	const exact = (ts: number) => new Date(ts).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
 </script>
 
 <svelte:head>
-	<title>Settings · Event Planner</title>
+	<title>{t('Settings')} · Event Planner</title>
 </svelte:head>
 
 <div class="head">
-	<h1>Settings</h1>
-	<p class="muted">Shared by everyone who signs in.</p>
+	<h1>{t('Settings')}</h1>
+	<p class="muted">{t('Shared by everyone who signs in.')}</p>
 </div>
 
 <!-- Team names -->
@@ -76,10 +78,11 @@
 	<div class="block-head">
 		<span class="block-icon"><Users size={18} /></span>
 		<div>
-			<h2>Team names</h2>
+			<h2>{t('Team names')}</h2>
 			<p class="muted">
-				Who can be picked as “me” in the header. The name is stamped on everything that person does:
-				rows they add, people they invite, locks and exports.
+				{t(
+					'Who can be picked as “me” in the header. The name is stamped on everything that person does: rows they add, people they invite, locks and exports.'
+				)}
 			</p>
 		</div>
 	</div>
@@ -88,30 +91,39 @@
 			{#each data.team as name (name)}
 				<li>
 					<span class="list-main">{name}</span>
-					{#if name === data.who}<span class="pill pill-brand tiny">you</span>{/if}
+					{#if name === data.who}<span class="pill pill-brand tiny">{t('you')}</span>{/if}
 					<form
 						method="POST"
 						action="?/removeTeam"
 						use:enhance={({ cancel }) => {
-							if (!confirm(`Remove ${name} from the team? Their past stamps stay as they are.`))
+							if (
+								!confirm(
+									t('Remove {name} from the team? Their past stamps stay as they are.', { name })
+								)
+							)
 								cancel();
 						}}
 					>
 						<input type="hidden" name="name" value={name} />
-						<button class="btn btn-ghost btn-icon btn-sm" title="Remove {name}">
-							<X size={16} /><span class="sr-only">Remove {name}</span>
+						<button class="btn btn-ghost btn-icon btn-sm" title={t('Remove {name}', { name })}>
+							<X size={16} /><span class="sr-only">{t('Remove {name}', { name })}</span>
 						</button>
 					</form>
 				</li>
 			{/each}
 		</ul>
 	{:else}
-		<p class="placeholder muted">No names yet. Add the people who run events.</p>
+		<p class="placeholder muted">{t('No names yet. Add the people who run events.')}</p>
 	{/if}
 	<form class="inline" method="POST" action="?/addTeam" use:enhance>
-		<input class="input" name="name" placeholder="Name, as you’d like it shown" aria-label="Name" />
-		<button class="btn btn-secondary"><Plus size={16} /> Add</button>
-		{#if form && 'teamError' in form}<p class="error-text">{form.teamError}</p>{/if}
+		<input
+			class="input"
+			name="name"
+			placeholder={t('Name, as you’d like it shown')}
+			aria-label={t('Name')}
+		/>
+		<button class="btn btn-secondary"><Plus size={16} /> {t('Add')}</button>
+		{#if form && 'teamError' in form}<p class="error-text">{t(String(form.teamError))}</p>{/if}
 	</form>
 </section>
 
@@ -120,59 +132,62 @@
 	<div class="block-head">
 		<span class="block-icon"><KeyRound size={18} /></span>
 		<div>
-			<h2>API tokens</h2>
+			<h2>{t('API tokens')}</h2>
 			<p class="muted">
-				For the research command on an event’s Planning tab. A token is shown once; only its hash is
-				kept, and anything using a revoked one stops working.
+				{t(
+					'For the research command on an event’s Planning tab. A token is shown once; only its hash is kept, and anything using a revoked one stops working.'
+				)}
 			</p>
 		</div>
 	</div>
 	{#if newToken}
 		<p class="banner banner-brand">
-			Copy this now; it won’t be shown again. Run it in the terminal you’ll research from (or add it
-			to <code>~/.zshrc</code>).
+			{t(
+				'Copy this now; it won’t be shown again. Run it in the terminal you’ll research from (or add it to'
+			)}
+			<code>~/.zshrc</code>).
 		</p>
 		<div class="code">
 			<pre>export EVENT_PLANNER_TOKEN={newToken}</pre>
 			<button class="btn btn-secondary btn-sm" onclick={copyToken}>
-				{#if copied}<Check size={15} /> Copied{:else}<Copy size={15} /> Copy{/if}
+				{#if copied}<Check size={15} /> {t('Copied')}{:else}<Copy size={15} /> {t('Copy')}{/if}
 			</button>
 		</div>
 	{/if}
 	{#if data.tokens.length}
 		<ul class="list">
-			{#each data.tokens as t (t.id)}
+			{#each data.tokens as tok (tok.id)}
 				<li>
-					<span class="list-main">{t.label}</span>
+					<span class="list-main">{tok.label}</span>
 					<span class="muted small">
-						created {when(t.created_at)}{t.last_used_at
-							? ` · last used ${when(t.last_used_at)}`
-							: ' · never used'}
+						{t('created {when}', { when: when(tok.created_at) })} · {tok.last_used_at
+							? t('last used {when}', { when: when(tok.last_used_at) })
+							: t('never used')}
 					</span>
 					<form
 						method="POST"
 						action="?/revokeToken"
 						use:enhance={({ cancel }) => {
-							if (!confirm('Revoke this token? Anything using it stops working.')) cancel();
+							if (!confirm(t('Revoke this token? Anything using it stops working.'))) cancel();
 						}}
 					>
-						<input type="hidden" name="id" value={t.id} />
-						<button class="btn btn-ghost btn-sm">Revoke</button>
+						<input type="hidden" name="id" value={tok.id} />
+						<button class="btn btn-ghost btn-sm">{t('Revoke')}</button>
 					</form>
 				</li>
 			{/each}
 		</ul>
 	{:else}
-		<p class="placeholder muted">No tokens yet.</p>
+		<p class="placeholder muted">{t('No tokens yet.')}</p>
 	{/if}
 	<form class="inline" method="POST" action="?/createToken" use:enhance>
 		<input
 			class="input"
 			name="label"
-			placeholder="Label, e.g. Edmund’s MacBook"
-			aria-label="Token label"
+			placeholder={t('Label, e.g. Edmund’s MacBook')}
+			aria-label={t('Token label')}
 		/>
-		<button class="btn btn-secondary"><Plus size={16} /> Create a token</button>
+		<button class="btn btn-secondary"><Plus size={16} /> {t('Create a token')}</button>
 	</form>
 </section>
 
@@ -181,10 +196,11 @@
 	<div class="block-head">
 		<span class="block-icon"><Phone size={18} /></span>
 		<div>
-			<h2>Phone country</h2>
+			<h2>{t('Phone country')}</h2>
 			<p class="muted">
-				How local numbers such as 0812-3456-7890 are read when nothing says otherwise. New events
-				start with this; each event and company can pick its own.
+				{t(
+					'How local numbers such as 0812-3456-7890 are read when nothing says otherwise. New events start with this; each event and company can pick its own.'
+				)}
 			</p>
 		</div>
 	</div>
@@ -196,13 +212,14 @@
 			async ({ update }) =>
 				update({ reset: false })}
 	>
-		<select class="input" name="country" aria-label="Default phone country">
+		<select class="input" name="country" aria-label={t('Default phone country')}>
 			<option value="ID" selected={data.phoneCountry === 'ID'}>Indonesia (+62)</option>
 			<option value="MY" selected={data.phoneCountry === 'MY'}>Malaysia (+60)</option>
 		</select>
-		<button class="btn btn-secondary">Save</button>
-		{#if form && 'phoneSaved' in form}<span class="saved"><Check size={16} /> Saved</span>{/if}
-		{#if form && 'phoneError' in form}<p class="error-text">{form.phoneError}</p>{/if}
+		<button class="btn btn-secondary">{t('Save')}</button>
+		{#if form && 'phoneSaved' in form}<span class="saved"><Check size={16} /> {t('Saved')}</span
+			>{/if}
+		{#if form && 'phoneError' in form}<p class="error-text">{t(String(form.phoneError))}</p>{/if}
 	</form>
 </section>
 
@@ -211,12 +228,11 @@
 	<div class="block-head">
 		<span class="block-icon"><CalendarClock size={18} /></span>
 		<div>
-			<h2>Chase defaults</h2>
+			<h2>{t('Chase defaults')}</h2>
 			<p class="muted">
-				When a row becomes due (D20): a chase so many working days after the last message, until the
-				cap for that person is reached or the event is too close; a reminder for everyone attending
-				shortly before. Working days are Monday to Friday in the event’s time zone. An event can set
-				its own rules on its Planning tab.
+				{t(
+					'When a row becomes due (D20): a chase so many working days after the last message, until the cap for that person is reached or the event is too close; a reminder for everyone attending shortly before. Working days are Monday to Friday in the event’s time zone. An event can set its own rules on its Planning tab.'
+				)}
 			</p>
 		</div>
 	</div>
@@ -231,7 +247,7 @@
 		<div class="chase-grid">
 			{#each data.chase.fields as f (f.key)}
 				<div class="field">
-					<label class="label" for="chase-{f.key}">{f.label}</label>
+					<label class="label" for="chase-{f.key}">{t(f.label)}</label>
 					<div class="chase-input">
 						<input
 							class="input"
@@ -244,15 +260,16 @@
 							required
 							value={data.chase.values[f.key]}
 						/>
-						{#if f.unit}<span class="muted small">{f.unit}</span>{/if}
+						{#if f.unit}<span class="muted small">{t(f.unit)}</span>{/if}
 					</div>
 				</div>
 			{/each}
 		</div>
 		<div class="actions">
 			{#if form && 'chaseError' in form}<p class="error-text">{form.chaseError}</p>{/if}
-			{#if form && 'chaseSaved' in form}<span class="saved"><Check size={16} /> Saved</span>{/if}
-			<button class="btn btn-primary">Save chase defaults</button>
+			{#if form && 'chaseSaved' in form}<span class="saved"><Check size={16} /> {t('Saved')}</span
+				>{/if}
+			<button class="btn btn-primary">{t('Save chase defaults')}</button>
 		</div>
 	</form>
 </section>
@@ -262,16 +279,15 @@
 	<div class="block-head">
 		<span class="block-icon"><MessageSquareText size={18} /></span>
 		<div>
-			<h2>Message defaults</h2>
+			<h2>{t('Message defaults')}</h2>
 			<p class="muted">
-				What the WhatsApp and email buttons open, per language. Each person gets the language of
-				their company’s or event’s phone country unless the event picks one. The opt-out line, and
-				for people found by research the source line, are added when a message opens, so they can’t
-				be edited out. A blank box restores the built-in wording.
+				{t(
+					'What the WhatsApp and email buttons open, per language. Each person gets the language of their company’s or event’s phone country unless the event picks one. The opt-out line, and for people found by research the source line, are added when a message opens, so they can’t be edited out. A blank box restores the built-in wording.'
+				)}
 			</p>
 		</div>
 	</div>
-	<div class="languages" role="tablist" aria-label="Language">
+	<div class="languages" role="tablist" aria-label={t('Language')}>
 		{#each data.messages.languages as l (l.key)}
 			<button
 				class="chip"
@@ -279,7 +295,7 @@
 				aria-selected={language === l.key}
 				onclick={() => (language = l.key)}
 			>
-				{l.label}
+				{t(l.label)}
 			</button>
 		{/each}
 	</div>
@@ -295,14 +311,15 @@
 			>
 				<input type="hidden" name="language" value={l.key} />
 				<p class="hint">
-					Placeholders: {#each data.messages.placeholders as p, i (p)}{i ? ', ' : ''}<code>{p}</code
-						>{/each}. <code>{'{link}'}</code> is the person’s own registration link; the reminder must
-					include it.
+					{t('Placeholders:')}
+					{#each data.messages.placeholders as p, i (p)}{i ? ', ' : ''}<code>{p}</code>{/each}.
+					<code>{'{link}'}</code>
+					{t('is the person’s own registration link; the reminder must include it.')}
 				</p>
 				<div class="template-grid">
 					{#each data.messages.kinds as k (k.key)}
 						<div class="field">
-							<label class="label" for="body-{l.key}-{k.key}">{k.label}</label>
+							<label class="label" for="body-{l.key}-{k.key}">{t(k.label)}</label>
 							<textarea
 								class="input textarea"
 								id="body-{l.key}-{k.key}"
@@ -314,9 +331,9 @@
 					{/each}
 				</div>
 				<div class="actions">
-					{#if templateError}<p class="error-text">{templateError}</p>{/if}
-					{#if templatesSaved}<span class="saved"><Check size={16} /> Saved</span>{/if}
-					<button class="btn btn-primary">Save {l.label}</button>
+					{#if templateError}<p class="error-text">{t(String(templateError))}</p>{/if}
+					{#if templatesSaved}<span class="saved"><Check size={16} /> {t('Saved')}</span>{/if}
+					<button class="btn btn-primary">{t('Save {language}', { language: t(l.label) })}</button>
 				</div>
 			</form>
 		{/if}
@@ -328,12 +345,12 @@
 	<div class="block-head">
 		<span class="block-icon"><Timer size={18} /></span>
 		<div>
-			<h2>Retention</h2>
+			<h2>{t('Retention')}</h2>
 			<p class="muted">
-				What the app deletes by itself, and when. Housekeeping runs when the server starts and once
-				a day after that; an event’s own start step also runs as soon as one of its pages is opened.
-				Every deletion is written to the activity log with ids and counts only.
-				{#if data.retention.ranAt}Last run {when(data.retention.ranAt)}.{/if}
+				{t(
+					'What the app deletes by itself, and when. Housekeeping runs when the server starts and once a day after that; an event’s own start step also runs as soon as one of its pages is opened. Every deletion is written to the activity log with ids and counts only.'
+				)}
+				{#if data.retention.ranAt}{t('Last run {when}.', { when: when(data.retention.ranAt) })}{/if}
 			</p>
 		</div>
 	</div>
@@ -341,10 +358,10 @@
 		<table class="table">
 			<thead>
 				<tr>
-					<th>What</th>
-					<th>Kept until</th>
-					<th class="num">Held now</th>
-					<th class="num">Next run removes</th>
+					<th>{t('What')}</th>
+					<th>{t('Kept until')}</th>
+					<th class="num">{t('Held now')}</th>
+					<th class="num">{t('Next run removes')}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -366,21 +383,25 @@
 	<div class="block-head">
 		<span class="block-icon"><ShieldBan size={18} /></span>
 		<div>
-			<h2>Do-not-contact list</h2>
+			<h2>{t('Do-not-contact list')}</h2>
 			<p class="muted">
-				People who asked not to hear from us. Only a hash of each email, mobile or name is kept, so
-				the list shows masked labels. Anyone it matches is locked: no message buttons, channels
-				blanked in exports, refused on every list. It never expires; an entry comes off only by
-				hand, with a reason, and that is logged.
+				{t(
+					'People who asked not to hear from us. Only a hash of each email, mobile or name is kept, so the list shows masked labels. Anyone it matches is locked: no message buttons, channels blanked in exports, refused on every list. It never expires; an entry comes off only by hand, with a reason, and that is logged.'
+				)}
 			</p>
 		</div>
 	</div>
 
 	{#if form && 'blocked' in form}
 		<p class="banner banner-brand">
-			Added. {form.blocked === 0
-				? 'Nobody in the pool matches it yet; anyone who turns up later is refused.'
-				: `${form.blocked} ${form.blocked === 1 ? 'person' : 'people'} in the pool locked.`}
+			{t('Added.')}
+			{form.blocked === 0
+				? t('Nobody in the pool matches it yet; anyone who turns up later is refused.')
+				: plural(
+						Number(form.blocked),
+						'{n} person in the pool locked.',
+						'{n} people in the pool locked.'
+					)}
 		</p>
 	{/if}
 
@@ -389,12 +410,12 @@
 			<table class="table">
 				<thead>
 					<tr>
-						<th>Who</th>
-						<th>Reason</th>
-						<th>Source</th>
-						<th>By</th>
-						<th>When</th>
-						<th><span class="sr-only">Actions</span></th>
+						<th>{t('Who')}</th>
+						<th>{t('Reason')}</th>
+						<th>{t('Source')}</th>
+						<th>{t('By')}</th>
+						<th>{t('When')}</th>
+						<th><span class="sr-only">{t('Actions')}</span></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -402,16 +423,20 @@
 						<tr class:removed={e.removed_at !== null}>
 							<td>
 								<span class="label-text">{e.label}</span>
-								<div class="muted small">{KIND_LABEL[e.kind]}</div>
+								<div class="muted small">{t(KIND_LABEL[e.kind])}</div>
 							</td>
 							<td>{e.reason || '–'}</td>
-							<td class="nowrap">{SOURCE_LABEL[e.source]}</td>
+							<td class="nowrap">{t(SOURCE_LABEL[e.source])}</td>
 							<td>{e.by || '–'}</td>
 							<td class="nowrap" title={exact(e.created_at)}>{when(e.created_at)}</td>
 							<td>
 								{#if e.removed_at !== null}
 									<span class="muted small">
-										removed {when(e.removed_at)} by {e.removed_by || 'staff'}: {e.removed_reason}
+										{t('removed {when} by {who}: {reason}', {
+											when: when(e.removed_at),
+											who: e.removed_by || t('staff'),
+											reason: e.removed_reason ?? ''
+										})}
 									</span>
 								{:else if removing === e.id || unblockId === e.id}
 									<form
@@ -429,23 +454,23 @@
 										<input
 											class="input"
 											name="reason"
-											placeholder="Why it comes off"
-											aria-label="Reason for removing {e.label}"
+											placeholder={t('Why it comes off')}
+											aria-label={t('Reason for removing {label}', { label: e.label })}
 											autofocus
 										/>
-										<button class="btn btn-danger btn-sm">Remove</button>
+										<button class="btn btn-danger btn-sm">{t('Remove')}</button>
 										<button
 											type="button"
 											class="btn btn-ghost btn-sm"
-											onclick={() => (removing = null)}>Cancel</button
+											onclick={() => (removing = null)}>{t('Cancel')}</button
 										>
 									</form>
 									{#if unblockId === e.id && form && 'unblockError' in form}
-										<p class="error-text">{form.unblockError}</p>
+										<p class="error-text">{t(String(form.unblockError))}</p>
 									{/if}
 								{:else}
 									<button class="btn btn-ghost btn-sm" onclick={() => (removing = e.id)}>
-										Remove…
+										{t('Remove…')}
 									</button>
 								{/if}
 							</td>
@@ -455,49 +480,52 @@
 			</table>
 		</div>
 	{:else}
-		<p class="placeholder muted">Nobody is on the list.</p>
+		<p class="placeholder muted">{t('Nobody is on the list.')}</p>
 	{/if}
 	<p class="small toggle">
 		{#if data.showRemoved}
-			<a href="/admin/settings#blocked">Hide removed entries</a>
+			<a href="/admin/settings#blocked">{t('Hide removed entries')}</a>
 		{:else}
-			<a href="/admin/settings?removed#blocked">Show removed entries</a>
+			<a href="/admin/settings?removed#blocked">{t('Show removed entries')}</a>
 		{/if}
 	</p>
 
 	<form class="add-block" method="POST" action="?/block" use:enhance>
-		<h3>Add by hand</h3>
-		<div class="kinds" role="radiogroup" aria-label="What to block">
-			<label class="chip"><input type="radio" name="kind" value="email" checked /> Email</label>
-			<label class="chip"><input type="radio" name="kind" value="phone" /> Mobile</label>
+		<h3>{t('Add by hand')}</h3>
+		<div class="kinds" role="radiogroup" aria-label={t('What to block')}>
+			<label class="chip"
+				><input type="radio" name="kind" value="email" checked /> {t('Email')}</label
+			>
+			<label class="chip"><input type="radio" name="kind" value="phone" /> {t('Mobile')}</label>
 			<label class="chip">
-				<input type="radio" name="kind" value="name_company" /> Name + company
+				<input type="radio" name="kind" value="name_company" />
+				{t('Name + company')}
 			</label>
 		</div>
 		<div class="add-grid">
 			<div class="field">
-				<label class="label" for="block-value">Email, mobile or name</label>
+				<label class="label" for="block-value">{t('Email, mobile or name')}</label>
 				<input class="input" id="block-value" name="value" required />
 			</div>
 			<div class="field">
 				<label class="label" for="block-company"
-					>Company <span class="optional">for a name</span></label
+					>{t('Company')} <span class="optional">{t('for a name')}</span></label
 				>
 				<input class="input" id="block-company" name="company" />
 			</div>
 			<div class="field">
-				<label class="label" for="block-reason">Reason</label>
+				<label class="label" for="block-reason">{t('Reason')}</label>
 				<input
 					class="input"
 					id="block-reason"
 					name="reason"
-					placeholder="Asked by email on 2 Oct"
+					placeholder={t('Asked by email on 2 Oct')}
 				/>
 			</div>
 		</div>
 		<div class="actions">
-			{#if form && 'blockError' in form}<p class="error-text">{form.blockError}</p>{/if}
-			<button class="btn btn-secondary"><ShieldBan size={16} /> Add to the list</button>
+			{#if form && 'blockError' in form}<p class="error-text">{t(String(form.blockError))}</p>{/if}
+			<button class="btn btn-secondary"><ShieldBan size={16} /> {t('Add to the list')}</button>
 		</div>
 	</form>
 </section>

@@ -177,6 +177,27 @@ type NextRow = Pick<
 >;
 
 /**
+ * Every sentence nextStep can return, whole, so each one can be translated as it stands (the
+ * row looks it up in the dictionary; the server and the tests keep the English).
+ */
+export const NEXT_STEP = {
+	whatsappOrEmail: 'Send the invitation by WhatsApp or email',
+	whatsapp: 'Send the invitation by WhatsApp',
+	email: 'Send the invitation by email',
+	privacyUrl: 'Set PRIVACY_URL, then send the invitation',
+	linkedinConnected: 'Send the invitation on LinkedIn',
+	linkedinRequested: 'Wait for them to accept on LinkedIn, then send the invitation there',
+	linkedinNone: 'Connect with them on LinkedIn, or add a phone or email',
+	checkDetails: 'Check their phone or email (Edit), then invite them',
+	findDetails: 'Find a phone, email or LinkedIn profile for them (Edit)',
+	invited: 'Wait for their answer, then press Attending, Tentative or Declined',
+	yes: 'Send the thank-you; a reminder follows before the event',
+	maybe: 'Follow up until they decide',
+	no: 'Declined: nothing more to send',
+	confirmed: 'Send a reminder before the event'
+} as const;
+
+/**
  * What to do next for a listed person, in words anyone on the team can act on. The date, when
  * the rules set one, is the row's due line beside it; this says what the step is.
  */
@@ -185,29 +206,29 @@ export function nextStep(row: NextRow): string | null {
 		return null;
 	switch (row.stage) {
 		case 'shortlisted': {
-			const by = [row.message?.whatsapp && 'WhatsApp', row.message?.email && 'email'].filter(
-				Boolean
-			);
-			if (by.length) return `Send the invitation by ${by.join(' or ')}`;
+			const whatsapp = !!row.message?.whatsapp;
+			const email = !!row.message?.email;
+			if (whatsapp && email) return NEXT_STEP.whatsappOrEmail;
+			if (whatsapp) return NEXT_STEP.whatsapp;
+			if (email) return NEXT_STEP.email;
 			if (row.message?.hint && (row.phone || row.email || row.linkedin_status === 'connected'))
-				return 'Set PRIVACY_URL, then send the invitation';
+				return NEXT_STEP.privacyUrl;
 			if (row.linkedin) {
-				if (row.linkedin_status === 'connected') return 'Send the invitation on LinkedIn';
-				if (row.linkedin_status === 'requested')
-					return 'Wait for them to accept on LinkedIn, then send the invitation there';
-				return 'Connect with them on LinkedIn, or add a phone or email';
+				if (row.linkedin_status === 'connected') return NEXT_STEP.linkedinConnected;
+				if (row.linkedin_status === 'requested') return NEXT_STEP.linkedinRequested;
+				return NEXT_STEP.linkedinNone;
 			}
-			if (row.phone || row.email) return 'Check their phone or email (Edit), then invite them';
-			return 'Find a phone, email or LinkedIn profile for them (Edit)';
+			if (row.phone || row.email) return NEXT_STEP.checkDetails;
+			return NEXT_STEP.findDetails;
 		}
 		case 'invited':
-			return 'Wait for their answer, then press Attending, Tentative or Declined';
+			return NEXT_STEP.invited;
 		case 'replied':
-			if (row.reply === 'yes') return 'Send the thank-you; a reminder follows before the event';
-			if (row.reply === 'maybe') return 'Follow up until they decide';
-			return 'Declined: nothing more to send';
+			if (row.reply === 'yes') return NEXT_STEP.yes;
+			if (row.reply === 'maybe') return NEXT_STEP.maybe;
+			return NEXT_STEP.no;
 		case 'confirmed':
-			return 'Send a reminder before the event';
+			return NEXT_STEP.confirmed;
 		case 'checked_in':
 			return null;
 	}
@@ -394,18 +415,54 @@ export function isOverdue(row: DueRow, today: Today): boolean {
 	return isDue(row, today) && row.next_action_at! < today.start;
 }
 
+/** A label as a template and its slots, so the row can translate it ({day} is already formatted). */
+export interface Template {
+	text: string;
+	vars?: Record<string, string | number>;
+}
+
+/** Fills a template's {slots}, as the English labels read. */
+export const fill = ({ text, vars }: Template) =>
+	vars
+		? text.replace(/\{(\w+)\}/g, (slot, key: string) => (key in vars ? String(vars[key]) : slot))
+		: text;
+
+/** Every template nextActionText can return, one per kind and timing. */
+export const NEXT_ACTION_TEXT = {
+	chase: {
+		overdue: 'Chase · overdue since {day}',
+		today: 'Chase · due today',
+		due: 'Chase · due {day}'
+	},
+	reminder: {
+		overdue: 'Reminder · overdue since {day}',
+		today: 'Reminder · due today',
+		due: 'Reminder · due {day}'
+	}
+} as const;
+
+/** nextActionLabel as a template: "Chase · due {day}" with the day in `vars`. */
+export function nextActionText(
+	row: Pick<PeopleRow, 'next_action_at' | 'next_action_kind'>,
+	today: Today,
+	day: (ts: number) => string
+): Template | null {
+	if (row.next_action_at === null || !row.next_action_kind) return null;
+	const texts = NEXT_ACTION_TEXT[row.next_action_kind];
+	const at = row.next_action_at;
+	if (at < today.start) return { text: texts.overdue, vars: { day: day(at) } };
+	if (at <= today.end) return { text: texts.today };
+	return { text: texts.due, vars: { day: day(at) } };
+}
+
 /** "Chase · due Tue 7 Oct", "Reminder · due today", "Chase · overdue since Fri 2 Oct". */
 export function nextActionLabel(
 	row: Pick<PeopleRow, 'next_action_at' | 'next_action_kind'>,
 	today: Today,
 	day: (ts: number) => string
 ): string | null {
-	if (row.next_action_at === null || !row.next_action_kind) return null;
-	const kind = row.next_action_kind === 'chase' ? 'Chase' : 'Reminder';
-	const at = row.next_action_at;
-	if (at < today.start) return `${kind} · overdue since ${day(at)}`;
-	if (at <= today.end) return `${kind} · due today`;
-	return `${kind} · due ${day(at)}`;
+	const template = nextActionText(row, today, day);
+	return template && fill(template);
 }
 
 export const isLive = (row: Pick<PeopleRow, 'stage'>) => row.stage !== 'found';
@@ -425,34 +482,74 @@ export function needsDetails(
 	return isLive(row) && !row.email && !row.phone && !linkedin;
 }
 
-export interface Marker {
+/** A marker's English `label`, and the same as a `text` template with `vars` to translate. */
+export interface Marker extends Template {
 	key: string;
 	label: string;
 	tone: 'muted' | 'warn' | 'bad' | 'brand';
 }
 
+/** Every template a marker can carry, the legacy ones included. */
+export const MARKER_TEXT = {
+	locked: 'Locked',
+	blocked: 'Blocked company',
+	suppressed: 'Suppressed',
+	details: 'Needs details',
+	review: 'Self-registered, check company owner',
+	chased: 'Chased ×{n}',
+	chasedLast: 'Chased ×{n}, last {day}',
+	consent: 'No consent recorded',
+	contact: 'Not contactable'
+} as const;
+
+export const LEGACY_TEXT = {
+	kept: 'Legacy: kept, answered {day}',
+	notice: 'Legacy: notice sent {day}, kept if they reply',
+	first: 'Legacy: past attendee, send the notice first'
+} as const;
+
+function marker(key: string, tone: Marker['tone'], template: Template): Marker {
+	return { key, label: fill(template), tone, ...template };
+}
+
 /** The markers from §1, in the order they read best on a row. `day` formats a timestamp. */
 export function markers(row: PeopleRow, day: (ts: number) => string): Marker[] {
 	const list: Marker[] = [];
-	if (row.locked_at) list.push({ key: 'locked', label: 'Locked', tone: 'bad' });
-	if (row.blocked_at) list.push({ key: 'blocked', label: 'Blocked company', tone: 'bad' });
-	if (row.suppressed) list.push({ key: 'suppressed', label: 'Suppressed', tone: 'bad' });
-	if (needsDetails(row)) list.push({ key: 'details', label: 'Needs details', tone: 'warn' });
-	if (row.needs_review)
-		list.push({ key: 'review', label: 'Self-registered, check company owner', tone: 'warn' });
+	if (row.locked_at) list.push(marker('locked', 'bad', { text: MARKER_TEXT.locked }));
+	if (row.blocked_at) list.push(marker('blocked', 'bad', { text: MARKER_TEXT.blocked }));
+	if (row.suppressed) list.push(marker('suppressed', 'bad', { text: MARKER_TEXT.suppressed }));
+	if (needsDetails(row)) list.push(marker('details', 'warn', { text: MARKER_TEXT.details }));
+	if (row.needs_review) list.push(marker('review', 'warn', { text: MARKER_TEXT.review }));
 	if (row.chase_count)
-		list.push({
-			key: 'chased',
-			label: `Chased ×${row.chase_count}${row.last_contacted_at ? `, last ${day(row.last_contacted_at)}` : ''}`,
-			tone: 'muted'
-		});
+		list.push(
+			marker(
+				'chased',
+				'muted',
+				row.last_contacted_at
+					? {
+							text: MARKER_TEXT.chasedLast,
+							vars: { n: row.chase_count, day: day(row.last_contacted_at) }
+						}
+					: { text: MARKER_TEXT.chased, vars: { n: row.chase_count } }
+			)
+		);
 	if (row.stage === 'checked_in' && row.consent_event_at === null)
-		list.push({ key: 'consent', label: 'No consent recorded', tone: 'warn' });
+		list.push(marker('consent', 'warn', { text: MARKER_TEXT.consent }));
 	// "Invited on LinkedIn" is the row's own pressed button, and the track shows Invited.
 	if (!row.contact.whatsapp && !row.contact.email && row.contact.reason === 'not contactable')
-		list.push({ key: 'contact', label: 'Not contactable', tone: 'warn' });
-	if (row.legacy) list.push({ key: 'legacy', label: legacyLabel(row.legacy, day), tone: 'warn' });
+		list.push(marker('contact', 'warn', { text: MARKER_TEXT.contact }));
+	if (row.legacy) list.push(marker('legacy', 'warn', legacyText(row.legacy, day)));
 	return list;
+}
+
+/** legacyLabel as a template, with the day in `vars`. */
+export function legacyText(
+	legacy: NonNullable<PeopleRow['legacy']>,
+	day: (ts: number) => string
+): Template {
+	if (legacy.kept_at) return { text: LEGACY_TEXT.kept, vars: { day: day(legacy.kept_at) } };
+	if (legacy.notice_at) return { text: LEGACY_TEXT.notice, vars: { day: day(legacy.notice_at) } };
+	return { text: LEGACY_TEXT.first };
 }
 
 /** What is going on with a legacy attendee (§8): the notice, the clock, or that they answered. */
@@ -460,7 +557,5 @@ export function legacyLabel(
 	legacy: NonNullable<PeopleRow['legacy']>,
 	day: (ts: number) => string
 ): string {
-	if (legacy.kept_at) return `Legacy: kept, answered ${day(legacy.kept_at)}`;
-	if (legacy.notice_at) return `Legacy: notice sent ${day(legacy.notice_at)}, kept if they reply`;
-	return 'Legacy: past attendee, send the notice first';
+	return fill(legacyText(legacy, day));
 }

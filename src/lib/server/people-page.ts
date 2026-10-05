@@ -11,6 +11,7 @@ import {
 	type Today
 } from '../people.ts';
 import { addressAs, addressee, type SalutationLanguage } from '../salutation.ts';
+import { translate, type Lang, type Vars } from '../i18n/index.ts';
 import { endOfDay, startOfDay } from '../time.ts';
 import type { DB } from './database.ts';
 import {
@@ -252,15 +253,17 @@ export const FOUND_THRESHOLD = 10;
 export function reviewedGuests(
 	raw: string,
 	company: string,
-	country: CountryOption
+	country: CountryOption,
+	lang: Lang = 'en'
 ): GuestInput[] | string {
+	const say = (text: string, vars?: Vars) => translate(lang, text, vars);
 	let rows: unknown;
 	try {
 		rows = JSON.parse(raw);
 	} catch {
-		return 'Those rows didn’t arrive intact. Please try again.';
+		return say('Those rows didn’t arrive intact. Please try again.');
 	}
-	if (!Array.isArray(rows)) return 'Those rows didn’t arrive intact. Please try again.';
+	if (!Array.isArray(rows)) return say('Those rows didn’t arrive intact. Please try again.');
 	const guests: GuestInput[] = [];
 	for (const [i, row] of rows.slice(0, 1000).entries()) {
 		const r = (row ?? {}) as Record<string, unknown>;
@@ -279,11 +282,13 @@ export function reviewedGuests(
 			note: cleanText(r.note, 300),
 			...(extra ? { extra } : {})
 		};
-		const which = `Row ${i + 1}${guest.name ? ` (${guest.name})` : ''}`;
-		if (!guest.name) return `${which} needs a name.`;
-		if (email && !isValidEmail(email)) return `${which}: check the email.`;
+		const which = guest.name
+			? say('Row {n} ({name})', { n: i + 1, name: guest.name })
+			: say('Row {n}', { n: i + 1 });
+		if (!guest.name) return say('{which} needs a name.', { which });
+		if (email && !isValidEmail(email)) return say('{which}: check the email.', { which });
 		if (linkedinText && !guest.linkedin)
-			return `${which}: that isn’t a LinkedIn profile link (linkedin.com/in/…).`;
+			return say('{which}: that isn’t a LinkedIn profile link (linkedin.com/in/…).', { which });
 		guests.push(guest);
 	}
 	return guests;

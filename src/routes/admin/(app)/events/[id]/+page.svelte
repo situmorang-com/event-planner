@@ -12,6 +12,7 @@
 	import { connectLive, type LiveArrival, type LiveQr } from '$lib/live';
 	import { mailtoHref } from '$lib/mailto';
 	import { initials } from '$lib/names';
+	import { t, plural, lang } from '$lib/i18n/t.svelte';
 	import { formatDate, formatDateTime, formatTime } from '$lib/time';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Monitor from '@lucide/svelte/icons/monitor';
@@ -50,7 +51,7 @@
 			qr: (qr) => (liveQr = qr),
 			checkin: ({ arrival }) => {
 				toasts = [arrival, ...toasts].slice(0, 3);
-				setTimeout(() => (toasts = toasts.filter((t) => t !== arrival)), 4500);
+				setTimeout(() => (toasts = toasts.filter((x) => x !== arrival)), 4500);
 				refresh();
 			},
 			refresh,
@@ -108,9 +109,9 @@
 		} catch {
 			// An unreadable entry still shows its kind and count.
 		}
-		const rows = `${count} ${count === 1 ? 'row' : 'rows'}`;
+		const rows = plural(count, '{n} row', '{n} rows');
 		if (kind === 'export' && typeof parsed.export === 'string')
-			return `the ${parsed.export} list, ${rows}`;
+			return t('the {list} list, {rows}', { list: parsed.export, rows });
 		return rows;
 	}
 
@@ -124,41 +125,46 @@
 	<title>{event.name} · Event Planner</title>
 </svelte:head>
 
-<a class="back btn btn-ghost btn-sm" href="/admin"><ArrowLeft size={16} /> Events</a>
+<a class="back btn btn-ghost btn-sm" href="/admin"><ArrowLeft size={16} /> {t('Events')}</a>
 
 <header class="head">
 	<div class="title">
 		<div class="status">
 			{#if event.is_open}
-				<span class="pill pill-good"><span class="dot dot-live"></span> Check-in open</span>
+				<span class="pill pill-good"><span class="dot dot-live"></span> {t('Check-in open')}</span>
 			{:else}
-				<span class="pill">Check-in closed</span>
+				<span class="pill">{t('Check-in closed')}</span>
 			{/if}
-			<span class="pill" title={online ? 'Updates arrive live' : 'Reconnecting…'}>
+			<span class="pill" title={online ? t('Updates arrive live') : t('Reconnecting…')}>
 				<span class="dot" style="color: {online ? 'var(--good)' : 'var(--muted)'}"></span>
-				{online ? 'Live' : 'Connecting'}
+				{online ? t('Live') : t('Connecting')}
 			</span>
 		</div>
 		<h1>{event.name}</h1>
 		<p class="muted">
-			{#if event.starts_at}{formatDateTime(event.starts_at, event.timezone)}{/if}
+			{#if event.starts_at}{formatDateTime(event.starts_at, event.timezone, lang())}{/if}
 			{#if event.starts_at && event.venue}&nbsp;·&nbsp;{/if}
 			{event.venue}
 		</p>
 		{#if event.planning_purged_at}
 			<p class="muted small kept">
-				Planning data deleted {formatDate(event.planning_purged_at, event.timezone)}
+				{t('Planning data deleted {date}', {
+					date: formatDate(event.planning_purged_at, event.timezone, lang())
+				})}
 			</p>
 		{:else if data.planningKeptUntil}
 			<p class="muted small kept">
-				Planning data kept until {formatDate(data.planningKeptUntil, event.timezone)}
+				{t('Planning data kept until {date}', {
+					date: formatDate(data.planningKeptUntil, event.timezone, lang())
+				})}
 			</p>
 		{/if}
 	</div>
 	<div class="head-actions">
 		<form method="POST" action="?/toggle" use:enhance>
 			<input type="hidden" name="open" value={event.is_open ? '0' : '1'} />
-			<button class="btn btn-secondary">{event.is_open ? 'Close check-in' : 'Open check-in'}</button
+			<button class="btn btn-secondary"
+				>{event.is_open ? t('Close check-in') : t('Open check-in')}</button
 			>
 		</form>
 		<a
@@ -167,7 +173,8 @@
 			target="_blank"
 			rel="noopener"
 		>
-			<Monitor size={18} /> Entrance screen
+			<Monitor size={18} />
+			{t('Entrance screen')}
 		</a>
 	</div>
 </header>
@@ -182,9 +189,12 @@
 
 {#if data.created}
 	<p class="banner banner-brand created rise">
-		Event created. {event.qr_mode === 'rotating'
-			? 'Open the entrance screen on a TV, laptop or tablet at the door and people can start scanning.'
-			: 'Download the QR code below and put it on posters or table cards.'}
+		{t('Event created.')}
+		{event.qr_mode === 'rotating'
+			? t(
+					'Open the entrance screen on a TV, laptop or tablet at the door and people can start scanning.'
+				)
+			: t('Download the QR code below and put it on posters or table cards.')}
 	</p>
 {/if}
 
@@ -192,30 +202,33 @@
 	<p class="banner banner-warn rise">
 		<CircleAlert size={18} />
 		<span>
-			Phones can’t open <strong>localhost</strong>. Set <code>PUBLIC_BASE_URL</code>, or connect
-			this computer to Wi-Fi so the QR code can use its network address.
+			{t(
+				'Phones can’t open localhost. Set PUBLIC_BASE_URL, or connect this computer to Wi-Fi so the QR code can use its network address.'
+			)}
 		</span>
 	</p>
 {/if}
 
 <section class="kpis">
 	<div class="card kpi hero">
-		<p class="kpi-label">Checked in</p>
+		<p class="kpi-label">{t('Checked in')}</p>
 		<p class="hero-value">{stats.total.toLocaleString()}</p>
 	</div>
 	<div class="card kpi">
-		<p class="kpi-label">New to your database</p>
+		<p class="kpi-label">{t('New to your database')}</p>
 		<p class="kpi-value">{stats.newContacts.toLocaleString()}</p>
 	</div>
 	<div class="card kpi">
-		<p class="kpi-label">Returning attendees</p>
+		<p class="kpi-label">{t('Returning attendees')}</p>
 		<p class="kpi-value">{stats.returning.toLocaleString()}</p>
 	</div>
 	<div class="card kpi">
-		<p class="kpi-label">Busiest {stats.bucketMinutes} minutes</p>
+		<p class="kpi-label">{t('Busiest {n} minutes', { n: stats.bucketMinutes })}</p>
 		{#if stats.peak && stats.peak.count > 0}
 			<p class="kpi-value">{stats.peak.count}</p>
-			<p class="kpi-sub muted">from {formatTime(stats.peak.start, event.timezone)}</p>
+			<p class="kpi-sub muted">
+				{t('from {time}', { time: formatTime(stats.peak.start, event.timezone, false, lang()) })}
+			</p>
 		{:else}
 			<p class="kpi-value muted">–</p>
 		{/if}
@@ -226,8 +239,8 @@
 	<div class="main-col">
 		<section class="card panel">
 			<div class="panel-head">
-				<h2>Arrivals</h2>
-				<p class="muted">Check-ins per {stats.bucketMinutes} minutes</p>
+				<h2>{t('Arrivals')}</h2>
+				<p class="muted">{t('Check-ins per {n} minutes', { n: stats.bucketMinutes })}</p>
 			</div>
 			{#if stats.arrivals.length >= 3}
 				<ArrivalsChart
@@ -238,16 +251,16 @@
 			{:else}
 				<p class="placeholder muted">
 					{stats.total === 0
-						? 'Arrivals will chart here as soon as people start checking in.'
-						: 'The chart fills in once check-ins span a few minutes.'}
+						? t('Arrivals will chart here as soon as people start checking in.')
+						: t('The chart fills in once check-ins span a few minutes.')}
 				</p>
 			{/if}
 		</section>
 
 		<section class="card panel">
 			<div class="panel-head">
-				<h2>Devices</h2>
-				<p class="muted">Which phones people checked in with</p>
+				<h2>{t('Devices')}</h2>
+				<p class="muted">{t('Which phones people checked in with')}</p>
 			</div>
 			<DeviceSplit devices={stats.devices} />
 		</section>
@@ -255,33 +268,33 @@
 
 	<aside class="card panel qr-panel">
 		<div class="panel-head">
-			<h2>{event.qr_mode === 'rotating' ? 'Live QR code' : 'Printable QR code'}</h2>
+			<h2>{event.qr_mode === 'rotating' ? t('Live QR code') : t('Printable QR code')}</h2>
 			<p class="muted">
 				{event.qr_mode === 'rotating'
-					? 'Changes every 20 seconds. Show it on the entrance screen.'
-					: 'One fixed code for posters, badges and table cards.'}
+					? t('Changes every 20 seconds. Show it on the entrance screen.')
+					: t('One fixed code for posters, badges and table cards.')}
 			</p>
 		</div>
 		<div class="qr-box" class:off={!event.is_open}>
 			{#if event.qr_mode === 'static'}
-				<QrCode value={data.staticLink} label="Check-in QR code" />
+				<QrCode value={data.staticLink} label={t('Check-in QR code')} />
 			{:else if liveQr}
 				{#key liveQr.url}
 					<div in:fly={{ y: 6, duration: 250 }}>
-						<QrCode value={liveQr.url} label="Live check-in QR code" />
+						<QrCode value={liveQr.url} label={t('Live check-in QR code')} />
 					</div>
 				{/key}
 			{:else}
 				<div class="qr-wait"><span class="spinner"></span></div>
 			{/if}
-			{#if !event.is_open}<span class="qr-closed">Check-in closed</span>{/if}
+			{#if !event.is_open}<span class="qr-closed">{t('Check-in closed')}</span>{/if}
 		</div>
 		{#if event.qr_mode === 'static'}
 			<div class="link-row">
-				<input class="input" readonly value={data.staticLink} aria-label="Check-in link" />
-				<button class="btn btn-secondary btn-icon" onclick={copyLink} title="Copy link">
+				<input class="input" readonly value={data.staticLink} aria-label={t('Check-in link')} />
+				<button class="btn btn-secondary btn-icon" onclick={copyLink} title={t('Copy link')}>
 					{#if copied}<Check size={18} />{:else}<Copy size={18} />{/if}
-					<span class="sr-only">Copy link</span>
+					<span class="sr-only">{t('Copy link')}</span>
 				</button>
 			</div>
 			<div class="qr-actions">
@@ -294,7 +307,8 @@
 					target="_blank"
 					rel="noopener"
 				>
-					<Printer size={16} /> Print poster
+					<Printer size={16} />
+					{t('Print poster')}
 				</a>
 			</div>
 		{:else}
@@ -304,11 +318,12 @@
 				target="_blank"
 				rel="noopener"
 			>
-				<ExternalLink size={16} /> Open entrance screen
+				<ExternalLink size={16} />
+				{t('Open entrance screen')}
 			</a>
 		{/if}
 		<a class="preview" href="/c/{event.id}" target="_blank" rel="noopener"
-			>Preview the attendee page</a
+			>{t('Preview the attendee page')}</a
 		>
 	</aside>
 </div>
@@ -316,22 +331,23 @@
 <section class="card attendees">
 	<div class="table-head">
 		<div>
-			<h2>Attendees</h2>
-			<p class="muted">{data.attendees.length.toLocaleString()} checked in</p>
+			<h2>{t('Attendees')}</h2>
+			<p class="muted">{t('{n} checked in', { n: data.attendees.length.toLocaleString() })}</p>
 		</div>
 		<div class="table-tools">
 			<label class="search">
 				<Search size={17} />
-				<span class="sr-only">Search attendees</span>
+				<span class="sr-only">{t('Search attendees')}</span>
 				<input
 					class="input"
 					type="search"
-					placeholder="Search name, email, company"
+					placeholder={t('Search name, email, company')}
 					bind:value={query}
 				/>
 			</label>
 			<button class="btn btn-secondary" onclick={() => (adding = !adding)} aria-expanded={adding}>
-				<UserPlus size={17} /> Add
+				<UserPlus size={17} />
+				{t('Add')}
 			</button>
 			<a class="btn btn-secondary" href="/admin/events/{event.id}/export.csv"
 				><Download size={17} /> CSV</a
@@ -352,10 +368,12 @@
 				};
 			}}
 		>
-			<p class="hint">For anyone who can’t scan: their phone is flat, or they’d rather not.</p>
+			<p class="hint">
+				{t('For anyone who can’t scan: their phone is flat, or they’d rather not.')}
+			</p>
 			<div class="add-grid">
 				<div class="field">
-					<label class="label" for="add-name">Name</label>
+					<label class="label" for="add-name">{t('Name')}</label>
 					<input
 						class="input"
 						id="add-name"
@@ -363,10 +381,10 @@
 						value={addValues?.name ?? ''}
 						aria-invalid={addErrors.name ? 'true' : undefined}
 					/>
-					{#if addErrors.name}<p class="error-text">{addErrors.name}</p>{/if}
+					{#if addErrors.name}<p class="error-text">{t(addErrors.name)}</p>{/if}
 				</div>
 				<div class="field">
-					<label class="label" for="add-email">Email</label>
+					<label class="label" for="add-email">{t('Email')}</label>
 					<input
 						class="input"
 						id="add-email"
@@ -375,10 +393,10 @@
 						value={addValues?.email ?? ''}
 						aria-invalid={addErrors.email ? 'true' : undefined}
 					/>
-					{#if addErrors.email}<p class="error-text">{addErrors.email}</p>{/if}
+					{#if addErrors.email}<p class="error-text">{t(addErrors.email)}</p>{/if}
 				</div>
 				<div class="field">
-					<label class="label" for="add-phone">Mobile</label>
+					<label class="label" for="add-phone">{t('Mobile')}</label>
 					<input
 						class="input"
 						id="add-phone"
@@ -388,31 +406,33 @@
 					/>
 				</div>
 				<div class="field">
-					<label class="label" for="add-company">Company</label>
+					<label class="label" for="add-company">{t('Company')}</label>
 					<input class="input" id="add-company" name="company" value={addValues?.company ?? ''} />
 				</div>
 			</div>
 			<div class="add-actions">
-				<button type="button" class="btn btn-ghost" onclick={() => (adding = false)}>Cancel</button>
-				<button class="btn btn-primary">Check in</button>
+				<button type="button" class="btn btn-ghost" onclick={() => (adding = false)}
+					>{t('Cancel')}</button
+				>
+				<button class="btn btn-primary">{t('Check in')}</button>
 			</div>
 		</form>
 	{/if}
 
 	{#if data.attendees.length === 0}
-		<p class="placeholder muted">No one has checked in yet.</p>
+		<p class="placeholder muted">{t('No one has checked in yet.')}</p>
 	{:else}
 		<div class="table-wrap">
 			<table class="table">
 				<thead>
 					<tr>
-						<th>Name</th>
-						<th>Email</th>
-						<th>Mobile</th>
-						<th>Company</th>
-						<th>Time</th>
-						<th>Via</th>
-						<th><span class="sr-only">Actions</span></th>
+						<th>{t('Name')}</th>
+						<th>{t('Email')}</th>
+						<th>{t('Mobile')}</th>
+						<th>{t('Company')}</th>
+						<th>{t('Time')}</th>
+						<th>{t('Via')}</th>
+						<th><span class="sr-only">{t('Actions')}</span></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -423,7 +443,8 @@
 									<span class="avatar" aria-hidden="true">{initials(a.name)}</span>
 									<span>
 										<span class="person-name">{a.name}</span>
-										{#if a.is_returning}<span class="pill pill-brand tiny">Returning</span>{/if}
+										{#if a.is_returning}<span class="pill pill-brand tiny">{t('Returning')}</span
+											>{/if}
 									</span>
 								</div>
 							</td>
@@ -437,8 +458,11 @@
 								{a.company || '–'}
 								{#if a.job_title}<div class="muted small">{a.job_title}</div>{/if}
 							</td>
-							<td class="num nowrap">{formatTime(a.checked_in_at, event.timezone)}</td>
-							<td class="muted small nowrap">{METHOD_LABEL[a.method]} · {DEVICE_LABEL[a.device]}</td
+							<td class="num nowrap"
+								>{formatTime(a.checked_in_at, event.timezone, false, lang())}</td
+							>
+							<td class="muted small nowrap"
+								>{t(METHOD_LABEL[a.method])} · {t(DEVICE_LABEL[a.device])}</td
 							>
 							<td>
 								<form
@@ -446,20 +470,26 @@
 									action="?/remove"
 									use:enhance={({ cancel }) => {
 										if (
-											!confirm(`Remove ${a.name}'s check-in? Their contact stays in the database.`)
+											!confirm(
+												t('Remove {name}’s check-in? Their contact stays in the database.', {
+													name: a.name
+												})
+											)
 										)
 											cancel();
 									}}
 								>
 									<input type="hidden" name="checkin" value={a.checkin_id} />
-									<button class="btn btn-ghost btn-icon btn-sm" title="Remove check-in">
-										<X size={16} /><span class="sr-only">Remove {a.name}'s check-in</span>
+									<button class="btn btn-ghost btn-icon btn-sm" title={t('Remove check-in')}>
+										<X size={16} /><span class="sr-only"
+											>{t('Remove {name}’s check-in', { name: a.name })}</span
+										>
 									</button>
 								</form>
 							</td>
 						</tr>
 					{:else}
-						<tr><td colspan="7" class="muted">No one matches “{query}”.</td></tr>
+						<tr><td colspan="7" class="muted">{t('No one matches “{query}”.', { query })}</td></tr>
 					{/each}
 				</tbody>
 			</table>
@@ -469,19 +499,21 @@
 
 <section class="card panel activity">
 	<div class="panel-head">
-		<h2><ScrollText size={17} /> Activity</h2>
-		<p class="muted">Exports, deletions, locks and merges on this event: who, when and how many</p>
+		<h2><ScrollText size={17} /> {t('Activity')}</h2>
+		<p class="muted">
+			{t('Exports, deletions, locks and merges on this event: who, when and how many')}
+		</p>
 	</div>
 	{#if data.activity.length === 0}
-		<p class="placeholder muted">Nothing logged yet.</p>
+		<p class="placeholder muted">{t('Nothing logged yet.')}</p>
 	{:else}
 		<ul class="log">
 			{#each data.activity as a (a.id)}
 				<li>
-					<span class="log-kind">{ACTIVITY_LABEL[a.kind]}</span>
+					<span class="log-kind">{t(ACTIVITY_LABEL[a.kind])}</span>
 					<span class="muted">{activityDetail(a.kind, a.what, a.row_count)}</span>
 					<span class="muted small log-when">
-						{a.who || 'Someone'} · {formatDateTime(a.at, event.timezone)}
+						{a.who || t('Someone')} · {formatDateTime(a.at, event.timezone, lang())}
 					</span>
 				</li>
 			{/each}
@@ -490,7 +522,7 @@
 </section>
 
 <details class="card settings" id="settings" open={page.url.hash === '#settings'}>
-	<summary><Settings size={18} /> Event settings</summary>
+	<summary><Settings size={18} /> {t('Event settings')}</summary>
 	<form
 		method="POST"
 		action="?/update"
@@ -505,36 +537,46 @@
 			errors={form && 'settingsErrors' in form ? form.settingsErrors : undefined}
 		/>
 		<div class="settings-actions">
-			{#if form && 'saved' in form}<span class="muted saved">Saved</span>{/if}
-			<button class="btn btn-primary">Save changes</button>
+			{#if form && 'saved' in form}<span class="muted saved">{t('Saved')}</span>{/if}
+			<button class="btn btn-primary">{t('Save changes')}</button>
 		</div>
 	</form>
 	<div class="danger">
 		<div>
-			<h3>Delete this event</h3>
-			<p class="muted">Removes the event and its check-ins. Contacts stay in your database.</p>
+			<h3>{t('Delete this event')}</h3>
+			<p class="muted">
+				{t('Removes the event and its check-ins. Contacts stay in your database.')}
+			</p>
 		</div>
 		<form
 			method="POST"
 			action="?/delete"
 			use:enhance={({ cancel }) => {
-				if (!confirm(`Delete “${event.name}” and all ${data.attendees.length} check-ins?`))
+				if (
+					!confirm(
+						plural(
+							data.attendees.length,
+							'Delete “{name}” and its {n} check-in?',
+							'Delete “{name}” and all {n} check-ins?',
+							{ name: event.name }
+						)
+					)
+				)
 					cancel();
 			}}
 		>
-			<button class="btn btn-danger">Delete event</button>
+			<button class="btn btn-danger">{t('Delete event')}</button>
 		</form>
 	</div>
 </details>
 
 <div class="toasts" aria-live="polite">
-	{#each toasts as t (t)}
+	{#each toasts as toast (toast)}
 		<div class="toast" in:fly={{ y: 16, duration: 250 }} out:fly={{ x: 40, duration: 200 }}>
-			<span class="avatar" aria-hidden="true">{initials(t.name)}</span>
+			<span class="avatar" aria-hidden="true">{initials(toast.name)}</span>
 			<span
-				><strong>{t.name}</strong> checked in{#if t.company}<span class="muted">
-						· {t.company}</span
-					>{/if}</span
+				><strong>{toast.name}</strong>
+				{t('checked in')}{#if toast.company}<span class="muted"> · {toast.company}</span>{/if}</span
 			>
 		</div>
 	{/each}
@@ -584,10 +626,6 @@
 	.created,
 	.banner-warn {
 		margin-bottom: 16px;
-	}
-
-	.banner code {
-		font-size: 13px;
 	}
 
 	.kpis {

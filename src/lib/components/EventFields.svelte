@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { t } from '$lib/i18n/t.svelte';
 	import Monitor from '@lucide/svelte/icons/monitor';
 	import Printer from '@lucide/svelte/icons/printer';
 
@@ -34,7 +35,7 @@
 
 <div class="fields">
 	<div class="field">
-		<label class="label" for="name">Event name</label>
+		<label class="label" for="name">{t('Event name')}</label>
 		<input
 			class="input"
 			id="name"
@@ -44,12 +45,14 @@
 			required
 			aria-invalid={errors.name ? 'true' : undefined}
 		/>
-		{#if errors.name}<p class="error-text">{errors.name}</p>{/if}
+		{#if errors.name}<p class="error-text">{t(errors.name)}</p>{/if}
 	</div>
 
 	<div class="row">
 		<div class="field">
-			<label class="label" for="startsAt">Starts <span class="optional">(optional)</span></label>
+			<label class="label" for="startsAt"
+				>{t('Starts')} <span class="optional">{t('(optional)')}</span></label
+			>
 			<input
 				class="input"
 				id="startsAt"
@@ -58,14 +61,16 @@
 				value={values.startsAt}
 				aria-invalid={errors.startsAt ? 'true' : undefined}
 			/>
-			{#if errors.startsAt}<p class="error-text">{errors.startsAt}</p>{:else if timezone}<p
+			{#if errors.startsAt}<p class="error-text">{t(errors.startsAt)}</p>{:else if timezone}<p
 					class="hint"
 				>
-					Time zone: {timezone.replace(/_/g, ' ')}
+					{t('Time zone: {zone}', { zone: timezone.replace(/_/g, ' ') })}
 				</p>{/if}
 		</div>
 		<div class="field">
-			<label class="label" for="endsAt">Ends <span class="optional">(optional)</span></label>
+			<label class="label" for="endsAt"
+				>{t('Ends')} <span class="optional">{t('(optional)')}</span></label
+			>
 			<input
 				class="input"
 				id="endsAt"
@@ -74,27 +79,31 @@
 				value={values.endsAt}
 				aria-invalid={errors.endsAt ? 'true' : undefined}
 			/>
-			{#if errors.endsAt}<p class="error-text">{errors.endsAt}</p>{:else}<p class="hint">
-					Registration links stop working then. Blank means six hours after the start.
+			{#if errors.endsAt}<p class="error-text">{t(errors.endsAt)}</p>{:else}<p class="hint">
+					{t('Registration links stop working then. Blank means six hours after the start.')}
 				</p>{/if}
 		</div>
 	</div>
 	<input type="hidden" name="timezone" value={timezone} />
 
 	<div class="field">
-		<label class="label" for="venue">Venue <span class="optional">(optional)</span></label>
+		<label class="label" for="venue"
+			>{t('Venue')} <span class="optional">{t('(optional)')}</span></label
+		>
 		<input
 			class="input"
 			id="venue"
 			name="venue"
 			value={values.venue}
-			placeholder="Grand Ballroom, Jakarta"
+			placeholder={t('Grand Ballroom, Jakarta')}
 		/>
 	</div>
 
 	<div class="row">
 		<div class="field">
-			<label class="label" for="targetCount">Target <span class="optional">(optional)</span></label>
+			<label class="label" for="targetCount"
+				>{t('Target')} <span class="optional">{t('(optional)')}</span></label
+			>
 			<input
 				class="input"
 				id="targetCount"
@@ -107,36 +116,43 @@
 				placeholder="40"
 				aria-invalid={errors.targetCount ? 'true' : undefined}
 			/>
-			{#if errors.targetCount}<p class="error-text">{errors.targetCount}</p>{:else}<p class="hint">
-					How many Yes replies you’re aiming for. The People tab counts up to it.
+			{#if errors.targetCount}<p class="error-text">{t(errors.targetCount)}</p>{:else}<p
+					class="hint"
+				>
+					{t('How many Yes replies you’re aiming for. The People tab counts up to it.')}
 				</p>{/if}
 		</div>
 		<div class="field">
-			<label class="label" for="phoneCountry">Phone country</label>
+			<label class="label" for="phoneCountry">{t('Phone country')}</label>
 			<select class="input" id="phoneCountry" name="phoneCountry" value={values.phoneCountry}>
 				<option value="ID">Indonesia (+62)</option>
 				<option value="MY">Malaysia (+60)</option>
 			</select>
 			<p class="hint">
-				Reads local numbers like 0812… and picks the language of messages. A company can choose its
-				own on the People tab.
+				{t(
+					'Reads local numbers like 0812… and picks the language of messages. A company can choose its own on the People tab.'
+				)}
 			</p>
 		</div>
 	</div>
 
 	<div class="row">
 		<div class="field">
-			<label class="label" for="language">Message language</label>
+			<label class="label" for="language">{t('Message language')}</label>
 			<select class="input" id="language" name="language" value={values.language}>
-				<option value="">From the phone country</option>
-				<option value="id">Indonesian</option>
-				<option value="en">English</option>
-				<option value="ms">Malay</option>
+				<option value="">{t('From the phone country')}</option>
+				<option value="id">{t('Indonesian')}</option>
+				<option value="en">{t('English')}</option>
+				<option value="ms">{t('Malay')}</option>
 			</select>
-			<p class="hint">Invitations, reminders and the registration page for everyone on the list.</p>
+			<p class="hint">
+				{t('Invitations, reminders and the registration page for everyone on the list.')}
+			</p>
 		</div>
 		<div class="field">
-			<label class="label" for="coHosts">Co-hosts <span class="optional">(optional)</span></label>
+			<label class="label" for="coHosts"
+				>{t('Co-hosts')} <span class="optional">{t('(optional)')}</span></label
+			>
 			<input
 				class="input"
 				id="coHosts"
@@ -145,31 +161,36 @@
 				placeholder="Microsoft Indonesia"
 			/>
 			<p class="hint">
-				Names the partner in the “share my name, company and title with…” consent box. Leave blank
-				and the box isn’t shown.
+				{t(
+					'Names the partner in the “share my name, company and title with…” consent box. Leave blank and the box isn’t shown.'
+				)}
 			</p>
 		</div>
 	</div>
 
 	<fieldset>
-		<legend class="label">How will people scan?</legend>
+		<legend class="label">{t('How will people scan?')}</legend>
 		<div class="modes">
 			<label class="mode" class:selected={qrMode === 'rotating'}>
 				<input type="radio" name="qrMode" value="rotating" bind:group={qrMode} />
 				<span class="mode-icon"><Monitor size={20} /></span>
-				<span class="mode-title">Live screen <span class="pill pill-brand">Recommended</span></span>
+				<span class="mode-title"
+					>{t('Live screen')} <span class="pill pill-brand">{t('Recommended')}</span></span
+				>
 				<span class="mode-text">
-					A screen or tablet at the entrance shows a QR code that changes every 20 seconds. Photos
-					of it stop working, so only people in the room can check in.
+					{t(
+						'A screen or tablet at the entrance shows a QR code that changes every 20 seconds. Photos of it stop working, so only people in the room can check in.'
+					)}
 				</span>
 			</label>
 			<label class="mode" class:selected={qrMode === 'static'}>
 				<input type="radio" name="qrMode" value="static" bind:group={qrMode} />
 				<span class="mode-icon"><Printer size={20} /></span>
-				<span class="mode-title">Printed QR</span>
+				<span class="mode-title">{t('Printed QR')}</span>
 				<span class="mode-text">
-					One fixed code for posters, table cards and badges. Anyone with the link can check in, so
-					close check-in when the event ends.
+					{t(
+						'One fixed code for posters, table cards and badges. Anyone with the link can check in, so close check-in when the event ends.'
+					)}
 				</span>
 			</label>
 		</div>

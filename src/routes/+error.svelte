@@ -1,25 +1,27 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Logo from '$lib/components/Logo.svelte';
+	import { t } from '$lib/i18n/t.svelte';
 </script>
 
 <svelte:head>
-	<title>{page.status === 404 ? 'Not found' : 'Something went wrong'} · Event Planner</title>
+	<title>{page.status === 404 ? t('Not found') : t('Something went wrong')} · Event Planner</title>
 </svelte:head>
 
 <main>
 	<Logo size={40} wordmark={false} />
 	<p class="code">{page.status}</p>
-	<h1>{page.status === 404 ? 'We couldn’t find that page' : 'Something went wrong'}</h1>
+	<h1>{page.status === 404 ? t('We couldn’t find that page') : t('Something went wrong')}</h1>
 	<p class="muted">
 		{#if page.status === 404}
-			If you scanned a QR code, it may belong to an event that has ended. Ask the team at the
-			entrance for the current code.
+			{t(
+				'If you scanned a QR code, it may belong to an event that has ended. Ask the team at the entrance for the current code.'
+			)}
 		{:else}
-			{page.error?.message}
+			{page.error?.message ? t(page.error.message) : ''}
 		{/if}
 	</p>
-	<a class="btn btn-secondary" href="/">Go home</a>
+	<a class="btn btn-secondary" href="/">{t('Go home')}</a>
 </main>
 
 <style>

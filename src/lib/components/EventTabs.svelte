@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { t } from '$lib/i18n/t.svelte';
+
 	interface Props {
 		eventId: string;
 		current: 'checkins' | 'people' | 'planning';
@@ -12,19 +14,19 @@
 	let { eventId, current, checkins, people, review }: Props = $props();
 
 	const tabs = $derived([
-		{ key: 'checkins', label: 'Check-ins', href: `/admin/events/${eventId}`, count: checkins },
+		{ key: 'checkins', label: t('Check-ins'), href: `/admin/events/${eventId}`, count: checkins },
 		{
 			key: 'people',
-			label: 'People',
+			label: t('People'),
 			href: `/admin/events/${eventId}/people`,
 			count: people,
-			dot: review > 0 ? `${review} to review` : null
+			dot: review > 0 ? t('{n} to review', { n: review.toLocaleString() }) : null
 		},
-		{ key: 'planning', label: 'Planning', href: `/admin/events/${eventId}/planning` }
+		{ key: 'planning', label: t('Planning'), href: `/admin/events/${eventId}/planning` }
 	]);
 </script>
 
-<nav aria-label="Event sections">
+<nav aria-label={t('Event sections')}>
 	{#each tabs as tab (tab.key)}
 		<a href={tab.href} aria-current={tab.key === current ? 'page' : undefined}>
 			{tab.label}

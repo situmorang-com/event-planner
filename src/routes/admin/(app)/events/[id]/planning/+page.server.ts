@@ -1,4 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
+import { translate } from '$lib/i18n';
 import { briefIsEmpty, DEPARTMENTS, SENIORITY, type Brief } from '$lib/planning';
 import {
 	ACCOUNT_COLUMN_LABEL,
@@ -48,6 +49,19 @@ function requireEvent(id: string) {
 	const event = getEvent(db, id);
 	if (!event) error(404, 'Event not found');
 	return event;
+}
+
+/**
+ * parseChaseForm's English message ("Chase after: a whole number from 0 to 30.") in the page's
+ * language: the field label and the range are read back out and put in the translated template.
+ */
+function chaseErrorIn(lang: App.Locals['lang'], message: string) {
+	const m = /^(.+): a whole number from 0 to (\d+)\.$/.exec(message);
+	if (!m) return translate(lang, message);
+	return translate(lang, '{field}: a whole number from 0 to {max}.', {
+		field: translate(lang, m[1]),
+		max: m[2]
+	});
 }
 
 const idOf = (form: FormData, field = 'id') => {
@@ -257,7 +271,7 @@ export const actions: Actions = {
 	},
 
 	// The per-event chase override (D20): "use defaults" clears it, else all five fields are kept.
-	chase: async ({ params, request }) => {
+	chase: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		if (form.get('useDefaults') === '1') {
@@ -265,7 +279,8 @@ export const actions: Actions = {
 			return { chaseSaved: true };
 		}
 		const rules = parseChaseForm(form);
-		if (typeof rules === 'string') return fail(400, { chaseError: rules });
+		if (typeof rules === 'string')
+			return fail(400, { chaseError: chaseErrorIn(locals.lang, rules) });
 		setChaseRules(db, event.id, rules);
 		return { chaseSaved: true };
 	},

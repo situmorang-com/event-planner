@@ -9,6 +9,7 @@
 	import QrCode from '$lib/components/QrCode.svelte';
 	import { connectLive, type LiveArrival, type LiveQr } from '$lib/live';
 	import { initials } from '$lib/names';
+	import { t, lang } from '$lib/i18n/t.svelte';
 	import { formatTime, timeAgo } from '$lib/time';
 	import Maximize from '@lucide/svelte/icons/maximize';
 	import Minimize from '@lucide/svelte/icons/minimize';
@@ -36,7 +37,7 @@
 	const skew = data.serverNow - Date.now();
 	const remaining = $derived(qr.rotatesAt ? Math.max(0, qr.rotatesAt - (now + skew)) : 0);
 
-	const clock = $derived(formatTime(now, data.event.timezone));
+	const clock = $derived(formatTime(now, data.event.timezone, false, lang()));
 
 	const queue: LiveArrival[] = [];
 	let welcomeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -129,7 +130,7 @@
 </script>
 
 <svelte:head>
-	<title>Entrance · {data.event.name}</title>
+	<title>{t('Entrance')} · {data.event.name}</title>
 	<meta name="theme-color" content="#05060f" />
 </svelte:head>
 
@@ -146,7 +147,7 @@
 		</div>
 		<div class="status">
 			<span class="live" class:offline={!online}
-				><span class="dot dot-live"></span>{online ? 'Live' : 'Reconnecting'}</span
+				><span class="dot dot-live"></span>{online ? t('Live') : t('Reconnecting')}</span
 			>
 			<span class="clock">{clock}</span>
 		</div>
@@ -157,13 +158,13 @@
 			<div class="qr-card" class:closed={!data.event.isOpen}>
 				{#key qr.url}
 					<div class="qr-swap" in:fade={{ duration: 220 }}>
-						<QrCode value={qr.url} label="Scan to check in" />
+						<QrCode value={qr.url} label={t('Scan to check in')} />
 					</div>
 				{/key}
 				{#if !data.event.isOpen}
 					<div class="closed-overlay" transition:fade>
 						<Lock size={48} />
-						<p>Check-in is closed</p>
+						<p>{t('Check-in is closed')}</p>
 					</div>
 				{/if}
 				{#if qr.rotatesAt && data.event.isOpen}
@@ -173,9 +174,9 @@
 				{/if}
 			</div>
 			<div class="scan-text">
-				<h1>Scan to check in</h1>
+				<h1>{t('Scan to check in')}</h1>
 				<p>
-					Open your phone camera and point it at the code. No app needed.
+					{t('Open your phone camera and point it at the code. No app needed.')}
 					{#if !data.event.rotating}<span class="link">{data.shortLink}</span>{/if}
 				</p>
 			</div>
@@ -184,13 +185,13 @@
 		<section class="stats">
 			<div class="counter">
 				<p class="count">{Math.round(shown.current).toLocaleString()}</p>
-				<p class="count-label">checked in</p>
+				<p class="count-label">{t('checked in')}</p>
 			</div>
 
 			<div class="arrivals">
-				<p class="arrivals-title">Latest arrivals</p>
+				<p class="arrivals-title">{t('Latest arrivals')}</p>
 				{#if arrivals.length === 0}
-					<p class="empty">Be the first to check in 👋</p>
+					<p class="empty">{t('Be the first to check in 👋')}</p>
 				{:else}
 					<ul>
 						{#each arrivals as a (a.id)}
@@ -200,7 +201,7 @@
 									<span class="name">{a.name}</span>
 									{#if a.company}<span class="company">{a.company}</span>{/if}
 								</span>
-								<span class="ago">{timeAgo(a.at, now + skew)}</span>
+								<span class="ago">{timeAgo(a.at, now + skew, lang())}</span>
 							</li>
 						{/each}
 					</ul>
@@ -217,21 +218,25 @@
 				out:fade={{ duration: 250 }}
 			>
 				<span class="wave" aria-hidden="true">👋</span>
-				<span>Welcome, <strong>{welcome.name.replace(/ \w\.$/, '')}</strong>!</span>
+				<span>{t('Welcome,')} <strong>{welcome.name.replace(/ \w\.$/, '')}</strong>!</span>
 			</div>
 		{/key}
 	{/if}
 
 	{#if !data.reachable}
 		<p class="warning">
-			<CircleAlert size={20} /> Phones can’t reach this address (localhost). Set PUBLIC_BASE_URL.
+			<CircleAlert size={20} />
+			{t('Phones can’t reach this address (localhost). Set PUBLIC_BASE_URL.')}
 		</p>
 	{/if}
 
 	<nav class="chrome" class:visible={chromeVisible}>
-		<a class="btn btn-sm" href="/admin/events/{data.event.id}"><ArrowLeft size={16} /> Dashboard</a>
+		<a class="btn btn-sm" href="/admin/events/{data.event.id}"
+			><ArrowLeft size={16} /> {t('Dashboard')}</a
+		>
 		<button class="btn btn-sm" onclick={toggleFullscreen}>
-			{#if fullscreen}<Minimize size={16} /> Exit full screen{:else}<Maximize size={16} /> Full screen{/if}
+			{#if fullscreen}<Minimize size={16} /> {t('Exit full screen')}{:else}<Maximize size={16} />
+				{t('Full screen')}{/if}
 		</button>
 	</nav>
 </div>

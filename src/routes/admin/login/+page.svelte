@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import Logo from '$lib/components/Logo.svelte';
+	import { t } from '$lib/i18n/t.svelte';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -8,7 +9,7 @@
 </script>
 
 <svelte:head>
-	<title>Sign in · Event Planner</title>
+	<title>{t('Sign in')} · Event Planner</title>
 </svelte:head>
 
 <div class="aurora" aria-hidden="true"></div>
@@ -27,27 +28,28 @@
 	>
 		<Logo size={36} />
 		<div>
-			<h1>Organizer sign in</h1>
-			<p class="muted">Run check-in, watch arrivals and export contacts.</p>
+			<h1>{t('Organizer sign in')}</h1>
+			<p class="muted">{t('Run check-in, watch arrivals and export contacts.')}</p>
 		</div>
 
 		{#if !data.configured}
 			<p class="banner banner-warn">
 				<span>
-					Sign-in is switched off until an <strong>ADMIN_PASSWORD</strong> environment variable is set
-					on the server.
+					{t('Sign-in is switched off until an')} <strong>ADMIN_PASSWORD</strong>
+					{t('environment variable is set on the server.')}
 				</span>
 			</p>
 		{:else}
 			{#if data.devPassword}
 				<p class="banner banner-brand">
 					<span
-						>Local development: the password is <strong>admin</strong> until you set ADMIN_PASSWORD.</span
+						>{t('Local development: the password is')} <strong>admin</strong>
+						{t('until you set ADMIN_PASSWORD.')}</span
 					>
 				</p>
 			{/if}
 			<div class="field">
-				<label class="label" for="password">Password</label>
+				<label class="label" for="password">{t('Password')}</label>
 				<!-- svelte-ignore a11y_autofocus -->
 				<input
 					class="input"
@@ -59,10 +61,11 @@
 					autofocus
 					aria-invalid={form?.message ? 'true' : undefined}
 				/>
-				{#if form?.message}<p class="error-text">{form.message}</p>{/if}
+				{#if form?.message}<p class="error-text">{t(form.message)}</p>{/if}
 			</div>
 			<button class="btn btn-primary btn-lg btn-block" disabled={busy}>
-				{#if busy}<span class="spinner"></span>{/if} Sign in
+				{#if busy}<span class="spinner"></span>{/if}
+				{t('Sign in')}
 			</button>
 		{/if}
 	</form>

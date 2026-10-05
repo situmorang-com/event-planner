@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { t } from '$lib/i18n/t.svelte';
+
 	interface Props {
 		devices: { ios: number; android: number; other: number };
 	}
@@ -14,7 +16,12 @@
 
 	const total = $derived(devices.ios + devices.android + devices.other);
 	const rows = $derived(
-		SERIES.map((s) => ({ ...s, count: devices[s.key], share: total ? devices[s.key] / total : 0 }))
+		SERIES.map((s) => ({
+			...s,
+			label: s.key === 'other' ? t('Other & staff') : s.label,
+			count: devices[s.key],
+			share: total ? devices[s.key] / total : 0
+		}))
 	);
 	const visible = $derived(rows.filter((r) => r.count > 0));
 	const pct = (n: number) => `${Math.round(n * 100)}%`;

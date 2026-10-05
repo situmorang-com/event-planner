@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Logo from '$lib/components/Logo.svelte';
 	import QrCode from '$lib/components/QrCode.svelte';
+	import { t } from '$lib/i18n/t.svelte';
 	import Printer from '@lucide/svelte/icons/printer';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import type { PageProps } from './$types';
@@ -9,33 +10,37 @@
 </script>
 
 <svelte:head>
-	<title>Poster · {data.event.name}</title>
+	<title>{t('Poster')} · {data.event.name}</title>
 </svelte:head>
 
 <div class="tools">
 	<a class="btn btn-ghost btn-sm" href="/admin/events/{data.event.id}"
-		><ArrowLeft size={16} /> Back</a
+		><ArrowLeft size={16} /> {t('Back')}</a
 	>
 	{#if !data.event.rotating}
 		<button class="btn btn-primary btn-sm" onclick={() => print()}
-			><Printer size={16} /> Print</button
+			><Printer size={16} /> {t('Print')}</button
 		>
 	{/if}
 </div>
 
 {#if data.event.rotating}
 	<p class="note card">
-		This event uses a live QR code that changes every 20 seconds, so there’s nothing fixed to print.
-		Switch the event to <strong>Printed QR</strong> in its settings, or open the entrance screen instead.
+		{t(
+			'This event uses a live QR code that changes every 20 seconds, so there’s nothing fixed to print.'
+		)}
+		{t('Switch the event to Printed QR in its settings, or open the entrance screen instead.')}
 	</p>
 {:else}
 	<article class="poster">
-		<p class="kicker">Welcome to</p>
+		<p class="kicker">{t('Welcome to')}</p>
 		<h1>{data.event.name}</h1>
 		{#if data.event.venue}<p class="venue">{data.event.venue}</p>{/if}
-		<div class="qr"><QrCode value={data.link} label="Scan to check in" /></div>
-		<h2>Scan to check in</h2>
-		<p class="how">Open your phone camera and point it at the code. No app, about five seconds.</p>
+		<div class="qr"><QrCode value={data.link} label={t('Scan to check in')} /></div>
+		<h2>{t('Scan to check in')}</h2>
+		<p class="how">
+			{t('Open your phone camera and point it at the code. No app, about five seconds.')}
+		</p>
 		<p class="link">{data.shortLink}</p>
 		<footer><Logo size={22} /></footer>
 	</article>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t, plural, lang } from '$lib/i18n/t.svelte';
 	import { formatDateTime, timeAgo } from '$lib/time';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Monitor from '@lucide/svelte/icons/monitor';
@@ -13,77 +14,91 @@
 </script>
 
 <svelte:head>
-	<title>Events · Event Planner</title>
+	<title>{t('Events')} · Event Planner</title>
 </svelte:head>
 
 <div class="head">
 	<div>
-		<h1>Events</h1>
+		<h1>{t('Events')}</h1>
 		<p class="muted">
-			{data.contacts.toLocaleString()} contacts in your database · {data.checkins.toLocaleString()} check-ins
-			so far
+			{plural(data.contacts, '{n} contact in your database', '{n} contacts in your database')} ·
+			{plural(data.checkins, '{n} check-in so far', '{n} check-ins so far')}
 		</p>
 	</div>
-	<a class="btn btn-primary" href="/admin/events/new"><Plus size={18} /> New event</a>
+	<a class="btn btn-primary" href="/admin/events/new"><Plus size={18} /> {t('New event')}</a>
 </div>
 
 {#if data.events.length === 0}
 	<section class="empty card rise">
 		<div class="empty-icon"><ScanLine size={30} /></div>
-		<h2>Create your first event</h2>
+		<h2>{t('Create your first event')}</h2>
 		<p class="muted">
-			You’ll get a live QR code for the entrance screen (or a printable one), and every attendee who
-			scans it lands in your contact database.
+			{t(
+				'You’ll get a live QR code for the entrance screen (or a printable one), and every attendee who scans it lands in your contact database.'
+			)}
 		</p>
-		<a class="btn btn-primary btn-lg" href="/admin/events/new"><Plus size={20} /> New event</a>
+		<a class="btn btn-primary btn-lg" href="/admin/events/new"
+			><Plus size={20} /> {t('New event')}</a
+		>
 	</section>
 {:else}
 	<ul class="grid">
 		{#each data.events as event, i (event.id)}
 			<li class="card rise" style="animation-delay: {Math.min(i, 8) * 40}ms">
-				<a class="cover" href="/admin/events/{event.id}" aria-label="Open {event.name}"></a>
+				<a
+					class="cover"
+					href="/admin/events/{event.id}"
+					aria-label={t('Open {name}', { name: event.name })}
+				></a>
 				<div class="top">
 					{#if event.is_open}
-						<span class="pill pill-good"><span class="dot dot-live"></span> Check-in open</span>
+						<span class="pill pill-good"
+							><span class="dot dot-live"></span> {t('Check-in open')}</span
+						>
 					{:else}
-						<span class="pill">Closed</span>
+						<span class="pill">{t('Closed')}</span>
 					{/if}
 					<a
 						class="btn btn-ghost btn-icon btn-sm"
 						href="/admin/events/{event.id}/display"
-						title="Entrance screen"
+						title={t('Entrance screen')}
 					>
-						<Monitor size={18} /><span class="sr-only">Open entrance screen for {event.name}</span>
+						<Monitor size={18} /><span class="sr-only"
+							>{t('Open entrance screen for {name}', { name: event.name })}</span
+						>
 					</a>
 				</div>
 				<h2>{event.name}</h2>
 				<p class="meta">
 					{#if event.starts_at}
-						<span><Calendar size={14} />{formatDateTime(event.starts_at, event.timezone)}</span>
+						<span
+							><Calendar size={14} />{formatDateTime(event.starts_at, event.timezone, lang())}</span
+						>
 					{/if}
 					{#if event.venue}<span><MapPin size={14} />{event.venue}</span>{/if}
 				</p>
 				<div class="count">
 					<strong>{event.checkins.toLocaleString()}</strong>
 					<span class="muted">
-						checked in{#if event.last_checkin_at}&nbsp;· latest {timeAgo(
-								event.last_checkin_at,
-								data.now
-							)}{/if}
+						{t('checked in')}{#if event.last_checkin_at}&nbsp;· {t('latest {ago}', {
+								ago: timeAgo(event.last_checkin_at, data.now, lang())
+							})}{/if}
 					</span>
 				</div>
 				{#if event.invited || event.target_count}
 					<a class="rsvp" href="/admin/events/{event.id}/people">
 						<MailCheck size={15} />
-						Yes {event.attending.toLocaleString()}{#if event.target_count}
-							/ {event.target_count.toLocaleString()} target{/if}
-						<span class="muted">· Confirmed {event.confirmed.toLocaleString()}</span>
+						{t('Yes {n}', { n: event.attending.toLocaleString() })}{#if event.target_count}
+							/ {t('{n} target', { n: event.target_count.toLocaleString() })}{/if}
+						<span class="muted"
+							>· {t('Confirmed {n}', { n: event.confirmed.toLocaleString() })}</span
+						>
 					</a>
 				{/if}
 				{#if event.due}
 					<a class="rsvp due" href="/admin/events/{event.id}/people">
 						<CalendarClock size={15} />
-						Due today {event.due.toLocaleString()}
+						{t('Due today {n}', { n: event.due.toLocaleString() })}
 					</a>
 				{/if}
 			</li>

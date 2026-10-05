@@ -10,7 +10,7 @@
 		LINKEDIN_STATUS_LABEL,
 		markers,
 		menuKinds,
-		nextActionLabel,
+		nextActionText,
 		nextStep,
 		phaseTrack,
 		type LinkedinStatus,
@@ -21,6 +21,7 @@
 		type Today
 	} from '$lib/people';
 	import { formatDay, formatDueDay, formatTime, localDate } from '$lib/time';
+	import { lang, t } from '$lib/i18n/t.svelte';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Ban from '@lucide/svelte/icons/ban';
@@ -118,15 +119,15 @@
 	] as const;
 
 	// What the prepared message does, so the button can say so (§7).
-	const PURPOSE: Record<RowMessage['kind'], string> = {
-		invitation: 'Invite',
-		chase: 'Chase',
-		reminder: 'Remind',
-		thanks_yes: 'Thank',
-		followup_maybe: 'Follow up with',
-		thanks_no: 'Thank',
-		legacy_notice: 'Notify'
-	};
+	const PURPOSE = $derived<Record<RowMessage['kind'], string>>({
+		invitation: t('Invite'),
+		chase: t('Chase'),
+		reminder: t('Remind'),
+		thanks_yes: t('Thank'),
+		followup_maybe: t('Follow up with'),
+		thanks_no: t('Thank'),
+		legacy_notice: t('Notify')
+	});
 
 	const found = $derived(row.stage === 'found');
 	const details = $derived(
@@ -142,17 +143,23 @@
 	const word = (s: Salutation | null) => salutationWord(s, row.address.language);
 	const greetLabel = $derived(`${word(row.address.salutation)} ${row.address.call_name}`.trim());
 	const greetTitle = $derived(
-		{
-			self: `${first} chose this when registering.`,
-			team: 'Set by the team.',
-			research: `From research: ${row.address.note || 'a public page said so'}.`,
-			name: 'Guessed from the name: pick Pak or Bu to confirm it.',
-			unsure: 'The name could be either, so messages say Bapak/Ibu: pick Pak or Bu if you know.'
-		}[row.address.source ?? 'unsure'] +
-			(row.address.language === 'en'
-				? ' English messages use the name only.'
-				: ` Messages open “${row.address.greeting}”.`) +
-			' Edit sets the name after it.'
+		[
+			{
+				self: () => t('{first} chose this when registering.', { first }),
+				team: () => t('Set by the team.'),
+				research: () =>
+					t('From research: {note}.', {
+						note: row.address.note || t('a public page said so')
+					}),
+				name: () => t('Guessed from the name: pick Pak or Bu to confirm it.'),
+				unsure: () =>
+					t('The name could be either, so messages say Bapak/Ibu: pick Pak or Bu if you know.')
+			}[row.address.source ?? 'unsure'](),
+			row.address.language === 'en'
+				? t('English messages use the name only.')
+				: t('Messages open “{greeting}”.', { greeting: row.address.greeting }),
+			t('Edit sets the name after it.')
+		].join(' ')
 	);
 
 	// The message menu (§7): the page carries the suggested kind's text, rendered on the server
@@ -185,7 +192,10 @@
 	});
 
 	// What the rules say is next (D20), and whether that is the organizer's own date.
-	const dueLabel = $derived(nextActionLabel(row, today, (ts) => formatDueDay(ts, event.timezone)));
+	const dueText = $derived(
+		nextActionText(row, today, (ts) => formatDueDay(ts, event.timezone, lang()))
+	);
+	const dueLabel = $derived(dueText && t(dueText.text, dueText.vars));
 	const overdue = $derived(isOverdue(row, today));
 	const dueToday = $derived(
 		row.next_action_at !== null && !overdue && row.next_action_at <= today.end
@@ -194,7 +204,7 @@
 		!found && row.stage !== 'checked_in' && !row.skipped_at && !row.locked_at
 	);
 	const owner = $derived(effectiveOwner(row));
-	const marks = $derived(markers(row, (ts) => formatDay(ts, event.timezone)));
+	const marks = $derived(markers(row, (ts) => formatDay(ts, event.timezone, lang())));
 	// Where they are and what comes next (§4.2), for anyone picking up the list.
 	const listed = $derived(!found && !row.skipped_at);
 	const sendShown = $derived(listed && !!(row.message || row.registration_link));
@@ -221,8 +231,8 @@
 	// "Request sent · 5 Oct": when it went out, so a long wait stands out.
 	const linkedinLabel = $derived(
 		linkedinStatus === 'requested' && row.linkedin_status_at && !pendingLinkedin
-			? `${LINKEDIN_STATUS_LABEL.requested} · ${formatDay(row.linkedin_status_at, event.timezone)}`
-			: LINKEDIN_STATUS_LABEL[linkedinStatus]
+			? `${t(LINKEDIN_STATUS_LABEL.requested)} · ${formatDay(row.linkedin_status_at, event.timezone, lang())}`
+			: t(LINKEDIN_STATUS_LABEL[linkedinStatus])
 	);
 	// The page data catches up a moment after a change; until then the row shows what was set.
 	$effect(() => {
@@ -292,7 +302,7 @@
 				() => false
 			));
 		if (!ok) {
-			prompt('Copy the message', text);
+			prompt(t('Copy the message'), text);
 			return;
 		}
 		copiedMessage = true;
@@ -385,7 +395,7 @@
 			copiedTimer = setTimeout(() => (copied = false), 1500);
 		} catch {
 			// Clipboard refused (http on a LAN laptop): the prompt still lets them copy by hand.
-			prompt('Copy the registration link', row.registration_link);
+			prompt(t('Copy the registration link'), row.registration_link);
 		}
 	}
 
@@ -506,11 +516,11 @@
 						update({ reset: false })}
 			>
 				<input type="hidden" name="id" value={row.id} />
-				<label class="owner" title={owner ? `Owner: ${owner}` : 'No owner yet'}>
+				<label class="owner" title={owner ? t('Owner: {owner}', { owner }) : t('No owner yet')}>
 					<span class="owner-avatar" class:unset={!owner} aria-hidden="true">
 						{owner ? initials(owner) : '?'}
 					</span>
-					<span class="sr-only">Owner of {row.name}</span>
+					<span class="sr-only">{t('Owner of {name}', { name: row.name })}</span>
 					<select
 						class="owner-select"
 						name="owner"
@@ -518,7 +528,9 @@
 						onchange={(e) => e.currentTarget.form?.requestSubmit()}
 					>
 						<option value="">
-							{row.company_owner ? `${row.company_owner} (company)` : 'No owner'}
+							{row.company_owner
+								? t('{owner} (company)', { owner: row.company_owner })
+								: t('No owner')}
 						</option>
 						{#each team as name (name)}<option value={name}>{name}</option>{/each}
 					</select>
@@ -531,8 +543,8 @@
 
 {#snippet rowMenu()}
 	<details class="menu" bind:this={menu} ontoggle={toggledMenu}>
-		<summary class="btn btn-ghost btn-icon btn-sm" title="More">
-			<Ellipsis size={17} /><span class="sr-only">More for {row.name}</span>
+		<summary class="btn btn-ghost btn-icon btn-sm" title={t('More')}>
+			<Ellipsis size={17} /><span class="sr-only">{t('More for {name}', { name: row.name })}</span>
 		</summary>
 		<div class="menu-list">
 			<button
@@ -543,7 +555,8 @@
 					editing = true;
 				}}
 			>
-				<Pencil size={15} /> Edit
+				<Pencil size={15} />
+				{t('Edit')}
 			</button>
 			{#if canHaveDue}
 				<button
@@ -554,7 +567,8 @@
 						settingDue = true;
 					}}
 				>
-					<CalendarClock size={15} /> Due date…
+					<CalendarClock size={15} />
+					{t('Due date…')}
 				</button>
 			{/if}
 			{#if row.person_id}
@@ -566,7 +580,8 @@
 						merging = true;
 					}}
 				>
-					<Merge size={15} /> Merge into…
+					<Merge size={15} />
+					{t('Merge into…')}
 				</button>
 			{/if}
 			{#if linkedinOpen}
@@ -586,7 +601,7 @@
 						<input type="hidden" name="status" value={s} />
 						<button class="menu-item">
 							<span class="in" aria-hidden="true">in</span>
-							LinkedIn: {LINKEDIN_STATUS_LABEL[s].toLowerCase()}
+							LinkedIn: {t(LINKEDIN_STATUS_LABEL[s]).toLowerCase()}
 						</button>
 					</form>
 				{/each}
@@ -597,7 +612,8 @@
 					<input type="hidden" name="id" value={row.id} />
 					<input type="hidden" name="on" value="1" />
 					<button class="menu-item">
-						<span class="in" aria-hidden="true">in</span> Record invited on LinkedIn
+						<span class="in" aria-hidden="true">in</span>
+						{t('Record invited on LinkedIn')}
 					</button>
 				</form>
 			{/if}
@@ -606,18 +622,19 @@
 					method="POST"
 					action="?/untouch"
 					use:enhance={({ cancel }) => {
-						if (!confirm(`Undo the last message recorded for ${row.name}?`)) cancel();
+						if (!confirm(t('Undo the last message recorded for {name}?', { name: row.name })))
+							cancel();
 						closeMenu();
 					}}
 				>
 					<input type="hidden" name="id" value={row.id} />
-					<button class="menu-item"><Undo2 size={15} /> Undo last recorded message</button>
+					<button class="menu-item"><Undo2 size={15} /> {t('Undo last recorded message')}</button>
 				</form>
 			{/if}
 			{#if row.needs_review}
 				<form method="POST" action="?/reviewed" use:enhance={() => closeMenu()}>
 					<input type="hidden" name="id" value={row.id} />
-					<button class="menu-item"><Check size={15} /> Reviewed</button>
+					<button class="menu-item"><Check size={15} /> {t('Reviewed')}</button>
 				</form>
 			{/if}
 			{#if row.person_id && row.d365_flagged}
@@ -625,12 +642,17 @@
 					method="POST"
 					action="?/unflag"
 					use:enhance={({ cancel }) => {
-						if (!confirm(`Clear the Dynamics 365 flags on ${row.name}? This is logged.`)) cancel();
+						if (
+							!confirm(
+								t('Clear the Dynamics 365 flags on {name}? This is logged.', { name: row.name })
+							)
+						)
+							cancel();
 						closeMenu();
 					}}
 				>
 					<input type="hidden" name="id" value={row.id} />
-					<button class="menu-item"><Flag size={15} /> Clear D365 flags</button>
+					<button class="menu-item"><Flag size={15} /> {t('Clear D365 flags')}</button>
 				</form>
 			{/if}
 			{#if !row.locked_at}
@@ -639,7 +661,7 @@
 					action="?/lock"
 					use:enhance={({ formData, cancel }) => {
 						const reason = prompt(
-							`Don’t contact ${row.name} again. Why? (kept with the entry)`,
+							t('Don’t contact {name} again. Why? (kept with the entry)', { name: row.name }),
 							''
 						);
 						if (reason === null) {
@@ -651,23 +673,23 @@
 					}}
 				>
 					<input type="hidden" name="id" value={row.id} />
-					<button class="menu-item"><Ban size={15} /> Don’t contact again…</button>
+					<button class="menu-item"><Ban size={15} /> {t('Don’t contact again…')}</button>
 				</form>
 			{/if}
 			{#if row.checkin_id}
 				<!-- A check-in is attendance: undoing it belongs to the Check-ins tab, which also keeps this row. -->
-				<p class="menu-note">Checked in: remove the check-in on the Check-ins tab.</p>
+				<p class="menu-note">{t('Checked in: remove the check-in on the Check-ins tab.')}</p>
 			{:else}
 				<form
 					method="POST"
 					action="?/remove"
 					use:enhance={({ cancel }) => {
-						if (!confirm(`Remove ${row.name} from this event?`)) cancel();
+						if (!confirm(t('Remove {name} from this event?', { name: row.name }))) cancel();
 						closeMenu();
 					}}
 				>
 					<input type="hidden" name="id" value={row.id} />
-					<button class="menu-item danger"><Trash2 size={15} /> Remove</button>
+					<button class="menu-item danger"><Trash2 size={15} /> {t('Remove')}</button>
 				</form>
 			{/if}
 		</div>
@@ -685,6 +707,8 @@
 	class:swipe-add={dragging && dx > SWIPE_DONE}
 	class:swipe-skip={dragging && dx < -SWIPE_DONE}
 	style:--dx="{dx}px"
+	data-add={t('Add')}
+	data-skip={t('Skip')}
 	onpointerdown={swipeStart}
 	onpointermove={swipeMove}
 	onpointerup={swipeEnd}
@@ -704,7 +728,7 @@
 			<input type="hidden" name="id" value={row.id} />
 			<div class="edit-grid">
 				<div class="field">
-					<label class="label" for="name-{row.id}">Name</label>
+					<label class="label" for="name-{row.id}">{t('Name')}</label>
 					<input
 						class="input"
 						id="name-{row.id}"
@@ -718,7 +742,7 @@
 					{#if errors.name}<p class="error-text">{errors.name}</p>{/if}
 				</div>
 				<div class="field">
-					<label class="label" for="title-{row.id}">Job title</label>
+					<label class="label" for="title-{row.id}">{t('Job title')}</label>
 					<input
 						class="input"
 						id="title-{row.id}"
@@ -728,7 +752,7 @@
 					/>
 				</div>
 				<div class="field">
-					<label class="label" for="company-{row.id}">Company</label>
+					<label class="label" for="company-{row.id}">{t('Company')}</label>
 					<input
 						class="input"
 						id="company-{row.id}"
@@ -740,7 +764,7 @@
 					/>
 				</div>
 				<div class="field">
-					<label class="label" for="email-{row.id}">Email</label>
+					<label class="label" for="email-{row.id}">{t('Email')}</label>
 					<input
 						class="input"
 						id="email-{row.id}"
@@ -753,7 +777,7 @@
 					{#if errors.email}<p class="error-text">{errors.email}</p>{/if}
 				</div>
 				<div class="field">
-					<label class="label" for="phone-{row.id}">Mobile</label>
+					<label class="label" for="phone-{row.id}">{t('Mobile')}</label>
 					<input
 						class="input"
 						id="phone-{row.id}"
@@ -779,7 +803,7 @@
 				{#if row.person_id}
 					<div class="field">
 						<label class="label" for="callname-{row.id}"
-							>Call name <span class="optional">(after Pak or Bu)</span></label
+							>{t('Call name')} <span class="optional">{t('(after Pak or Bu)')}</span></label
 						>
 						<input
 							class="input"
@@ -795,9 +819,9 @@
 			<div class="edit-actions">
 				<span class="spacer"></span>
 				<button type="button" class="btn btn-ghost btn-sm" onclick={() => (editing = false)}>
-					Cancel
+					{t('Cancel')}
 				</button>
-				<button class="btn btn-primary btn-sm">Save</button>
+				<button class="btn btn-primary btn-sm">{t('Save')}</button>
 			</div>
 		</form>
 	{:else if merging}
@@ -809,7 +833,12 @@
 				const who = candidates.find((c) => c.id === formData.get('survivor'));
 				if (
 					!who ||
-					!confirm(`Merge ${row.name} into ${who.name}? ${row.name}’s record is deleted.`)
+					!confirm(
+						t('Merge {name} into {other}? {name}’s record is deleted.', {
+							name: row.name,
+							other: who.name
+						})
+					)
 				)
 					cancel();
 				return async ({ result, update }) => {
@@ -821,12 +850,13 @@
 			<input type="hidden" name="id" value={row.id} />
 			<div class="field">
 				<label class="label" for="merge-{row.id}">
-					Merge {row.name} into… <span class="optional">(the other record stays)</span>
+					{t('Merge {name} into…', { name: row.name })}
+					<span class="optional">{t('(the other record stays)')}</span>
 				</label>
 				<input
 					class="input"
 					id="merge-{row.id}"
-					placeholder="Search by name, email or company"
+					placeholder={t('Search by name, email or company')}
 					autocomplete="off"
 					bind:value={candidateQuery}
 					onkeydown={closeOnEscape}
@@ -844,15 +874,16 @@
 					{/each}
 				</div>
 			{:else if candidateQuery.trim().length >= 2}
-				<p class="hint">No one else matches.</p>
+				<p class="hint">{t('No one else matches.')}</p>
 			{/if}
 			<div class="edit-actions">
 				<span class="spacer"></span>
 				<button type="button" class="btn btn-ghost btn-sm" onclick={() => (merging = false)}>
-					Cancel
+					{t('Cancel')}
 				</button>
 				<button class="btn btn-primary btn-sm" disabled={!candidates.length}>
-					<Merge size={15} /> Merge
+					<Merge size={15} />
+					{t('Merge')}
 				</button>
 			</div>
 		</form>
@@ -863,7 +894,7 @@
 					class="pick"
 					type="checkbox"
 					checked={selected}
-					aria-label="Select {row.name}"
+					aria-label={t('Select {name}', { name: row.name })}
 					onchange={(e) => onselect?.(e.currentTarget.checked)}
 				/>
 			{/if}
@@ -886,7 +917,7 @@
 								<span>{greetLabel}</span>
 								{#if !stored}<span class="greet-q" aria-hidden="true">?</span>{/if}
 								<ChevronDown size={12} />
-								<span class="sr-only">How messages greet {row.name}</span>
+								<span class="sr-only">{t('How messages greet {name}', { name: row.name })}</span>
 								<select
 									class="greet-select"
 									name="salutation"
@@ -895,8 +926,8 @@
 								>
 									<option value="">
 										{row.address.source === 'name'
-											? `${word(row.address.salutation)} (guessed from the name)`
-											: `${word(null)} (not sure)`}
+											? t('{word} (guessed from the name)', { word: word(row.address.salutation) })
+											: t('{word} (not sure)', { word: word(null) })}
 									</option>
 									<option value="pak">{word('pak')}</option>
 									<option value="bu">{word('bu')}</option>
@@ -904,24 +935,25 @@
 							</label>
 						</form>
 					{/if}
-					{#if row.skipped_at}<span class="pill tiny">Skipped</span>{/if}
+					{#if row.skipped_at}<span class="pill tiny">{t('Skipped')}</span>{/if}
 					{#each marks as m (m.key)}
 						{#if m.key === 'chased'}
 							<form
 								method="POST"
 								action="?/untouch"
 								use:enhance={({ cancel }) => {
-									if (!confirm(`Undo the last message recorded for ${row.name}?`)) cancel();
+									if (!confirm(t('Undo the last message recorded for {name}?', { name: row.name })))
+										cancel();
 								}}
 							>
 								<input type="hidden" name="id" value={row.id} />
-								<button class="pill tiny marker muted-tone" title="Undo the latest touch">
-									{m.label}
+								<button class="pill tiny marker muted-tone" title={t('Undo the latest touch')}>
+									{t(m.text, m.vars)}
 									<Undo2 size={11} />
 								</button>
 							</form>
 						{:else}
-							<span class="pill tiny marker {m.tone}-tone">{m.label}</span>
+							<span class="pill tiny marker {m.tone}-tone">{t(m.text, m.vars)}</span>
 						{/if}
 					{/each}
 				</div>
@@ -931,13 +963,15 @@
 								href={row.linkedin}
 								target="_blank"
 								rel="noreferrer"
-								title="Open {first}’s LinkedIn profile">LinkedIn</a
+								title={t('Open {first}’s LinkedIn profile', { first })}>LinkedIn</a
 							>{/if}{#if row.source_url}{details.length || profileLink ? ' · ' : ''}<a
 								href={row.source_url}
 								target="_blank"
 								rel="noreferrer"
-								title="Where research found {first}"
-								>Source: {new URL(row.source_url).hostname.replace(/^www\./, '')}
+								title={t('Where research found {first}', { first })}
+								>{t('Source: {host}', {
+									host: new URL(row.source_url).hostname.replace(/^www\./, '')
+								})}
 								<ExternalLink size={11} /></a
 							>{/if}
 					</p>
@@ -946,11 +980,11 @@
 				{#if row.reason}<p class="reason" title={row.reason}>{row.reason}</p>{/if}
 
 				{#if track.length}
-					<ol class="track" aria-label="Where {first} is">
+					<ol class="track" aria-label={t('Where {first} is', { first })}>
 						{#each track as s (s.key)}
 							<li
 								class="step {s.state} {s.key} {s.key}-{row.reply}"
-								title={s.help}
+								title={t(s.help)}
 								aria-current={s.state === 'current' ? 'step' : undefined}
 							>
 								<span class="dot" aria-hidden="true">
@@ -959,8 +993,10 @@
 									{/if}
 								</span>
 								<span class="step-label"
-									>{s.label}{#if s.key === 'checked_in' && s.state === 'current' && row.checked_in_at}
-										{formatTime(row.checked_in_at, event.timezone)}{/if}</span
+									>{t(
+										s.label
+									)}{#if s.key === 'checked_in' && s.state === 'current' && row.checked_in_at}
+										{formatTime(row.checked_in_at, event.timezone, false, lang())}{/if}</span
 								>
 							</li>
 						{/each}
@@ -969,7 +1005,7 @@
 
 				{#if step || settingDue || (dueLabel && canHaveDue)}
 					<div class="next">
-						{#if step}<span class="next-text"><strong>Next:</strong> {step}</span>{/if}
+						{#if step}<span class="next-text"><strong>{t('Next:')}</strong> {t(step)}</span>{/if}
 						{#if settingDue}
 							<!-- The organizer's own date (§4.2): kept until cleared, whatever the rules say. -->
 							<form
@@ -983,7 +1019,9 @@
 									}}
 							>
 								<input type="hidden" name="id" value={row.id} />
-								<label class="sr-only" for="due-{row.id}">Due date for {row.name}</label>
+								<label class="sr-only" for="due-{row.id}"
+									>{t('Due date for {name}', { name: row.name })}</label
+								>
 								<input
 									class="input due-input"
 									id="due-{row.id}"
@@ -995,15 +1033,15 @@
 									onkeydown={closeOnEscape}
 									use:focus
 								/>
-								<button class="btn btn-primary btn-sm">Save</button>
+								<button class="btn btn-primary btn-sm">{t('Save')}</button>
 								{#if row.next_action_overridden}
 									<button
 										class="btn btn-ghost btn-sm"
 										name="clear"
 										value="1"
-										title="Back to the date the chase rules compute"
+										title={t('Back to the date the chase rules compute')}
 									>
-										Use the rules
+										{t('Use the rules')}
 									</button>
 								{/if}
 								<button
@@ -1011,7 +1049,7 @@
 									class="btn btn-ghost btn-sm"
 									onclick={() => (settingDue = false)}
 								>
-									Cancel
+									{t('Cancel')}
 								</button>
 							</form>
 						{:else if dueLabel && canHaveDue}
@@ -1022,13 +1060,13 @@
 								class:today={dueToday}
 								class:own={row.next_action_overridden}
 								title={row.next_action_overridden
-									? 'Your own date; click to change or clear it'
-									: 'From the chase rules; click to set your own date'}
+									? t('Your own date; click to change or clear it')
+									: t('From the chase rules; click to set your own date')}
 								onclick={() => (settingDue = true)}
 							>
 								<CalendarClock size={13} />
 								{dueLabel}{#if row.next_action_overridden}
-									· set by hand{/if}
+									· {t('set by hand')}{/if}
 							</button>
 						{/if}
 					</div>
@@ -1041,18 +1079,19 @@
 				{#if row.skipped_at}
 					<form method="POST" action="?/unskip" use:enhance>
 						<input type="hidden" name="id" value={row.id} />
-						<button class="btn btn-ghost btn-sm"><Undo2 size={15} /> Unskip</button>
+						<button class="btn btn-ghost btn-sm"><Undo2 size={15} /> {t('Unskip')}</button>
 					</form>
 				{:else}
 					<form method="POST" action="?/shortlist" use:enhance bind:this={shortlistForm}>
 						<input type="hidden" name="id" value={row.id} />
 						<button class="btn btn-soft btn-sm" disabled={!canAdd}>
-							<UserPlus size={15} /> Add
+							<UserPlus size={15} />
+							{t('Add')}
 						</button>
 					</form>
 					<form method="POST" action="?/skip" use:enhance bind:this={skipForm}>
 						<input type="hidden" name="id" value={row.id} />
-						<button class="btn btn-ghost btn-sm">Skip</button>
+						<button class="btn btn-ghost btn-sm">{t('Skip')}</button>
 					</form>
 				{/if}
 			</div>
@@ -1063,13 +1102,13 @@
 			<div class="act">
 				{#if linkedinOpen}
 					<div class="line connect-line">
-						<span class="sr-only">LinkedIn connection</span>
+						<span class="sr-only">{t('LinkedIn connection')}</span>
 						<a
 							class="li-status {linkedinStatus}"
 							href={row.linkedin}
 							target="_blank"
 							rel="noreferrer"
-							title="Open {first}’s LinkedIn profile"
+							title={t('Open {first}’s LinkedIn profile', { first })}
 						>
 							<span class="in" aria-hidden="true">in</span>
 							{linkedinLabel}
@@ -1079,18 +1118,21 @@
 							<button
 								type="button"
 								class="btn btn-soft btn-sm connect-btn"
-								title="Open {first}’s profile to send a connection request there; it is recorded as sent"
+								title={t(
+									'Open {first}’s profile to send a connection request there; it is recorded as sent',
+									{ first }
+								)}
 								onclick={connect}
 							>
-								Connect
+								{t('Connect')}
 							</button>
-							{@render linkedinButton('connected', 'Already connected')}
+							{@render linkedinButton('connected', t('Already connected'))}
 						{:else if linkedinStatus === 'requested'}
-							{@render linkedinButton('connected', 'They accepted')}
+							{@render linkedinButton('connected', t('They accepted'))}
 							{#if requestNote}
 								<!-- Just recorded by Connect: a look that sent nothing takes it back here. -->
-								<span class="connect-note">Recorded as sent.</span>
-								{@render linkedinButton('none', 'Undo')}
+								<span class="connect-note">{t('Recorded as sent.')}</span>
+								{@render linkedinButton('none', t('Undo'))}
 							{/if}
 						{/if}
 						{@render panelTail()}
@@ -1099,15 +1141,18 @@
 
 				{#if sendShown}
 					<div class="line send-line">
-						<span class="sr-only">Send</span>
+						<span class="sr-only">{t('Send')}</span>
 						{#if row.message?.text}
 							<!-- Which message the buttons send (§7); the rules' suggestion is picked already.
 							     It is not a step: sending the message is what moves them along the track. -->
 							<label
 								class="kind"
-								title="Which message the buttons send. Picking one doesn’t move {first} to another step; sending it does."
+								title={t(
+									'Which message the buttons send. Picking one doesn’t move {first} to another step; sending it does.',
+									{ first }
+								)}
 							>
-								<span class="sr-only">Message for {row.name}</span>
+								<span class="sr-only">{t('Message for {name}', { name: row.name })}</span>
 								<select
 									class="kind-select"
 									value={kind}
@@ -1115,7 +1160,9 @@
 								>
 									{#each menuKinds(row) as k (k)}
 										<option value={k}
-											>{KIND_LABEL[k]}{k === row.suggested_kind ? ' (suggested)' : ''}</option
+											>{k === row.suggested_kind
+												? t('{kind} (suggested)', { kind: t(KIND_LABEL[k]) })
+												: t(KIND_LABEL[k])}</option
 										>
 									{/each}
 								</select>
@@ -1128,7 +1175,7 @@
 								href={message.whatsapp}
 								target="_blank"
 								rel="noreferrer"
-								title="{purpose} {first} on WhatsApp"
+								title={t('{purpose} {first} on WhatsApp', { purpose, first })}
 								onclick={() => recordTouch('whatsapp')}
 							>
 								<MessageCircle size={15} /> WhatsApp
@@ -1140,10 +1187,11 @@
 								href={message.email}
 								target="_blank"
 								rel="noreferrer"
-								title="{purpose} {first} by email"
+								title={t('{purpose} {first} by email', { purpose, first })}
 								onclick={() => recordTouch('email')}
 							>
-								<Mail size={15} /> Email
+								<Mail size={15} />
+								{t('Email')}
 							</a>
 						{/if}
 						{#if linkedinOpen && message?.text}
@@ -1152,8 +1200,14 @@
 								class="btn btn-soft btn-sm channel"
 								disabled={!linkedinReady}
 								title={linkedinReady
-									? `${purpose} ${first} on LinkedIn: the draft is copied and a message to ${first} opens, so it is paste and Send`
-									: `Connect with ${first} on LinkedIn first: LinkedIn only lets you message your connections`}
+									? t(
+											'{purpose} {first} on LinkedIn: the draft is copied and a message to {first} opens, so it is paste and Send',
+											{ purpose, first }
+										)
+									: t(
+											'Connect with {first} on LinkedIn first: LinkedIn only lets you message your connections',
+											{ first }
+										)}
 								onclick={messageOnLinkedin}
 							>
 								<span class="in" aria-hidden="true">in</span> LinkedIn
@@ -1164,26 +1218,27 @@
 								type="button"
 								class="btn btn-ghost btn-icon btn-sm"
 								class:copied={copiedMessage}
-								title="Copy the message, to paste anywhere else"
+								title={t('Copy the message, to paste anywhere else')}
 								onclick={copyMessage}
 							>
 								{#if copiedMessage}<Check size={17} />{:else}<Copy size={17} />{/if}
-								<span class="sr-only">Copy the message for {row.name}</span>
+								<span class="sr-only">{t('Copy the message for {name}', { name: row.name })}</span>
 							</button>
 						{:else if message?.hint}
-							<span class="hint-text" title={message.hint}>Messages need PRIVACY_URL</span>
+							<span class="hint-text" title={t(message.hint)}>{t('Messages need PRIVACY_URL')}</span
+							>
 						{/if}
 						{#if row.registration_link && !row.skipped_at && !row.locked_at}
 							<button
 								type="button"
 								class="btn btn-ghost btn-icon btn-sm copy-link"
 								class:copied
-								title={copied ? 'Copied' : `Copy ${first}’s registration link`}
+								title={copied ? t('Copied') : t('Copy {first}’s registration link', { first })}
 								onclick={copyLink}
 							>
 								{#if copied}<Check size={17} />{:else}<Link size={17} />{/if}
 								<span class="sr-only"
-									>{copied ? 'Copied' : `Copy ${first}’s registration link`}</span
+									>{copied ? t('Copied') : t('Copy {first}’s registration link', { first })}</span
 								>
 							</button>
 						{/if}
@@ -1194,13 +1249,19 @@
 							<div class="sent-note" role="status">
 								<span>
 									{#if sent.copied}
-										Draft copied. In LinkedIn, paste it (⌘V or Ctrl+V) and press Send.
+										{t('Draft copied. In LinkedIn, paste it (⌘V or Ctrl+V) and press Send.')}
 									{:else}
-										The draft couldn’t be copied here:
-										<button type="button" class="link-btn" onclick={copyMessage}>copy it</button>
-										and paste it in LinkedIn.
+										{t('The draft couldn’t be copied here:')}
+										<button type="button" class="link-btn" onclick={copyMessage}
+											>{t('copy it')}</button
+										>
+										{t('and paste it in LinkedIn.')}
 									{/if}
-									Recorded as {KIND_LABEL[sent.kind].replace(/ \(.*\)$/, '').toLowerCase()} on LinkedIn.
+									{t('Recorded as {kind} on LinkedIn.', {
+										kind: t(KIND_LABEL[sent.kind])
+											.replace(/ \(.*\)$/, '')
+											.toLowerCase()
+									})}
 								</span>
 								<form
 									method="POST"
@@ -1211,18 +1272,20 @@
 									}}
 								>
 									<input type="hidden" name="id" value={row.id} />
-									<button class="link-btn" title="Not sent after all: take the record back"
-										>Undo</button
+									<button class="link-btn" title={t('Not sent after all: take the record back')}
+										>{t('Undo')}</button
 									>
 								</form>
-								<button type="button" class="link-btn" onclick={() => (sent = null)}>OK</button>
+								<button type="button" class="link-btn" onclick={() => (sent = null)}
+									>{t('OK')}</button
+								>
 							</div>
 						{/if}
 					{/if}
 				{/if}
 
 				<div class="line answer-line">
-					<span class="sr-only">Answer</span>
+					<span class="sr-only">{t('Answer')}</span>
 					<form
 						class="reply-form"
 						method="POST"
@@ -1236,7 +1299,7 @@
 						}}
 					>
 						<input type="hidden" name="id" value={row.id} />
-						<div class="reply" role="group" aria-label="Reply from {row.name}">
+						<div class="reply" role="group" aria-label={t('Reply from {name}', { name: row.name })}>
 							{#each CHOICES as choice (choice.reply)}
 								{@const on = reply === choice.reply}
 								<button
@@ -1244,10 +1307,10 @@
 									name="reply"
 									value={on ? 'pending' : choice.reply}
 									aria-pressed={on}
-									title={on ? 'Click again to clear the reply' : undefined}
+									title={on ? t('Click again to clear the reply') : undefined}
 								>
 									<choice.icon size={16} />
-									<span>{REPLY_LABEL[choice.reply]}</span>
+									<span>{t(REPLY_LABEL[choice.reply])}</span>
 								</button>
 							{/each}
 						</div>
@@ -1268,8 +1331,8 @@
 						class="note"
 						name="note"
 						value={row.note}
-						placeholder="Add a note"
-						aria-label="Note about {row.name}"
+						placeholder={t('Add a note')}
+						aria-label={t('Note about {name}', { name: row.name })}
 						maxlength="300"
 						autocomplete="off"
 						onkeydown={noteKeys}
@@ -1348,12 +1411,12 @@
 	}
 
 	.row.swiping::before {
-		content: 'Add';
+		content: attr(data-add);
 		left: 16px;
 	}
 
 	.row.swiping::after {
-		content: 'Skip';
+		content: attr(data-skip);
 		right: 16px;
 	}
 

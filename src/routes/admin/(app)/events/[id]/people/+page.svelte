@@ -20,6 +20,7 @@
 		type Reply
 	} from '$lib/people';
 	import { formatDateTime, formatDay } from '$lib/time';
+	import { lang, plural, t } from '$lib/i18n/t.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Building2 from '@lucide/svelte/icons/building-2';
@@ -208,11 +209,9 @@
 	function groupSummary(group: { rows: PeopleRow[]; waiting: number }) {
 		const people = group.rows.filter((r) => r.stage !== 'found');
 		const yes = people.filter((r) => replyOf(r) === 'yes').length;
-		const parts = [
-			`${people.length.toLocaleString()} ${people.length === 1 ? 'person' : 'people'}`
-		];
-		if (yes) parts.push(`${yes.toLocaleString()} attending`);
-		if (group.waiting) parts.push(`${group.waiting.toLocaleString()} to review`);
+		const parts = [plural(people.length, '{n} person', '{n} people')];
+		if (yes) parts.push(t('{n} attending', { n: yes.toLocaleString() }));
+		if (group.waiting) parts.push(t('{n} to review', { n: group.waiting.toLocaleString() }));
 		return parts.join(' · ');
 	}
 
@@ -242,11 +241,23 @@
 		] as const)
 			if (key in form && typeof form[key] === 'string') return form[key];
 		if ('refusedAll' in form && form.refusedAll?.length)
-			return `Couldn’t add ${form.refusedAll.join(', ')}: locked or at a blocked company.`;
+			return t('Couldn’t add {names}: locked or at a blocked company.', {
+				names: form.refusedAll.join(', ')
+			});
 		return '';
 	});
-	const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
-	const people = (n: number) => `${n.toLocaleString()} ${n === 1 ? 'person' : 'people'}`;
+	const people = (n: number) => plural(n, '{n} person', '{n} people');
+
+	/** "No one matches “rina” under Invited due today." */
+	const noMatch = $derived.by(() => {
+		const parts = [q ? t('No one matches “{query}”', { query: query.trim() }) : t('No one here')];
+		if (chips.length)
+			parts.push(t('under {chips}', { chips: chips.map((c) => t(CHIP_LABEL[c])).join(', ') }));
+		if (due) parts.push(t('due today'));
+		if (linkedinPending) parts.push(t('waiting on a LinkedIn request'));
+		if (mine) parts.push(t('of yours'));
+		return `${parts.join(' ')}.`;
+	});
 
 	// The open registration link for the event (§4.6), for a channel where no row exists yet.
 	let copiedLink = $state(false);
@@ -259,7 +270,7 @@
 			clearTimeout(copiedTimer);
 			copiedTimer = setTimeout(() => (copiedLink = false), 1500);
 		} catch {
-			prompt('Copy the registration link', data.genericLink);
+			prompt(t('Copy the registration link'), data.genericLink);
 		}
 	}
 
@@ -340,21 +351,22 @@
 	const bulkMessage = $derived.by(() => {
 		if (!form || !('bulk' in form) || !form.bulk) return '';
 		const { action, done, refused, to } = form.bulk;
+		const vars = { people: people(done), event: to?.name ?? '' };
 		const verb: Record<string, string> = {
-			shortlist: 'Shortlisted',
-			skip: 'Skipped',
-			invited: 'Marked invited',
-			owner: 'Owner set on',
-			stage: 'Stage set on',
-			copy: `Copied${to ? ` to ${to.name}` : ''}`
+			shortlist: t('Shortlisted {people}.', vars),
+			skip: t('Skipped {people}.', vars),
+			invited: t('Marked {people} invited.', vars),
+			owner: t('Owner set on {people}.', vars),
+			stage: t('Stage set on {people}.', vars),
+			copy: to ? t('Copied {people} to {event}.', vars) : t('Copied {people}.', vars)
 		};
-		const parts = [`${verb[action] ?? 'Done for'} ${people(done)}.`];
-		if (refused.length)
+		const parts = [verb[action] ?? t('Done for {people}.', vars)];
+		if (refused.length) {
+			const list = refused.map((r) => `${r.name} (${t(r.reason)})`).join(', ');
 			parts.push(
-				`Not ${refused.length === 1 ? 'this one' : `these ${refused.length}`}: ${refused
-					.map((r) => `${r.name} (${r.reason})`)
-					.join(', ')}.`
+				plural(refused.length, 'Not this one: {list}.', 'Not these {n}: {list}.', { list })
 			);
+		}
 		return parts.join(' ');
 	});
 
@@ -375,7 +387,10 @@
 			const ids = group.rows.filter((r) => r.stage === 'found' && !r.skipped_at).map((r) => r.id);
 			if (
 				confirm(
-					`Shortlist all ${ids.length} at ${group.name || 'no company'}? They become people on the list.`
+					t('Shortlist all {n} at {company}? They become people on the list.', {
+						n: ids.length,
+						company: group.name || t('no company')
+					})
 				)
 			) {
 				retireHint();
@@ -393,23 +408,23 @@
 </script>
 
 <svelte:head>
-	<title>People · {event.name} · Event Planner</title>
+	<title>{t('People')} · {event.name} · Event Planner</title>
 </svelte:head>
 
-<a class="back btn btn-ghost btn-sm" href="/admin"><ArrowLeft size={16} /> Events</a>
+<a class="back btn btn-ghost btn-sm" href="/admin"><ArrowLeft size={16} /> {t('Events')}</a>
 
 <header class="head">
 	<div class="title">
 		<div class="status">
 			{#if event.is_open}
-				<span class="pill pill-good"><span class="dot dot-live"></span> Check-in open</span>
+				<span class="pill pill-good"><span class="dot dot-live"></span> {t('Check-in open')}</span>
 			{:else}
-				<span class="pill">Check-in closed</span>
+				<span class="pill">{t('Check-in closed')}</span>
 			{/if}
 		</div>
 		<h1>{event.name}</h1>
 		<p class="muted">
-			{#if event.starts_at}{formatDateTime(event.starts_at, event.timezone)}{/if}
+			{#if event.starts_at}{formatDateTime(event.starts_at, event.timezone, lang())}{/if}
 			{#if event.starts_at && event.venue}&nbsp;·&nbsp;{/if}
 			{event.venue}
 		</p>
@@ -420,9 +435,12 @@
 				<button
 					class="btn btn-secondary"
 					onclick={copyGenericLink}
-					title="Copy the open registration link: anyone with it can register, and their row waits for the company owner"
+					title={t(
+						'Copy the open registration link: anyone with it can register, and their row waits for the company owner'
+					)}
 				>
-					{#if copiedLink}<Check size={17} /> Copied{:else}<Link size={17} /> Registration link{/if}
+					{#if copiedLink}<Check size={17} /> {t('Copied')}{:else}<Link size={17} />
+						{t('Registration link')}{/if}
 				</button>
 			{/if}
 			{#if live.length}
@@ -434,21 +452,28 @@
 					<a
 						class="btn btn-secondary"
 						href="/admin/events/{event.id}/partners.csv?when=before"
-						title="For {event.co_hosts}: who said yes, by name only with their consent to share"
+						title={t('For {cohosts}: who said yes, by name only with their consent to share', {
+							cohosts: event.co_hosts
+						})}
 					>
-						<Handshake size={17} /> Partner list · before
+						<Handshake size={17} />
+						{t('Partner list · before')}
 					</a>
 					<a
 						class="btn btn-secondary"
 						href="/admin/events/{event.id}/partners.csv?when=after"
-						title="For {event.co_hosts}: who checked in, by name only with their consent to share"
+						title={t('For {cohosts}: who checked in, by name only with their consent to share', {
+							cohosts: event.co_hosts
+						})}
 					>
-						<Handshake size={17} /> Partner list · after
+						<Handshake size={17} />
+						{t('Partner list · after')}
 					</a>
 				{/if}
 			{/if}
 			<button class="btn btn-primary" onclick={openAdd} aria-expanded={adding}>
-				<UserPlus size={18} /> Add people
+				<UserPlus size={18} />
+				{t('Add people')}
 			</button>
 		</div>
 	{/if}
@@ -465,18 +490,21 @@
 {#if !view}
 	<section class="card empty rise">
 		<div class="empty-icon"><CalendarPlus size={30} /></div>
-		<h2>Set the event date first</h2>
+		<h2>{t('Set the event date first')}</h2>
 		<p class="muted">
-			The list counts down to the event: invitations, chases and what research may keep all depend
-			on when it is.
+			{t(
+				'The list counts down to the event: invitations, chases and what research may keep all depend on when it is.'
+			)}
 		</p>
-		<a class="btn btn-primary btn-lg" href="/admin/events/{event.id}#settings">Event settings</a>
+		<a class="btn btn-primary btn-lg" href="/admin/events/{event.id}#settings"
+			>{t('Event settings')}</a
+		>
 	</section>
 {:else}
 	<datalist id="company-options">
 		{#each data.companies as company (company.name)}
 			<option value={company.name}>
-				{company.contacts ? plural(company.contacts, 'contact') : ''}
+				{company.contacts ? plural(company.contacts, '{n} contact', '{n} contacts') : ''}
 			</option>
 		{/each}
 	</datalist>
@@ -494,13 +522,15 @@
 		{#if !adding}
 			<section class="card empty rise">
 				<div class="empty-icon"><ClipboardList size={30} /></div>
-				<h2>Plan who you’re inviting</h2>
+				<h2>{t('Plan who you’re inviting')}</h2>
 				<p class="muted">
-					List people company by company, record each reply as it comes in, and see who turns up on
-					the day.
+					{t(
+						'List people company by company, record each reply as it comes in, and see who turns up on the day.'
+					)}
 				</p>
 				<button class="btn btn-primary btn-lg" onclick={openAdd}>
-					<UserPlus size={20} /> Add people
+					<UserPlus size={20} />
+					{t('Add people')}
 				</button>
 			</section>
 		{/if}
@@ -508,26 +538,29 @@
 		<section class="card summary">
 			<div class="figures">
 				<div class="figure">
-					<p class="figure-label">Yes</p>
+					<p class="figure-label">{t('Yes')}</p>
 					<p class="hero-line">
 						<span class="hero-value">{progress.yes.toLocaleString()}</span>
 						{#if progress.target}
-							<span class="target">/ {progress.target.toLocaleString()} target</span>
+							<span class="target"
+								>{t('/ {n} target', { n: progress.target.toLocaleString() })}</span
+							>
 						{:else}
-							<a class="target" href="/admin/events/{event.id}#settings">Set a target</a>
+							<a class="target" href="/admin/events/{event.id}#settings">{t('Set a target')}</a>
 						{/if}
 					</p>
 					<p class="figure-sub muted">
-						{live.length.toLocaleString()} on the list{#if counts.review}&nbsp;· {counts.review.toLocaleString()}
-							to review{/if}
+						{t('{n} on the list', { n: live.length.toLocaleString() })}{#if counts.review}&nbsp;·
+							{t('{n} to review', { n: counts.review.toLocaleString() })}{/if}
 					</p>
 				</div>
 				<div class="figure">
-					<p class="figure-label">Confirmed</p>
+					<p class="figure-label">{t('Confirmed')}</p>
 					<p class="figure-value">{progress.confirmed.toLocaleString()}</p>
 					<p class="figure-sub muted">
-						{#if counts.checked_in}{counts.checked_in.toLocaleString()} checked in{:else}registered
-							or reconfirmed{/if}
+						{#if counts.checked_in}{t('{n} checked in', {
+								n: counts.checked_in.toLocaleString()
+							})}{:else}{t('registered or reconfirmed')}{/if}
 					</p>
 				</div>
 			</div>
@@ -535,7 +568,7 @@
 				<div
 					class="bar"
 					role="progressbar"
-					aria-label="Yes replies against the target"
+					aria-label={t('Yes replies against the target')}
 					aria-valuemin="0"
 					aria-valuemax={progress.target}
 					aria-valuenow={progress.yes}
@@ -548,143 +581,141 @@
 		<div class="toolbar">
 			<label class="search">
 				<Search size={17} />
-				<span class="sr-only">Search the list</span>
+				<span class="sr-only">{t('Search the list')}</span>
 				<input
 					class="input"
 					type="search"
-					placeholder="Search names, companies, notes"
+					placeholder={t('Search names, companies, notes')}
 					bind:value={query}
 				/>
 			</label>
-			<div class="chips" role="group" aria-label="Show">
+			<div class="chips" role="group" aria-label={t('Show')}>
 				<button
 					class="chip mine"
 					aria-pressed={mine}
 					disabled={!data.me}
-					title={data.me ? `Rows owned by ${data.me}` : 'Pick your name first'}
+					title={data.me ? t('Rows owned by {name}', { name: data.me }) : t('Pick your name first')}
 					onclick={() => (mine = !mine)}
 				>
-					Mine
+					{t('Mine')}
 					{#if data.me}
 						<span class="chip-count">
 							{mineRows.length.toLocaleString()}{#if mineDue}
-								· {mineDue.toLocaleString()} due{/if}
+								· {t('{n} due', { n: mineDue.toLocaleString() })}{/if}
 						</span>
 					{/if}
 				</button>
 				{#each shownChips as chip (chip)}
 					<button class="chip" aria-pressed={chips.includes(chip)} onclick={() => toggleChip(chip)}>
-						{CHIP_LABEL[chip]}
+						{t(CHIP_LABEL[chip])}
 						<span class="chip-count">{counts[chip].toLocaleString()}</span>
 					</button>
 				{/each}
 				<button
 					class="chip"
 					aria-pressed={due}
-					title="Chases and reminders due today or earlier"
+					title={t('Chases and reminders due today or earlier')}
 					onclick={() => (due = !due)}
 				>
-					Due
+					{t('Due')}
 					<span class="chip-count">{dueRows.length.toLocaleString()}</span>
 				</button>
 				{#if pendingRows.length || linkedinPending}
 					<button
 						class="chip"
 						aria-pressed={linkedinPending}
-						title="People you sent a LinkedIn connection request: check who accepted"
+						title={t('People you sent a LinkedIn connection request: check who accepted')}
 						onclick={() => (linkedinPending = !linkedinPending)}
 					>
-						LinkedIn request sent
+						{t('LinkedIn request sent')}
 						<span class="chip-count">{pendingRows.length.toLocaleString()}</span>
 					</button>
 				{/if}
 				<label class="chip toggle">
 					<input type="checkbox" bind:checked={showSkipped} />
-					Show skipped
+					{t('Show skipped')}
 				</label>
 			</div>
-			<div class="layout" role="group" aria-label="Layout">
+			<div class="layout" role="group" aria-label={t('Layout')}>
 				<button
 					class="btn btn-ghost btn-icon btn-sm"
 					aria-pressed={selecting}
-					title="Select rows for a bulk action"
+					title={t('Select rows for a bulk action')}
 					onclick={() => (selecting ? stopSelecting() : (selecting = true))}
 				>
-					<ListChecks size={17} /><span class="sr-only">Select rows</span>
+					<ListChecks size={17} /><span class="sr-only">{t('Select rows')}</span>
 				</button>
 				<button
 					class="btn btn-ghost btn-icon btn-sm"
 					aria-pressed={!flat}
-					title="By company"
+					title={t('By company')}
 					onclick={() => (flat = false)}
 				>
-					<Building2 size={17} /><span class="sr-only">By company</span>
+					<Building2 size={17} /><span class="sr-only">{t('By company')}</span>
 				</button>
 				<button
 					class="btn btn-ghost btn-icon btn-sm"
 					aria-pressed={flat}
-					title="One list, soonest due first"
+					title={t('One list, soonest due first')}
 					onclick={() => (flat = true)}
 				>
-					<ListOrdered size={17} /><span class="sr-only">One list, soonest due first</span>
+					<ListOrdered size={17} /><span class="sr-only">{t('One list, soonest due first')}</span>
 				</button>
 			</div>
 		</div>
 
 		<!-- What the row's parts mean, for anyone picking up the list. -->
 		<details class="guide">
-			<summary>How this list works</summary>
+			<summary>{t('How this list works')}</summary>
 			<dl>
-				<dt>Steps</dt>
+				<dt>{t('Steps')}</dt>
+				<!-- The guide's text is ours (the dictionary), never anyone's input. -->
 				<dd>
-					Everyone you add moves along the same five steps: <strong>Shortlisted</strong> →
-					<strong>Invited</strong> → <strong>Replied</strong> (Attending, Tentative or Declined) →
-					<strong>Confirmed</strong> (registered through their link) → <strong>Checked in</strong>.
-					The track on each row shows where they are, and <strong>Next</strong> says what to do.
+					{@html t(
+						'Everyone you add moves along the same five steps: <strong>Shortlisted</strong> → <strong>Invited</strong> → <strong>Replied</strong> (Attending, Tentative or Declined) → <strong>Confirmed</strong> (registered through their link) → <strong>Checked in</strong>. The track on each row shows where they are, and <strong>Next</strong> says what to do.'
+					)}
 				</dd>
-				<dt>Answer</dt>
+				<dt>{t('Answer')}</dt>
 				<dd>
-					Record what they said: <strong>Attending</strong>, <strong>Tentative</strong> or
-					<strong>Declined</strong>. Tap it again to clear it.
+					{@html t(
+						'Record what they said: <strong>Attending</strong>, <strong>Tentative</strong> or <strong>Declined</strong>. Tap it again to clear it.'
+					)}
 				</dd>
-				<dt>Send</dt>
+				<dt>{t('Send')}</dt>
 				<dd>
-					Pick which message, then the channel: <strong>WhatsApp</strong>,
-					<strong>Email</strong> or <strong>LinkedIn</strong>. The message is the invitation, a
-					chase if they haven't answered, a reminder before the event, or a thank-you or follow-up
-					after they answer; it is not a step, and the right one is picked for you. LinkedIn can't
-					take the text in a link, so its button copies the draft and opens a message to them: paste
-					(⌘V) and press Send. Every send is recorded and moves them on.
+					{@html t(
+						'Pick which message, then the channel: <strong>WhatsApp</strong>, <strong>Email</strong> or <strong>LinkedIn</strong>. The message is the invitation, a chase if they haven’t answered, a reminder before the event, or a thank-you or follow-up after they answer; it is not a step, and the right one is picked for you. LinkedIn can’t take the text in a link, so its button copies the draft and opens a message to them: paste (⌘V) and press Send. Every send is recorded and moves them on.'
+					)}
 				</dd>
 				<dt>LinkedIn</dt>
 				<dd>
-					Your connection with them: <strong>Not connected</strong> →
-					<strong>Request sent</strong> → <strong>Connected</strong>. <strong>Connect</strong> opens
-					their profile to send the request and records it; press <strong>They accepted</strong>
-					when they do (the <strong>LinkedIn request sent</strong> filter lists who to check). LinkedIn
-					only lets you message connections, so the LinkedIn send button waits for this. Fix it from the
-					⋯ menu any time.
+					{@html t(
+						'Your connection with them: <strong>Not connected</strong> → <strong>Request sent</strong> → <strong>Connected</strong>. <strong>Connect</strong> opens their profile to send the request and records it; press <strong>They accepted</strong> when they do (the <strong>LinkedIn request sent</strong> filter lists who to check). LinkedIn only lets you message connections, so the LinkedIn send button waits for this. Fix it from the ⋯ menu any time.'
+					)}
 				</dd>
 			</dl>
 		</details>
 
-		{#if problem}<p class="banner banner-warn" role="alert">{problem}</p>{/if}
+		{#if problem}<p class="banner banner-warn" role="alert">{t(problem)}</p>{/if}
 		{#if form && 'bulkError' in form && form.bulkError}
-			<p class="banner banner-warn" role="alert">{form.bulkError}</p>
+			<p class="banner banner-warn" role="alert">{t(form.bulkError)}</p>
 		{/if}
 		{#if bulkMessage}
 			<p class="banner" role="status">
 				{bulkMessage}
 				{#if copyTarget}
-					<a href="/admin/events/{copyTarget.id}/people">Open {copyTarget.name}</a>
+					<a href="/admin/events/{copyTarget.id}/people"
+						>{t('Open {name}', { name: copyTarget.name })}</a
+					>
 				{/if}
 			</p>
 		{/if}
 		{#if phone && !hintSeen && counts.review}
 			<p class="banner hint" role="note">
-				Swipe a row under To review to the right to add them, or left to skip. Hold a company name
-				to add everyone waiting there.
-				<button class="btn btn-ghost btn-sm" onclick={retireHint}>Got it</button>
+				{t(
+					'Swipe a row under To review to the right to add them, or left to skip. Hold a company name to add everyone waiting there.'
+				)}
+				<button class="btn btn-ghost btn-sm" onclick={retireHint}>{t('Got it')}</button>
 			</p>
 		{/if}
 
@@ -735,17 +766,17 @@
 									name="to"
 									value={group.name}
 									required
-									aria-label="Company name"
+									aria-label={t('Company name')}
 									use:focusSelect
 									onkeydown={(e) => e.key === 'Escape' && (renaming = null)}
 								/>
-								<button class="btn btn-primary btn-sm">Save</button>
+								<button class="btn btn-primary btn-sm">{t('Save')}</button>
 								<button
 									type="button"
 									class="btn btn-ghost btn-sm"
 									onclick={() => (renaming = null)}
 								>
-									Cancel
+									{t('Cancel')}
 								</button>
 							</form>
 						{:else}
@@ -769,7 +800,9 @@
 										type="checkbox"
 										checked={sel.all}
 										indeterminate={sel.some}
-										aria-label="Select everyone at {group.name || 'no company'}"
+										aria-label={t('Select everyone at {company}', {
+											company: group.name || t('no company')
+										})}
 										onchange={(e) =>
 											setSelected(
 												group.shown.map((r) => r.id),
@@ -777,19 +810,21 @@
 											)}
 									/>
 								{/if}
-								<h2>{group.name || 'No company'}</h2>
+								<h2>{group.name || t('No company')}</h2>
 								{#if group.id}
 									<button
 										class="btn btn-ghost btn-icon btn-sm rename-btn"
 										onclick={() => (renaming = group.key)}
-										title="Rename company"
+										title={t('Rename company')}
 									>
-										<Pencil size={14} /><span class="sr-only">Rename {group.name}</span>
+										<Pencil size={14} /><span class="sr-only"
+											>{t('Rename {name}', { name: group.name })}</span
+										>
 									</button>
 								{/if}
 								{#if group.blocked}
-									<span class="pill pill-warn" title={group.blocked_reason || 'Blocked company'}
-										>Blocked</span
+									<span class="pill pill-warn" title={group.blocked_reason || t('Blocked company')}
+										>{t('Blocked')}</span
 									>
 								{/if}
 							</div>
@@ -809,15 +844,17 @@
 								>
 									<input type="hidden" name="company" value={group.id} />
 									<label class="country">
-										<span class="sr-only">Phone country for {group.name}</span>
+										<span class="sr-only"
+											>{t('Phone country for {name}', { name: group.name })}</span
+										>
 										<select
 											class="owner-select"
 											name="country"
 											value={group.phone_country ?? ''}
-											title="Phone country: reads local numbers and picks the message language"
+											title={t('Phone country: reads local numbers and picks the message language')}
 											onchange={(e) => e.currentTarget.form?.requestSubmit()}
 										>
-											<option value="">Event’s country</option>
+											<option value="">{t('Event’s country')}</option>
 											<option value="ID">+62 Indonesia</option>
 											<option value="MY">+60 Malaysia</option>
 										</select>
@@ -835,14 +872,14 @@
 								>
 									<input type="hidden" name="company" value={group.id} />
 									<label class="owner">
-										<span class="sr-only">Owner of {group.name}</span>
+										<span class="sr-only">{t('Owner of {name}', { name: group.name })}</span>
 										<select
 											class="owner-select"
 											name="owner"
 											value={group.owner ?? ''}
 											onchange={(e) => e.currentTarget.form?.requestSubmit()}
 										>
-											<option value="">No owner</option>
+											<option value="">{t('No owner')}</option>
 											{#each data.team as name (name)}<option value={name}>{name}</option>{/each}
 										</select>
 									</label>
@@ -854,12 +891,18 @@
 										method="POST"
 										action="?/unblock"
 										use:enhance={({ cancel }) => {
-											if (!confirm(`Unblock ${group.name}? People there can be added again.`))
+											if (
+												!confirm(
+													t('Unblock {name}? People there can be added again.', {
+														name: group.name
+													})
+												)
+											)
 												cancel();
 										}}
 									>
 										<input type="hidden" name="company" value={group.id} />
-										<button class="btn btn-ghost btn-sm">Unblock</button>
+										<button class="btn btn-ghost btn-sm">{t('Unblock')}</button>
 									</form>
 								{:else}
 									<form
@@ -867,7 +910,9 @@
 										action="?/block"
 										use:enhance={({ formData, cancel }) => {
 											const reason = prompt(
-												`Block ${group.name}: nobody there can be added, researched or messaged. Why?`,
+												t('Block {name}: nobody there can be added, researched or messaged. Why?', {
+													name: group.name
+												}),
 												''
 											);
 											if (reason === null) {
@@ -878,8 +923,9 @@
 										}}
 									>
 										<input type="hidden" name="company" value={group.id} />
-										<button class="btn btn-ghost btn-sm" title="Block company">
-											<Ban size={14} /> Block…
+										<button class="btn btn-ghost btn-sm" title={t('Block company')}>
+											<Ban size={14} />
+											{t('Block…')}
 										</button>
 									</form>
 								{/if}
@@ -887,13 +933,13 @@
 							{#if group.waiting > 1}
 								<form method="POST" action="?/addAll" use:enhance>
 									<input type="hidden" name="companyKey" value={group.key} />
-									<button class="btn btn-soft btn-sm"
-										><UserPlus size={15} /> Add all {group.waiting}</button
+									<button class="btn btn-soft btn-sm">
+										<UserPlus size={15} /> {t('Add all {n}', { n: group.waiting })}</button
 									>
 								</form>
 								<form method="POST" action="?/skipAll" use:enhance>
 									<input type="hidden" name="companyKey" value={group.key} />
-									<button class="btn btn-ghost btn-sm">Skip all</button>
+									<button class="btn btn-ghost btn-sm">{t('Skip all')}</button>
 								</form>
 							{/if}
 						</div>
@@ -925,13 +971,7 @@
 
 		{#if filtering && !(flat ? listed.length : groups.length)}
 			<div class="card no-match">
-				<p class="muted">
-					{q ? `No one matches “${query.trim()}”` : 'No one here'}{chips.length
-						? ` under ${chips.map((c) => CHIP_LABEL[c]).join(', ')}`
-						: ''}{due ? ' due today' : ''}{linkedinPending
-						? ' waiting on a LinkedIn request'
-						: ''}{mine ? ' of yours' : ''}.
-				</p>
+				<p class="muted">{noMatch}</p>
 				<button
 					class="btn btn-secondary btn-sm"
 					onclick={() => {
@@ -940,7 +980,7 @@
 						mine = false;
 						due = false;
 						linkedinPending = false;
-					}}>Show everyone</button
+					}}>{t('Show everyone')}</button
 				>
 			</div>
 		{/if}
@@ -957,7 +997,10 @@
 				const to = data.events.find((e) => e.id === formData.get('to'));
 				if (
 					action === 'copy' &&
-					(!to || !confirm(`Copy ${people(selected.size)} to ${to.name}?`))
+					(!to ||
+						!confirm(
+							t('Copy {people} to {event}?', { people: people(selected.size), event: to.name })
+						))
 				) {
 					cancel();
 					return;
@@ -978,9 +1021,10 @@
 				<input type="hidden" name="ids" value={id} />
 			{/each}
 			{#if selecting}
-				<div class="bulk-bar" role="region" aria-label="Bulk actions">
+				<div class="bulk-bar" role="region" aria-label={t('Bulk actions')}>
 					<div class="bulk-count">
-						<strong>{selected.size.toLocaleString()}</strong> selected
+						<strong>{selected.size.toLocaleString()}</strong>
+						{t('selected')}
 						<button
 							type="button"
 							class="btn btn-ghost btn-sm"
@@ -990,12 +1034,12 @@
 									!allShownSelected
 								)}
 						>
-							{allShownSelected ? 'Clear all' : 'Select all shown'}
+							{allShownSelected ? t('Clear all') : t('Select all shown')}
 						</button>
 					</div>
 					{#if asking}
 						<div class="bulk-ask">
-							<span class="muted">Invited via</span>
+							<span class="muted">{t('Invited via')}</span>
 							{#each VIAS as [via, label] (via)}
 								<button
 									type="button"
@@ -1003,11 +1047,11 @@
 									onclick={() =>
 										runBulk(asking === 'stage' ? 'stage' : 'invited', { via, stage: 'invited' })}
 								>
-									{label}
+									{t(label)}
 								</button>
 							{/each}
 							<button type="button" class="btn btn-ghost btn-sm" onclick={() => (asking = null)}>
-								Cancel
+								{t('Cancel')}
 							</button>
 						</div>
 					{:else}
@@ -1018,7 +1062,8 @@
 								disabled={!selected.size}
 								onclick={() => runBulk('shortlist')}
 							>
-								<UserPlus size={15} /> Shortlist
+								<UserPlus size={15} />
+								{t('Shortlist')}
 							</button>
 							<button
 								type="button"
@@ -1026,7 +1071,7 @@
 								disabled={!selected.size}
 								onclick={() => runBulk('skip')}
 							>
-								Skip
+								{t('Skip')}
 							</button>
 							<button
 								type="button"
@@ -1034,11 +1079,12 @@
 								disabled={!selected.size}
 								onclick={() => (asking = 'invited')}
 							>
-								<Send size={15} /> Mark invited…
+								<Send size={15} />
+								{t('Mark invited…')}
 							</button>
 							{#if data.team.length}
 								<label class="bulk-select">
-									<span class="sr-only">Set owner</span>
+									<span class="sr-only">{t('Set owner')}</span>
 									<select
 										class="owner-select"
 										name="owner"
@@ -1048,14 +1094,14 @@
 											e.currentTarget.selectedIndex = 0;
 										}}
 									>
-										<option value="" disabled selected>Set owner…</option>
-										<option value="">No owner (company’s)</option>
+										<option value="" disabled selected>{t('Set owner…')}</option>
+										<option value="">{t('No owner (company’s)')}</option>
 										{#each data.team as name (name)}<option value={name}>{name}</option>{/each}
 									</select>
 								</label>
 							{/if}
 							<label class="bulk-select">
-								<span class="sr-only">Set stage</span>
+								<span class="sr-only">{t('Set stage')}</span>
 								<select
 									class="owner-select"
 									disabled={!selected.size}
@@ -1064,14 +1110,14 @@
 										e.currentTarget.selectedIndex = 0;
 									}}
 								>
-									<option value="" disabled selected>Set stage…</option>
-									<option value="shortlisted">Shortlisted</option>
-									<option value="invited">Invited</option>
+									<option value="" disabled selected>{t('Set stage…')}</option>
+									<option value="shortlisted">{t('Shortlisted')}</option>
+									<option value="invited">{t('Invited')}</option>
 								</select>
 							</label>
 							{#if data.events.length}
 								<label class="bulk-select">
-									<span class="sr-only">Copy to another event</span>
+									<span class="sr-only">{t('Copy to another event')}</span>
 									<select
 										class="owner-select"
 										name="to"
@@ -1082,9 +1128,11 @@
 											e.currentTarget.selectedIndex = 0;
 										}}
 									>
-										<option value="" disabled selected>Copy to event…</option>
+										<option value="" disabled selected>{t('Copy to event…')}</option>
 										{#each data.events as e (e.id)}
-											<option value={e.id}>{e.name} · {formatDay(e.starts_at, e.timezone)}</option>
+											<option value={e.id}
+												>{e.name} · {formatDay(e.starts_at, e.timezone, lang())}</option
+											>
 										{/each}
 									</select>
 								</label>
@@ -1092,7 +1140,7 @@
 						</div>
 					{/if}
 					<button type="button" class="btn btn-ghost btn-sm bulk-done" onclick={stopSelecting}>
-						Done
+						{t('Done')}
 					</button>
 				</div>
 			{/if}

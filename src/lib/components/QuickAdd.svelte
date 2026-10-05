@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { t } from '$lib/i18n/t.svelte';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
 
 	interface Props {
@@ -10,7 +11,7 @@
 
 	let value = $state('');
 	let note = $state('');
-	const label = $derived(company ? `Add someone from ${company}` : 'Add someone');
+	const label = $derived(company ? t('Add someone from {company}', { company }) : t('Add someone'));
 </script>
 
 <!-- One more name for this company: "Rina Wijaya, CFO, rina@…" works here too. -->
@@ -29,12 +30,14 @@
 					refused: { name: string; reason: string }[];
 				};
 				if (added || found) {
-					note = found ? 'Parked under To review.' : '';
+					note = found ? t('Parked under To review.') : '';
 					value = '';
 				} else if (refused[0]) {
-					note = `${refused[0].name}: ${refused[0].reason}.`;
+					note = t('{name}: {reason}.', { name: refused[0].name, reason: t(refused[0].reason) });
 				} else {
-					note = `${duplicates[0] ?? 'They'} is already on the list.`;
+					note = duplicates[0]
+						? t('{name} is already on the list.', { name: duplicates[0] })
+						: t('They are already on the list.');
 				}
 			} else if (result.type === 'failure') {
 				note = String(result.data?.addError ?? '');
@@ -52,7 +55,7 @@
 		bind:value
 		oninput={() => (note = '')}
 	/>
-	{#if value.trim()}<button class="btn btn-soft btn-sm">Add</button>{/if}
+	{#if value.trim()}<button class="btn btn-soft btn-sm">{t('Add')}</button>{/if}
 	{#if note}<p class="quick-note" role="status">{note}</p>{/if}
 </form>
 

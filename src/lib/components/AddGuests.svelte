@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { plural, t } from '$lib/i18n/t.svelte';
 	import { nameFromLinkedin, REPLY_LABEL, type Reply } from '$lib/invitations';
 	import Columns3 from '@lucide/svelte/icons/columns-3';
 	import FileUp from '@lucide/svelte/icons/file-up';
@@ -158,28 +159,54 @@
 	function listNames(list: string[]) {
 		return list.length <= 3
 			? list.join(', ')
-			: `${list.slice(0, 2).join(', ')} and ${list.length - 2} others`;
+			: t('{names} and {n} others', { names: list.slice(0, 2).join(', '), n: list.length - 2 });
 	}
 
 	function summarize(r: AddResult) {
-		const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 		const parts: string[] = [];
 		if (r.added)
 			parts.push(
-				`Added ${plural(r.added, 'person', 'people')}${r.company ? ` from ${r.company}` : ''}.`
+				r.company
+					? plural(
+							r.added,
+							'Added {n} person from {company}.',
+							'Added {n} people from {company}.',
+							{
+								company: r.company
+							}
+						)
+					: plural(r.added, 'Added {n} person.', 'Added {n} people.')
 			);
-		if (r.found) parts.push(`${plural(r.found, 'person waits', 'people wait')} under To review.`);
+		if (r.found)
+			parts.push(
+				plural(r.found, '{n} person waits under To review.', '{n} people wait under To review.')
+			);
 		if (r.duplicates.length)
 			parts.push(
-				`${listNames(r.duplicates)} ${r.duplicates.length === 1 ? 'was' : 'were'} already on the list.`
+				plural(
+					r.duplicates.length,
+					'{names} was already on the list.',
+					'{names} were already on the list.',
+					{
+						names: listNames(r.duplicates)
+					}
+				)
 			);
 		if (r.refused.length)
-			parts.push(`Couldn’t add ${r.refused.map((x) => `${x.name} (${x.reason})`).join(', ')}.`);
+			parts.push(
+				t('Couldn’t add {names}.', {
+					names: r.refused.map((x) => `${x.name} (${t(x.reason)})`).join(', ')
+				})
+			);
 		if (r.skipped.length)
 			parts.push(
-				`Skipped ${plural(r.skipped.length, 'line', 'lines')} without a name. Use “Check each field” to fill them in.`
+				plural(
+					r.skipped.length,
+					'Skipped {n} line without a name. Use “Check each field” to fill it in.',
+					'Skipped {n} lines without a name. Use “Check each field” to fill them in.'
+				)
 			);
-		if (r.truncated) parts.push('Only the first 1,000 lines were read.');
+		if (r.truncated) parts.push(t('Only the first 1,000 lines were read.'));
 		return parts.join(' ');
 	}
 
@@ -235,7 +262,7 @@
 			// A paste whose header the app could barely read is the one to show the mapping for.
 			if (columns === undefined) showColumns = mapping.headers.length >= 2 && matched < 2;
 		} catch {
-			problem = 'Couldn’t split those lines. Please try again.';
+			problem = t('Couldn’t split those lines. Please try again.');
 		} finally {
 			busy = false;
 		}
@@ -260,7 +287,7 @@
 		const file = e.currentTarget.files?.[0];
 		if (!file) return;
 		if (file.size > 2_000_000) {
-			problem = 'That file is too big. Export fewer rows, or paste the ones you need.';
+			problem = t('That file is too big. Export fewer rows, or paste the ones you need.');
 			return;
 		}
 		names = await file.text();
@@ -271,10 +298,10 @@
 	function flags(extra: Extra | null | undefined): string[] {
 		if (!extra) return [];
 		const list: string[] = [];
-		if (extra.suppressed) list.push('Suppressed');
-		if (extra.doNotEmail) list.push('No email');
-		if (extra.doNotPhone) list.push('No calls');
-		if (extra.owner) list.push(`Owner ${extra.owner}`);
+		if (extra.suppressed) list.push(t('Suppressed'));
+		if (extra.doNotEmail) list.push(t('No email'));
+		if (extra.doNotPhone) list.push(t('No calls'));
+		if (extra.owner) list.push(t('Owner {name}', { name: extra.owner }));
 		return list;
 	}
 
@@ -291,9 +318,9 @@
 	// A big paste always waits for review, whatever the box says (D5).
 	const parking = $derived(park || typedCount > FOUND_THRESHOLD);
 	const buttonLabel = $derived.by(() => {
-		if (!toAdd) return 'Add to the list';
-		if (parking && !picked.length) return `Park ${toAdd} for review`;
-		return `Add ${toAdd} to the list`;
+		if (!toAdd) return t('Add to the list');
+		if (parking && !picked.length) return t('Park {n} for review', { n: toAdd });
+		return t('Add {n} to the list', { n: toAdd });
 	});
 
 	function maybeFocus(node: HTMLInputElement) {
@@ -322,27 +349,34 @@
 				picked = [];
 				refresh++;
 			} else if (result.type === 'failure') {
-				problem = String(result.data?.addError ?? 'That didn’t work. Please try again.');
+				problem = t(String(result.data?.addError ?? 'That didn’t work. Please try again.'));
 			}
 		};
 	}}
 >
 	<div class="add-head">
 		<div>
-			<h2>{first ? 'Start the list' : 'Add people'}</h2>
+			<h2>{first ? t('Start the list') : t('Add people')}</h2>
 			<p class="muted">
 				{first
-					? 'List who you’re inviting, company by company, then record each reply as it comes in. On the day, everyone who checks in is ticked off.'
-					: 'Pick people from the pool, type names, or paste rows from a spreadsheet.'}
+					? t(
+							'List who you’re inviting, company by company, then record each reply as it comes in. On the day, everyone who checks in is ticked off.'
+						)
+					: t('Pick people from the pool, type names, or paste rows from a spreadsheet.')}
 			</p>
 		</div>
-		<button type="button" class="btn btn-ghost btn-icon btn-sm" onclick={onclose} title="Close">
-			<X size={18} /><span class="sr-only">Close</span>
+		<button
+			type="button"
+			class="btn btn-ghost btn-icon btn-sm"
+			onclick={onclose}
+			title={t('Close')}
+		>
+			<X size={18} /><span class="sr-only">{t('Close')}</span>
 		</button>
 	</div>
 
 	<div class="field company">
-		<label class="label" for="add-company">Company</label>
+		<label class="label" for="add-company">{t('Company')}</label>
 		<input
 			class="input"
 			id="add-company"
@@ -359,7 +393,10 @@
 		<fieldset class="contacts">
 			<div class="contacts-head">
 				<legend class="label">
-					Already known <span class="optional">· {people.length} at {company.trim()}</span>
+					{t('Already known')}
+					<span class="optional"
+						>· {t('{n} at {company}', { n: people.length, company: company.trim() })}</span
+					>
 				</legend>
 				<div class="contacts-tools">
 					{#if prospectCount}
@@ -368,14 +405,14 @@
 							class="chip"
 							aria-pressed={prospects}
 							onclick={() => (prospects = !prospects)}
-							title="People found or typed before, who never replied or attended"
+							title={t('People found or typed before, who never replied or attended')}
 						>
-							Prospects <span class="chip-count">{prospectCount}</span>
+							{t('Prospects')} <span class="chip-count">{prospectCount}</span>
 						</button>
 					{/if}
 					{#if available.length > 1}
 						<button type="button" class="btn btn-ghost btn-sm" onclick={toggleAll}>
-							{allPicked ? 'Clear' : 'Select all'}
+							{allPicked ? t('Clear') : t('Select all')}
 						</button>
 					{/if}
 				</div>
@@ -391,13 +428,13 @@
 						<span class="pick-text">
 							<span class="pick-name">{person.name}</span>
 							<span class="pick-meta">
-								{person.onList ? 'On the list' : person.jobTitle || person.email || ''}
+								{person.onList ? t('On the list') : person.jobTitle || person.email || ''}
 							</span>
 						</span>
 					</label>
 				{:else}
 					<p class="hint">
-						{prospects ? 'No prospects at this company.' : 'Only prospects here so far.'}
+						{prospects ? t('No prospects at this company.') : t('Only prospects here so far.')}
 					</p>
 				{/each}
 			</div>
@@ -408,7 +445,8 @@
 		<fieldset class="entries">
 			<div class="entries-head">
 				<legend class="label">
-					Check each person <span class="optional">· nothing is saved until you add them</span>
+					{t('Check each person')}
+					<span class="optional">· {t('nothing is saved until you add them')}</span>
 				</legend>
 				<div class="entries-tools">
 					{#if mappable}
@@ -418,7 +456,8 @@
 							aria-expanded={showColumns}
 							onclick={() => (showColumns = !showColumns)}
 						>
-							<Columns3 size={15} /> Change columns
+							<Columns3 size={15} />
+							{t('Change columns')}
 						</button>
 					{/if}
 					<button
@@ -426,7 +465,7 @@
 						class="btn btn-ghost btn-sm"
 						onclick={() => ((entries = null), (mapping = null))}
 					>
-						Edit as text
+						{t('Edit as text')}
 					</button>
 				</div>
 			</div>
@@ -434,35 +473,42 @@
 			{#if d365}
 				<input type="hidden" name="d365" value="1" />
 				<p class="hint d365">
-					A Dynamics 365 export: everyone here is recorded as a customer, and the
-					<em>do not email</em>, <em>do not phone</em> and marketing flags are honoured. Rows marked
-					<strong>Suppressed</strong> wait under To review and can’t be added.
+					{@html t(
+						'A Dynamics 365 export: everyone here is recorded as a customer, and the <em>do not email</em>, <em>do not phone</em> and marketing flags are honoured. Rows marked <strong>Suppressed</strong> wait under To review and can’t be added.'
+					)}
 				</p>
 			{/if}
 			{#if mapping && mappable}
 				<div class="columns" class:open={showColumns}>
 					<p class="hint">
 						{#if matched < 2}
-							The app couldn’t tell which column is which. Say what each one holds:
+							{t('The app couldn’t tell which column is which. Say what each one holds:')}
 						{:else}
-							{matched} of {mapping.headers.length} columns recognised. Change any that landed in the
-							wrong place:
+							{t(
+								'{matched} of {total} columns recognised. Change any that landed in the wrong place:',
+								{
+									matched,
+									total: mapping.headers.length
+								}
+							)}
 						{/if}
 					</p>
 					{#if showColumns}
 						<div class="column-grid">
 							{#each mapping.headers as cell, i (i)}
 								<label class="column">
-									<span class="column-header" title={cell}>{cell || `Column ${i + 1}`}</span>
+									<span class="column-header" title={cell}
+										>{cell || t('Column {n}', { n: i + 1 })}</span
+									>
 									<select
 										class="input"
 										value={columnAt(i)}
 										disabled={busy}
 										onchange={(e) => remap(i, e.currentTarget.value)}
 									>
-										<option value="">Ignore</option>
+										<option value="">{t('Ignore')}</option>
 										{#each mapping.options as o (o.key)}
-											<option value={o.key}>{o.label}</option>
+											<option value={o.key}>{t(o.label)}</option>
 										{/each}
 									</select>
 								</label>
@@ -475,7 +521,7 @@
 								disabled={busy}
 								onchange={(e) => review(mapping?.columns, e.currentTarget.checked)}
 							/>
-							<span>The first line is a header row, not a person.</span>
+							<span>{t('The first line is a header row, not a person.')}</span>
 						</label>
 					{/if}
 				</div>
@@ -486,31 +532,31 @@
 						<span class="entry-number">{i + 1}</span>
 						{#if e.extra}
 							{#each flags(e.extra) as flag (flag)}
-								<span class="flag" class:flag-bad={flag === 'Suppressed'}>{flag}</span>
+								<span class="flag" class:flag-bad={flag === t('Suppressed')}>{flag}</span>
 							{/each}
 						{/if}
 						<button
 							type="button"
 							class="btn btn-ghost btn-icon btn-sm"
-							title="Remove this row"
+							title={t('Remove this row')}
 							onclick={() => entries?.splice(i, 1)}
 						>
-							<X size={16} /><span class="sr-only">Remove row {i + 1}</span>
+							<X size={16} /><span class="sr-only">{t('Remove row {n}', { n: i + 1 })}</span>
 						</button>
 					</div>
 					<div class="entry-fields">
 						<label class="cell wide">
-							<span class="cell-label">Name</span>
+							<span class="cell-label">{t('Name')}</span>
 							<input
 								class="input"
 								bind:value={e.name}
 								required
 								aria-invalid={e.name.trim() ? undefined : 'true'}
-								placeholder={e.linkedin ? 'Not in the link: type it' : ''}
+								placeholder={e.linkedin ? t('Not in the link: type it') : ''}
 							/>
 						</label>
 						<label class="cell">
-							<span class="cell-label">Company</span>
+							<span class="cell-label">{t('Company')}</span>
 							<input
 								class="input"
 								bind:value={e.company}
@@ -519,7 +565,7 @@
 							/>
 						</label>
 						<label class="cell">
-							<span class="cell-label">Job title</span>
+							<span class="cell-label">{t('Job title')}</span>
 							<input class="input" bind:value={e.jobTitle} />
 						</label>
 						<label class="cell wide">
@@ -527,7 +573,7 @@
 							<input class="input" type="email" bind:value={e.email} />
 						</label>
 						<label class="cell">
-							<span class="cell-label">Mobile</span>
+							<span class="cell-label">{t('Mobile')}</span>
 							<input class="input" type="tel" bind:value={e.phone} />
 						</label>
 						<label class="cell wide">
@@ -540,13 +586,13 @@
 							/>
 						</label>
 						<label class="cell">
-							<span class="cell-label">Reply</span>
+							<span class="cell-label">{t('Reply')}</span>
 							<select class="input" bind:value={e.reply}>
-								{#each REPLY_ORDER as r (r)}<option value={r}>{REPLY_LABEL[r]}</option>{/each}
+								{#each REPLY_ORDER as r (r)}<option value={r}>{t(REPLY_LABEL[r])}</option>{/each}
 							</select>
 						</label>
 						<label class="cell wide">
-							<span class="cell-label">Note</span>
+							<span class="cell-label">{t('Note')}</span>
 							<input class="input" bind:value={e.note} />
 						</label>
 					</div>
@@ -557,12 +603,13 @@
 				class="btn btn-soft btn-sm add-row"
 				onclick={() => entries?.push(entry())}
 			>
-				<ListPlus size={16} /> Add a row
+				<ListPlus size={16} />
+				{t('Add a row')}
 			</button>
 		</fieldset>
 	{:else}
 		<div class="field">
-			<label class="label" for="add-names">{people.length ? 'Anyone else' : 'Names'}</label>
+			<label class="label" for="add-names">{people.length ? t('Anyone else') : t('Names')}</label>
 			<textarea
 				class="input textarea"
 				id="add-names"
@@ -571,11 +618,9 @@
 				placeholder={PLACEHOLDER}
 				bind:value={names}></textarea>
 			<p class="hint">
-				One person per line. After the name you can add a job title, email, mobile or LinkedIn link,
-				separated by commas; a LinkedIn link on its own is enough. Pasting from a spreadsheet or a
-				Dynamics 365 export? Include its header row (Name, Company, Email, Mobile…) and each column
-				lands in the right place. Use <strong>Check each field</strong> to see and fix every field before
-				anything is saved.
+				{@html t(
+					'One person per line. After the name you can add a job title, email, mobile or LinkedIn link, separated by commas; a LinkedIn link on its own is enough. Pasting from a spreadsheet or a Dynamics 365 export? Include its header row (Name, Company, Email, Mobile…) and each column lands in the right place. Use <strong>Check each field</strong> to see and fix every field before anything is saved.'
+				)}
 			</p>
 			<div class="file-row">
 				<input
@@ -591,9 +636,11 @@
 					disabled={busy}
 					onclick={() => fileInput?.click()}
 				>
-					<FileUp size={15} /> Open a CSV file
+					<FileUp size={15} />
+					{t('Open a CSV file')}
 				</button>
-				<span class="hint">A spreadsheet or D365 export saved as CSV; it is read the same way.</span
+				<span class="hint"
+					>{t('A spreadsheet or D365 export saved as CSV; it is read the same way.')}</span
 				>
 			</div>
 		</div>
@@ -604,19 +651,24 @@
 			<label class="check">
 				<input type="checkbox" name="park" value="1" bind:checked={park} />
 				<span>
-					Park as Found: they wait under <strong>To review</strong> instead of joining the list now.
-					{#if typedCount > FOUND_THRESHOLD}Lists over {FOUND_THRESHOLD} rows always do.{/if}
+					{@html t(
+						'Park as Found: they wait under <strong>To review</strong> instead of joining the list now.'
+					)}
+					{#if typedCount > FOUND_THRESHOLD}{t('Lists over {n} rows always do.', {
+							n: FOUND_THRESHOLD
+						})}{/if}
 				</span>
 			</label>
 			<div class="field origin">
 				<label class="label" for="add-origin">
-					Where did you get their details? <span class="optional">(asked once)</span>
+					{t('Where did you get their details?')}
+					<span class="optional">{t('(asked once)')}</span>
 				</label>
 				<input
 					class="input"
 					id="add-origin"
 					name="originDetail"
-					placeholder="Business cards from the expo, a partner’s list…"
+					placeholder={t('Business cards from the expo, a partner’s list…')}
 					maxlength="200"
 					bind:value={originDetail}
 				/>
@@ -629,11 +681,12 @@
 
 	<div class="add-actions">
 		<button type="button" class="btn btn-ghost" onclick={onclose}
-			>{message ? 'Done' : 'Cancel'}</button
+			>{message ? t('Done') : t('Cancel')}</button
 		>
 		{#if !entries}
 			<button type="button" class="btn btn-secondary" disabled={busy} onclick={() => review()}>
-				<SquarePen size={16} /> Check each field
+				<SquarePen size={16} />
+				{t('Check each field')}
 			</button>
 		{/if}
 		<button class="btn btn-primary" disabled={busy || !canAdd}>

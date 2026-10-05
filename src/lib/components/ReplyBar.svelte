@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t } from '$lib/i18n/t.svelte';
 	import { REPLIES, REPLY_LABEL, type Reply } from '$lib/invitations';
 
 	interface Props {
@@ -16,13 +17,17 @@
 	<div
 		class="bar"
 		role="img"
-		aria-label={REPLIES.map((r) => `${REPLY_LABEL[r]} ${counts[r]}`).join(', ')}
+		aria-label={REPLIES.map((r) => `${t(REPLY_LABEL[r])} ${counts[r]}`).join(', ')}
 	>
 		{#each shown as reply (reply)}
 			<span
 				class="seg {reply}"
 				style="flex-grow: {counts[reply]}"
-				title="{REPLY_LABEL[reply]}: {counts[reply]} of {total}"
+				title={t('{reply}: {n} of {total}', {
+					reply: t(REPLY_LABEL[reply]),
+					n: counts[reply],
+					total
+				})}
 			></span>
 		{/each}
 	</div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { t, plural, lang } from '$lib/i18n/t.svelte';
 	import { formatTime } from '$lib/time';
 
 	interface Props {
@@ -49,7 +50,7 @@
 	}
 
 	const range = (b: { start: number }) =>
-		`${formatTime(b.start, timezone)} – ${formatTime(b.start + bucketMinutes * 60_000, timezone)}`;
+		`${formatTime(b.start, timezone, false, lang())} – ${formatTime(b.start + bucketMinutes * 60_000, timezone, false, lang())}`;
 
 	function onKey(e: KeyboardEvent) {
 		if (!buckets.length) return;
@@ -76,15 +77,17 @@
 		height={HEIGHT}
 		viewBox="0 0 {width} {HEIGHT}"
 		role="img"
-		aria-label="Arrivals per {bucketMinutes} minutes. Use the arrow keys to read each bar."
+		aria-label={t('Arrivals per {n} minutes. Use the arrow keys to read each bar.', {
+			n: bucketMinutes
+		})}
 		tabindex="0"
 		onkeydown={onKey}
 		onblur={() => (active = null)}
 		onpointerleave={() => (active = null)}
 	>
-		{#each ticks as t (t)}
-			<line class="grid" x1={M.left} x2={width - M.right} y1={y(t)} y2={y(t)} />
-			<text class="tick" x={M.left - 8} y={y(t)} dy="0.32em" text-anchor="end">{t}</text>
+		{#each ticks as tick (tick)}
+			<line class="grid" x1={M.left} x2={width - M.right} y1={y(tick)} y2={y(tick)} />
+			<text class="tick" x={M.left - 8} y={y(tick)} dy="0.32em" text-anchor="end">{tick}</text>
 		{/each}
 		<line class="axis" x1={M.left} x2={width - M.right} y1={M.top + plotH} y2={M.top + plotH} />
 
@@ -92,7 +95,7 @@
 			<path class="bar" class:dim={active !== null && active !== i} d={barPath(i, b.count)} />
 			{#if i % labelEvery === 0}
 				<text class="tick" x={M.left + i * band + band / 2} y={HEIGHT - 8} text-anchor="middle">
-					{formatTime(b.start, timezone)}
+					{formatTime(b.start, timezone, false, lang())}
 				</text>
 			{/if}
 		{/each}
@@ -125,16 +128,16 @@
 			) - 12}px"
 			role="status"
 		>
-			<strong>{tip.count} {tip.count === 1 ? 'arrival' : 'arrivals'}</strong>
+			<strong>{plural(tip.count, '{n} arrival', '{n} arrivals')}</strong>
 			<span>{range(tip)}</span>
 		</div>
 	{/if}
 </div>
 
 <details>
-	<summary>Show as table</summary>
+	<summary>{t('Show as table')}</summary>
 	<table class="table">
-		<thead><tr><th>Time</th><th>Arrivals</th></tr></thead>
+		<thead><tr><th>{t('Time')}</th><th>{t('Arrivals')}</th></tr></thead>
 		<tbody>
 			{#each buckets as b (b.start)}
 				<tr><td>{range(b)}</td><td class="num">{b.count}</td></tr>

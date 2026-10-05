@@ -1,4 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
+import { translate } from '$lib/i18n';
 import { isReply, linkedinProfile } from '$lib/invitations';
 import { isLinkedinStatus, isMessageKind } from '$lib/people';
 import { setLinkedinStatus } from '$lib/server/linkedin';
@@ -127,7 +128,7 @@ export const actions: Actions = {
 		// Numbers are read in the company's country when it has one, else the event's (D14).
 		const country = countryResolver(db, event);
 		const reviewed = form.has('guests')
-			? reviewedGuests(String(form.get('guests')), company, country)
+			? reviewedGuests(String(form.get('guests')), company, country, locals.lang)
 			: null;
 		if (typeof reviewed === 'string') return fail(400, { addError: reviewed });
 		const parsed = reviewed
@@ -136,9 +137,12 @@ export const actions: Actions = {
 		const picked = getPeople(db, form.getAll('contact').map(String));
 		if (!picked.length && !parsed.guests.length) {
 			return fail(400, {
-				addError: parsed.skipped.length
-					? 'Start each line with the person’s name.'
-					: 'Add at least one name.'
+				addError: translate(
+					locals.lang,
+					parsed.skipped.length
+						? 'Start each line with the person’s name.'
+						: 'Add at least one name.'
+				)
 			});
 		}
 		// Reviewed rows say where they came from; a direct paste is read for D365 headers here.
@@ -186,7 +190,7 @@ export const actions: Actions = {
 		return { noted: id };
 	},
 
-	update: async ({ params, request }) => {
+	update: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = rowId(form);
@@ -207,18 +211,19 @@ export const actions: Actions = {
 			phone: normalizePhone(values.phone, countryResolver(db, event)(values.company)),
 			linkedin: linkedinProfile(values.linkedin)
 		};
+		const say = (text: string) => translate(locals.lang, text);
 		const errors: Record<string, string> = {};
-		if (!details.name) errors.name = 'Name is required.';
-		if (details.email && !isValidEmail(details.email)) errors.email = 'Check the email.';
+		if (!details.name) errors.name = say('Name is required.');
+		if (details.email && !isValidEmail(details.email)) errors.email = say('Check the email.');
 		if (values.linkedin.trim() && !details.linkedin)
-			errors.linkedin = 'Use a profile link: linkedin.com/in/…';
+			errors.linkedin = say('Use a profile link: linkedin.com/in/…');
 		if (id === null || Object.keys(errors).length)
 			return fail(400, { editId: id, editErrors: errors, editValues: values });
 
 		if (setDetails(db, event.id, id, details) === 'do not contact')
 			return fail(409, {
 				editId: id,
-				editErrors: { email: 'Those details are on the do-not-contact list.' },
+				editErrors: { email: say('Those details are on the do-not-contact list.') },
 				editValues: values
 			});
 		// The name after Pak or Bu (D27); blank goes back to the first given name.
@@ -247,17 +252,21 @@ export const actions: Actions = {
 		const result = id === null ? 'missing' : removeRow(db, event.id, id, { by: locals.who });
 		if (result === 'checked in')
 			return fail(409, {
-				removeError: 'They have checked in. Remove the check-in on the Check-ins tab instead.'
+				removeError: translate(
+					locals.lang,
+					'They have checked in. Remove the check-in on the Check-ins tab instead.'
+				)
 			});
 		return { removed: id };
 	},
 
-	rename: async ({ params, request }) => {
+	rename: async ({ params, request, locals }) => {
 		requireEvent(params.id);
 		const form = await request.formData();
 		const id = cleanText(form.get('company'), 20);
 		const to = cleanText(form.get('to'), 120);
-		if (!id || !to) return fail(400, { renameError: 'Give the company a name.' });
+		if (!id || !to)
+			return fail(400, { renameError: translate(locals.lang, 'Give the company a name.') });
 		renameCompany(db, id, to);
 		return { renamed: to };
 	},
@@ -279,13 +288,15 @@ export const actions: Actions = {
 	},
 
 	// The company's phone country (D14): '' follows the event again. It also picks the language.
-	companyCountry: async ({ params, request }) => {
+	companyCountry: async ({ params, request, locals }) => {
 		requireEvent(params.id);
 		const form = await request.formData();
 		const id = cleanText(form.get('company'), 20);
 		const country = String(form.get('country') ?? '');
 		if (!id || (country && !isCountry(country)))
-			return fail(400, { countryError: 'Pick Indonesia, Malaysia or the event’s country.' });
+			return fail(400, {
+				countryError: translate(locals.lang, 'Pick Indonesia, Malaysia or the event’s country.')
+			});
 		setCompanyPhoneCountry(db, id, isCountry(country) ? country : null);
 		return { countrySet: id };
 	},
@@ -295,7 +306,7 @@ export const actions: Actions = {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = cleanText(form.get('company'), 20);
-		if (!id) return fail(400, { blockError: 'That company is gone.' });
+		if (!id) return fail(400, { blockError: translate(locals.lang, 'That company is gone.') });
 		blockCompany(db, id, { reason: cleanText(form.get('reason'), 200), by: locals.who });
 		logActivity(db, {
 			eventId: event.id,
@@ -310,7 +321,7 @@ export const actions: Actions = {
 	unblock: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const id = cleanText((await request.formData()).get('company'), 20);
-		if (!id) return fail(400, { blockError: 'That company is gone.' });
+		if (!id) return fail(400, { blockError: translate(locals.lang, 'That company is gone.') });
 		unblockCompany(db, id);
 		// Blocking cleared the company's due dates; unblocking brings them back.
 		recomputeEvent(db, event.id);
@@ -343,10 +354,16 @@ export const actions: Actions = {
 	shortlist: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const id = rowId(await request.formData());
-		if (id === null) return fail(400, { shortlistError: 'That row is gone.' });
+		if (id === null)
+			return fail(400, { shortlistError: translate(locals.lang, 'That row is gone.') });
 		const result = shortlistFound(db, event.id, id, { by: locals.who });
 		if (result.status === 'refused')
-			return fail(409, { shortlistError: `${result.name}: ${result.reason}.` });
+			return fail(409, {
+				shortlistError: translate(locals.lang, '{name}: {reason}.', {
+					name: result.name,
+					reason: translate(locals.lang, result.reason)
+				})
+			});
 		return { shortlisted: id, status: result.status };
 	},
 
@@ -391,7 +408,7 @@ export const actions: Actions = {
 			.map(Number)
 			.filter((id) => Number.isSafeInteger(id) && id > 0);
 		if (!isBulkAction(action) || !ids.length)
-			return fail(400, { bulkError: 'Pick some rows first.' });
+			return fail(400, { bulkError: translate(locals.lang, 'Pick some rows first.') });
 		const by = locals.who;
 		const via = form.get('via');
 		// Names before the batch runs: a Found row folded into the live person is gone after.
@@ -406,7 +423,8 @@ export const actions: Actions = {
 				result = bulkSkip(db, event.id, ids, { by });
 				break;
 			case 'invited':
-				if (!isVia(via)) return fail(400, { bulkError: 'Say how they were invited.' });
+				if (!isVia(via))
+					return fail(400, { bulkError: translate(locals.lang, 'Say how they were invited.') });
 				result = bulkMarkInvited(db, event.id, ids, via, { by });
 				break;
 			case 'owner':
@@ -415,13 +433,18 @@ export const actions: Actions = {
 			case 'stage': {
 				const stage = form.get('stage');
 				if (stage !== 'shortlisted' && stage !== 'invited')
-					return fail(400, { bulkError: 'Only Shortlisted and Invited can be set in bulk.' });
+					return fail(400, {
+						bulkError: translate(locals.lang, 'Only Shortlisted and Invited can be set in bulk.')
+					});
 				result = bulkSetStage(db, event.id, ids, stage, { via: isVia(via) ? via : 'other', by });
 				break;
 			}
 			case 'copy': {
 				const target = copyTargets(event.id).find((e) => e.id === form.get('to'));
-				if (!target) return fail(400, { bulkError: 'Pick an event with a date to copy to.' });
+				if (!target)
+					return fail(400, {
+						bulkError: translate(locals.lang, 'Pick an event with a date to copy to.')
+					});
 				result = copyToEvent(db, event.id, target.id, ids, { by });
 				to = { id: target.id, name: target.name };
 				break;
@@ -452,14 +475,15 @@ export const actions: Actions = {
 
 	// The organizer's own due date (§4.2): a day in the event's zone, taken as 9 am there.
 	// An empty date clears the override and the rules' date comes back.
-	due: async ({ params, request }) => {
+	due: async ({ params, request, locals }) => {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = rowId(form);
 		const date = form.get('clear') === '1' ? '' : String(form.get('date') ?? '').trim();
-		if (id === null) return fail(400, { dueError: 'That row is gone.' });
+		if (id === null) return fail(400, { dueError: translate(locals.lang, 'That row is gone.') });
 		const at = date ? fromLocalInput(`${date}T09:00`, event.timezone) : null;
-		if (date && at === null) return fail(400, { dueError: 'That date doesn’t look right.' });
+		if (date && at === null)
+			return fail(400, { dueError: translate(locals.lang, 'That date doesn’t look right.') });
 		setNextActionOverride(db, event.id, id, at);
 		return { dueSet: id };
 	},
@@ -502,7 +526,7 @@ export const actions: Actions = {
 		const event = requireEvent(params.id);
 		const form = await request.formData();
 		const id = rowId(form);
-		if (id === null) return fail(400, { lockError: 'That row is gone.' });
+		if (id === null) return fail(400, { lockError: translate(locals.lang, 'That row is gone.') });
 		lockRow(db, event.id, id, {
 			reason: cleanText(form.get('reason'), 200),
 			by: locals.who
@@ -516,9 +540,10 @@ export const actions: Actions = {
 		const id = rowId(form);
 		const survivor = cleanText(form.get('survivor'), 40);
 		const row = id === null ? undefined : getEventPerson(db, event.id, id);
-		if (!row?.person_id || !survivor) return fail(400, { mergeError: 'Pick who to keep.' });
+		if (!row?.person_id || !survivor)
+			return fail(400, { mergeError: translate(locals.lang, 'Pick who to keep.') });
 		if (!mergeInto(db, row.person_id, survivor, { by: locals.who }))
-			return fail(409, { mergeError: 'Those two can’t be merged.' });
+			return fail(409, { mergeError: translate(locals.lang, 'Those two can’t be merged.') });
 		// The survivor may have gained a relationship or a lock; their rows follow.
 		recomputePerson(db, survivor);
 		return { merged: id };

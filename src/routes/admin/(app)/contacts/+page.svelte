@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
+	import { lang, plural, t } from '$lib/i18n/t.svelte';
 	import { mailtoHref } from '$lib/mailto';
 	import { initials } from '$lib/names';
 	import { ORIGIN_LABEL } from '$lib/people';
@@ -51,7 +52,7 @@
 			return;
 		}
 		const controller = new AbortController();
-		const t = setTimeout(async () => {
+		const timeout = setTimeout(async () => {
 			try {
 				const res = await fetch(`/admin/contacts/search.json?q=${encodeURIComponent(q)}`, {
 					signal: controller.signal
@@ -64,7 +65,7 @@
 			}
 		}, 200);
 		return () => {
-			clearTimeout(t);
+			clearTimeout(timeout);
 			controller.abort();
 		};
 	});
@@ -80,14 +81,15 @@
 
 	// The retention rules (§5.4) in one phrase per person; no date means "until deleted".
 	function kept(k: { rule: 'legacy' | 'prospect' | 'kept'; until: number | null }) {
+		const date = k.until === null ? '' : formatDate(k.until, 'UTC', lang());
 		if (k.rule === 'legacy')
 			return k.until === null
-				? 'Legacy: until the notice is sent'
-				: `Until ${formatDate(k.until, 'UTC')} unless they reply`;
-		return k.until === null ? 'Until deleted' : `Until ${formatDate(k.until, 'UTC')}`;
+				? t('Legacy: until the notice is sent')
+				: t('Until {date} unless they reply', { date });
+		return k.until === null ? t('Until deleted') : t('Until {date}', { date });
 	}
 
-	// Where a lock came from (D13), as the do-not-contact list names it.
+	// Where a lock came from (D13), as the do-not-contact list names it; translated where shown.
 	const LOCK_SOURCE = {
 		staff: 'added by staff',
 		stop_reply: 'replied STOP',
@@ -98,27 +100,33 @@
 </script>
 
 <svelte:head>
-	<title>Contacts · Event Planner</title>
+	<title>{t('Contacts')} · Event Planner</title>
 </svelte:head>
 
 <div class="head">
 	<div>
-		<h1>Contacts</h1>
+		<h1>{t('Contacts')}</h1>
 		<p class="muted">
 			{#if data.prospects}
-				{data.prospectTotal.toLocaleString()} prospects: found or typed, never replied, attended or registered
+				{t('{n} prospects: found or typed, never replied, attended or registered', {
+					n: data.prospectTotal.toLocaleString()
+				})}
 			{:else}
-				{data.total.toLocaleString()} people who attended, replied or registered, matched by email, mobile,
-				LinkedIn and name across every event
+				{t(
+					'{n} people who attended, replied or registered, matched by email, mobile, LinkedIn and name across every event',
+					{ n: data.total.toLocaleString() }
+				)}
 			{/if}
 		</p>
 	</div>
 	<div class="head-actions">
 		<a class="btn btn-secondary" href="/admin/contacts/export.csv"
-			><Download size={17} /> Export CSV</a
+			><Download size={17} /> {t('Export CSV')}</a
 		>
-		<a class="btn btn-ghost" href="/admin/contacts/prospects.csv" title="Everyone else in the pool"
-			><Download size={17} /> Prospects CSV</a
+		<a
+			class="btn btn-ghost"
+			href="/admin/contacts/prospects.csv"
+			title={t('Everyone else in the pool')}><Download size={17} /> {t('Prospects CSV')}</a
 		>
 	</div>
 </div>
@@ -127,13 +135,13 @@
 	<form class="tools" method="GET" onsubmit={(e) => e.preventDefault()}>
 		<label class="search">
 			<Search size={17} />
-			<span class="sr-only">Search contacts</span>
+			<span class="sr-only">{t('Search contacts')}</span>
 			<input
 				class="input"
 				type="search"
 				name="q"
 				value={data.q}
-				placeholder="Search name, email, company or mobile"
+				placeholder={t('Search name, email, company or mobile')}
 				oninput={(e) => search(e.currentTarget.value)}
 			/>
 		</label>
@@ -142,25 +150,25 @@
 			class:active={data.prospects}
 			href={href(data.q, !data.prospects)}
 			data-sveltekit-replacestate
-			title="People found or typed before, who never replied, attended or registered"
+			title={t('People found or typed before, who never replied, attended or registered')}
 		>
-			Prospects <span class="chip-count">{data.prospectTotal.toLocaleString()}</span>
+			{t('Prospects')} <span class="chip-count">{data.prospectTotal.toLocaleString()}</span>
 		</a>
 		{#if data.q}<p class="muted">
-				{data.contacts.length} match{data.contacts.length === 1 ? '' : 'es'}
+				{plural(data.contacts.length, '{n} match', '{n} matches')}
 			</p>{/if}
 	</form>
 
-	{#if mergeError}<p class="error-text tools-error" role="alert">{mergeError}</p>{/if}
+	{#if mergeError}<p class="error-text tools-error" role="alert">{t(String(mergeError))}</p>{/if}
 
 	{#if data.contacts.length === 0}
 		<p class="placeholder muted">
 			{#if data.q}
-				No one matches “{data.q}”.
+				{t('No one matches “{q}”.', { q: data.q })}
 			{:else if data.prospects}
-				No prospects: everyone in the pool has attended, replied or registered.
+				{t('No prospects: everyone in the pool has attended, replied or registered.')}
 			{:else}
-				Contacts appear here as soon as people check in, reply or register.
+				{t('Contacts appear here as soon as people check in, reply or register.')}
 			{/if}
 		</p>
 	{:else}
@@ -168,16 +176,16 @@
 			<table class="table">
 				<thead>
 					<tr>
-						<th>Name</th>
-						<th>Email</th>
-						<th>Mobile</th>
-						<th>Company</th>
-						<th>Origin</th>
-						<th>Country</th>
-						<th>Events</th>
-						<th>Last seen</th>
-						<th>Kept</th>
-						<th><span class="sr-only">Actions</span></th>
+						<th>{t('Name')}</th>
+						<th>{t('Email')}</th>
+						<th>{t('Mobile')}</th>
+						<th>{t('Company')}</th>
+						<th>{t('Origin')}</th>
+						<th>{t('Country')}</th>
+						<th>{t('Events')}</th>
+						<th>{t('Last seen')}</th>
+						<th>{t('Kept')}</th>
+						<th><span class="sr-only">{t('Actions')}</span></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -189,9 +197,10 @@
 									<span class="person-text">
 										<span class="person-name">{c.name}</span>
 										{#if c.locked_at}
-											<span class="pill pill-bad tiny" title={c.lock_reason || 'Do not contact'}>
-												<Lock size={11} /> Locked{#if c.lock_source}
-													· {LOCK_SOURCE[c.lock_source]}{/if}
+											<span class="pill pill-bad tiny" title={c.lock_reason || t('Do not contact')}>
+												<Lock size={11} />
+												{t('Locked')}{#if c.lock_source}
+													· {t(LOCK_SOURCE[c.lock_source])}{/if}
 											</span>
 										{/if}
 									</span>
@@ -208,7 +217,7 @@
 										href="https://wa.me/{c.phone.replace(/\D/g, '')}"
 										target="_blank"
 										rel="noreferrer"
-										title="Open in WhatsApp">{c.phone}</a
+										title={t('Open in WhatsApp')}>{c.phone}</a
 									>
 								{:else}<span class="muted">–</span>{/if}
 							</td>
@@ -217,11 +226,13 @@
 								{#if c.job_title}<div class="muted small">{c.job_title}</div>{/if}
 							</td>
 							<td>
-								{ORIGIN_LABEL[c.origin]}
+								{t(ORIGIN_LABEL[c.origin])}
 								{#if c.origin_detail}<div class="muted small">{c.origin_detail}</div>{/if}
 								{#if c.consent_future_at}
-									<div class="muted small" title="Ticked the future-events box">
-										Future events: yes, {formatDate(c.consent_future_at, 'UTC')}
+									<div class="muted small" title={t('Ticked the future-events box')}>
+										{t('Future events: yes, {date}', {
+											date: formatDate(c.consent_future_at, 'UTC', lang())
+										})}
 									</div>
 								{/if}
 							</td>
@@ -238,10 +249,10 @@
 										class="country-select"
 										name="country"
 										value={c.country ?? ''}
-										aria-label="Country of {c.name}"
+										aria-label={t('Country of {name}', { name: c.name })}
 										onchange={(e) => e.currentTarget.form?.requestSubmit()}
 									>
-										<option value="">Unknown</option>
+										<option value="">{t('Unknown')}</option>
 										<option value="ID">Indonesia</option>
 										<option value="MY">Malaysia</option>
 									</select>
@@ -251,7 +262,7 @@
 							<td class="last-seen">
 								{#if c.last_seen_at}
 									<div>{c.last_event_name}</div>
-									<div class="muted small">{timeAgo(c.last_seen_at, data.now)}</div>
+									<div class="muted small">{timeAgo(c.last_seen_at, data.now, lang())}</div>
 								{:else}<span class="muted">–</span>{/if}
 							</td>
 							<td class="kept small" class:muted={c.kept.until === null}>{kept(c.kept)}</td>
@@ -260,11 +271,13 @@
 									<button
 										type="button"
 										class="btn btn-ghost btn-icon btn-sm"
-										title="Merge into another record"
+										title={t('Merge into another record')}
 										aria-expanded={merging === c.id}
 										onclick={() => openMerge(c.id)}
 									>
-										<Merge size={16} /><span class="sr-only">Merge {c.name} into…</span>
+										<Merge size={16} /><span class="sr-only"
+											>{t('Merge {name} into…', { name: c.name })}</span
+										>
 									</button>
 									<form
 										method="POST"
@@ -272,15 +285,20 @@
 										use:enhance={({ cancel }) => {
 											if (
 												!confirm(
-													`Permanently delete ${c.name}, their check-in history and every event row they are on? This is logged.`
+													t(
+														'Permanently delete {name}, their check-in history and every event row they are on? This is logged.',
+														{ name: c.name }
+													)
 												)
 											)
 												cancel();
 										}}
 									>
 										<input type="hidden" name="id" value={c.id} />
-										<button class="btn btn-ghost btn-icon btn-sm" title="Delete contact">
-											<Trash2 size={16} /><span class="sr-only">Delete {c.name}</span>
+										<button class="btn btn-ghost btn-icon btn-sm" title={t('Delete contact')}>
+											<Trash2 size={16} /><span class="sr-only"
+												>{t('Delete {name}', { name: c.name })}</span
+											>
 										</button>
 									</form>
 								</div>
@@ -297,7 +315,12 @@
 											const who = candidates.find((x) => x.id === formData.get('survivor'));
 											if (
 												!who ||
-												!confirm(`Merge ${c.name} into ${who.name}? ${c.name}’s record is deleted.`)
+												!confirm(
+													t('Merge {name} into {survivor}? {name}’s record is deleted.', {
+														name: c.name,
+														survivor: who.name
+													})
+												)
 											)
 												cancel();
 											return async ({ result, update }) => {
@@ -309,12 +332,13 @@
 										<input type="hidden" name="id" value={c.id} />
 										<div class="field">
 											<label class="label" for="merge-{c.id}">
-												Merge {c.name} into… <span class="optional">(the other record stays)</span>
+												{t('Merge {name} into…', { name: c.name })}
+												<span class="optional">{t('(the other record stays)')}</span>
 											</label>
 											<input
 												class="input"
 												id="merge-{c.id}"
-												placeholder="Search by name, email or company"
+												placeholder={t('Search by name, email or company')}
 												autocomplete="off"
 												bind:value={candidateQuery}
 												onkeydown={(e) => e.key === 'Escape' && (merging = null)}
@@ -334,7 +358,7 @@
 												{/each}
 											</div>
 										{:else if candidateQuery.trim().length >= 2}
-											<p class="hint">No one else matches.</p>
+											<p class="hint">{t('No one else matches.')}</p>
 										{/if}
 										<div class="merge-actions">
 											<button
@@ -342,10 +366,11 @@
 												class="btn btn-ghost btn-sm"
 												onclick={() => (merging = null)}
 											>
-												Cancel
+												{t('Cancel')}
 											</button>
 											<button class="btn btn-primary btn-sm" disabled={!candidates.length}>
-												<Merge size={15} /> Merge
+												<Merge size={15} />
+												{t('Merge')}
 											</button>
 										</div>
 									</form>

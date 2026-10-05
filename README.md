@@ -64,6 +64,16 @@ To see the dashboard with realistic data, run `npm run demo:seed`. It adds three
 about 60 check-ins with `@example.com` addresses, and two guest lists: one for the event under
 way, one for an upcoming dinner. Delete the `data/` folder to start fresh.
 
+## Theme and language
+
+The header has two per-browser switches. The **theme** button follows the device by default
+and cycles light, dark and back to the device. **EN | ID** switches the whole admin app between
+English (the default) and Indonesian, dates included. The English text is the dictionary key
+(`src/lib/i18n`, one file per area), so a string not yet translated still reads in English, and
+`src/lib/i18n/coverage.spec.ts` fails when a string passed to `t()` has no Indonesian entry.
+Guest messages, the public registration and check-in pages (which follow each guest's own
+language), CSV exports and the research command are not affected.
+
 ## People
 
 Open an event and switch to its **People** tab. The header shows Yes replies against the
