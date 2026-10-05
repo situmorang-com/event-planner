@@ -309,20 +309,21 @@ export function addAccounts(
 		for (const a of accounts) {
 			const key = companyKey(a.name);
 			if (!key) continue;
-			if (seen.has(key)) {
-				result.duplicates.push(a.name);
-				continue;
-			}
-			seen.add(key);
 			if (isBlocked(findCompany(db, a.name))) {
 				result.blocked.push(a.name);
 				continue;
 			}
+			// What the export says about the company holds whether or not it is already a target.
 			const company = ensureCompany(db, a.name, { website: a.website }, now)!;
 			markCustomer(db, company.id, now);
 			if (a.owner) noteCompanyOwner(db, company.id, a.owner, now);
 			if (a.industry)
 				appendCompanyNote(db, getCompany(db, company.id)!, `Industry: ${a.industry}`, now);
+			if (seen.has(key)) {
+				result.duplicates.push(a.name);
+				continue;
+			}
+			seen.add(key);
 			insert.run(eventId, company.id, now);
 			result.added.push(a.name);
 			ids.push(company.id);

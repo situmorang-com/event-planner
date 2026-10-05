@@ -401,10 +401,12 @@ describe('planning', () => {
 				owner: null,
 				d365_note: 'D365 owner: Someone Else\nIndustry: Retail'
 			});
-			// A duplicate is left alone: not even its customer flag changes.
+			// Already a target, so not added twice, but the export still says it is a customer; the
+			// website it already had is kept.
 			expect(findCompany(db, 'Selat Energy')).toMatchObject({
-				is_customer: 0,
-				website: 'selat.com'
+				is_customer: 1,
+				website: 'selat.com',
+				d365_note: 'D365 owner: Someone Else'
 			});
 
 			const [log] = listActivity(db, eventId).filter((a) => a.kind === 'import');
