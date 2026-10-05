@@ -4,18 +4,19 @@
 	color-scheme: light;
 	--font: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-	--bg: #f4f5fa;
-	--surface: #ffffff;
-	--surface-2: #f3f4f9;
-	--surface-3: #e8eaf3;
-	--text: #0d0f1c;
-	--text-2: #4a4f66;
-	--muted: #6f748c;
-	--border: #e3e5ee;
-	--border-strong: #cdd1df;
+	/* A warm, paper-like light: no pure white anywhere, so long lists don't glare. */
+	--bg: #f2efe8;
+	--surface: #faf8f3;
+	--surface-2: #f1eee6;
+	--surface-3: #e6e2d8;
+	--text: #1f1b15;
+	--text-2: #514a3e;
+	--muted: #78705f;
+	--border: #e3ded3;
+	--border-strong: #cdc6b7;
 
 	--brand: #5b4cf0;
-	--brand-soft: #eeecff;
+	--brand-soft: #ebe8f8;
 	--brand-text: #4336d6;
 	/* Every stop keeps white text above 4.5:1. */
 	--grad: linear-gradient(120deg, #6b4dff 0%, #4f5bf2 50%, #2f6fe4 100%);
@@ -24,28 +25,28 @@
 	--aurora-2: #22d3ee;
 	--aurora-3: #f472b6;
 
-	--good: #0b7a43;
-	--good-soft: #e3f5eb;
-	--warn: #955a00;
-	--warn-soft: #fff3dc;
-	--bad: #c93434;
-	--bad-soft: #fdeaea;
+	--good: #1d7a45;
+	--good-soft: #e1f0e4;
+	--warn: #8a5600;
+	--warn-soft: #f8ecd4;
+	--bad: #bf3a32;
+	--bad-soft: #f8e4df;
 
 	/* Charts: validated with the dataviz palette checks against --surface. */
 	--series-1: #5b4cf0;
 	--cat-1: #2a78d6;
 	--cat-2: #eb6834;
 	--cat-3: #1baf7a;
-	--grid: #e6e8f0;
-	--axis: #c3c6d4;
+	--grid: #e6e1d6;
+	--axis: #c6bfb0;
 	/* Status fills (the dataviz status steps), the same in both modes and always shown with a
 	   label: amber is 1.8:1 on white by design, and every step clears 3:1 on the dark surface. */
 	--status-good: #0ca30c;
 	--status-warn: #fab219;
 	--status-bad: #d03b3b;
 
-	--shadow-sm: 0 1px 2px rgb(16 18 40 / 0.06);
-	--shadow: 0 1px 2px rgb(16 18 40 / 0.05), 0 10px 30px -12px rgb(16 18 40 / 0.14);
+	--shadow-sm: 0 1px 2px rgb(40 32 16 / 0.06);
+	--shadow: 0 1px 2px rgb(40 32 16 / 0.05), 0 10px 30px -12px rgb(40 32 16 / 0.14);
 	--shadow-lg: 0 30px 80px -30px rgb(58 40 170 / 0.45);
 	--glow: 0 10px 30px -10px rgb(91 76 240 / 0.6);
 	--ring: 0 0 0 4px rgb(91 76 240 / 0.2);
@@ -56,39 +57,8 @@
 	--radius-xl: 28px;
 }
 
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) {
-		color-scheme: dark;
-		--bg: #080914;
-		--surface: #131629;
-		--surface-2: #1a1d35;
-		--surface-3: #242845;
-		--text: #f1f2ff;
-		--text-2: #b8bcd8;
-		--muted: #8d92b0;
-		--border: #262b4b;
-		--border-strong: #363c64;
-		--brand: #8b7fff;
-		--brand-soft: #221f4d;
-		--brand-text: #aea5ff;
-		--good: #34d399;
-		--good-soft: #0f2e25;
-		--warn: #fbbf24;
-		--warn-soft: #33270b;
-		--bad: #f87171;
-		--bad-soft: #3a1518;
-		--series-1: #8b7fff;
-		--cat-1: #3987e5;
-		--cat-2: #d95926;
-		--cat-3: #199e70;
-		--grid: #22264295;
-		--axis: #3a4068;
-		--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
-		--shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 32px -12px rgb(0 0 0 / 0.6);
-		--ring: 0 0 0 4px rgb(139 127 255 / 0.28);
-	}
-}
-
+/* Dark is opt-in (data-theme="dark" on <html>); the app no longer follows the OS, since a
+   dark list of people was harder on the eyes than a soft light one. */
 :root[data-theme='dark'] {
 	color-scheme: dark;
 	--bg: #080914;
