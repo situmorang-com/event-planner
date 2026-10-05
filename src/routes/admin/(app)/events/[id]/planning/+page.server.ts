@@ -43,7 +43,7 @@ import {
 import { planningKeptUntil } from '$lib/server/retention';
 import { chaseDefaults } from '$lib/server/settings';
 import { publicBaseUrl } from '$lib/server/urls';
-import { isNew } from '$lib/recent';
+import { isNew, newSince, seenCookie } from '$lib/recent';
 import type { Actions, PageServerLoad } from './$types';
 
 function requireEvent(id: string) {
@@ -70,8 +70,10 @@ const idOf = (form: FormData, field = 'id') => {
 	return Number.isSafeInteger(id) && id > 0 ? id : null;
 };
 
-export const load: PageServerLoad = ({ params, url }) => {
+export const load: PageServerLoad = ({ params, url, cookies }) => {
 	const now = Date.now();
+	// "New" targets: added since this browser last left this event's Planning tab.
+	const seen = newSince(now, cookies.get(seenCookie(`planning-${params.id}`)));
 	// The start job and the next-action pass also run lazily here (§5.4), so a page opened
 	// before the day's housekeeping is right.
 	const event = eventPageLoad(db, requireEvent(params.id), now);
@@ -94,7 +96,7 @@ export const load: PageServerLoad = ({ params, url }) => {
 			name: t.name,
 			website: t.website,
 			focus: t.focus,
-			fresh: isNew(t.created_at, now),
+			fresh: isNew(t.created_at, seen),
 			live: live.get(t.key) ?? 0,
 			waiting: waiting.get(t.key) ?? 0,
 			known: t.known,

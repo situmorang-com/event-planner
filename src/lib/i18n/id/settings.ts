@@ -231,7 +231,8 @@ const id: Record<string, string> = {
 	'{n} of them are still prospects (no reply yet), so the default list leaves them out.':
 		'{n} di antaranya masih prospek (belum menjawab), jadi tidak tampil di daftar utama.',
 	'Show everyone': 'Tampilkan semua',
-	'Show the new ones': 'Tampilkan yang baru'
+	'Show the new ones': 'Tampilkan yang baru',
+	'Added since you last opened this page': 'Ditambahkan sejak Anda terakhir membuka halaman ini'
 };
 
 export default id;

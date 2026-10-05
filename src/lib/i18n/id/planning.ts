@@ -234,7 +234,8 @@ const id: Record<string, string> = {
 		'Semua perusahaan yang dicentang sudah diriset. Tekan Riset lagi pada sebuah perusahaan, atau tambahkan perusahaan baru, untuk riset berikutnya.',
 	'Added in the last {days} days': 'Ditambahkan {days} hari terakhir',
 	'{n} new': '{n} baru',
-	New: 'Baru'
+	New: 'Baru',
+	'Added since you last opened this page': 'Ditambahkan sejak Anda terakhir membuka halaman ini'
 };
 
 export default id;

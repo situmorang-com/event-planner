@@ -64,6 +64,14 @@ To see the dashboard with realistic data, run `npm run demo:seed`. It adds three
 about 60 check-ins with `@example.com` addresses, and two guest lists: one for the event under
 way, one for an upcoming dinner. Delete the `data/` folder to start fresh.
 
+## New since your last visit
+
+Planning (per event) and Contacts mark what was added since this browser last had the page
+open with a green **New**: target companies, and people, with a count in the Planning header and
+a summary card plus a **New** filter at the top of Contacts. The visit's start time is saved as
+you leave the page, so the marks stay while you work and are gone next time; a first visit
+shows the last 7 days.
+
 ## Theme and language
 
 The header has two per-browser switches. The **theme** button follows the device by default
@@ -228,7 +236,7 @@ needs a date first: what research finds is kept only until the event starts.
    known there (the "how many per company" number); tick or untick to decide yourself, and
    _default_ puts it back. The command takes the ticked companies **15** at a time. When a
    batch's answer comes back its companies leave the queue: the tick turns into a green ✓ with
-   _Researched 5 Oct_, and **Research again** puts one back for the next run. Blocked
+   _Researched 5 Oct 2026 · 11:23 AM_ (the time tells two runs on one day apart), and **Research again** puts one back for the next run. Blocked
    companies are never researched.
    - **Copy brief + targets from…** picks another event (most recent first) and copies its
      answers and its companies, with each company's focus. Companies already listed are

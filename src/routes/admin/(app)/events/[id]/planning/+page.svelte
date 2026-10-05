@@ -14,7 +14,7 @@
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import Check from '@lucide/svelte/icons/check';
-	import { NEW_DAYS } from '$lib/recent';
+	import { rememberSeen } from '$lib/seen.svelte';
 	import Columns3 from '@lucide/svelte/icons/columns-3';
 	import Copy from '@lucide/svelte/icons/copy';
 	import FileUp from '@lucide/svelte/icons/file-up';
@@ -77,11 +77,11 @@
 	function researchNote(target: { researchedAt: number | null; requestedAt: number | null }) {
 		if (target.researchedAt)
 			return t('researched {date}', {
-				date: formatDate(target.researchedAt, event.timezone, lang())
+				date: formatDateTime(target.researchedAt, event.timezone, lang())
 			});
 		if (target.requestedAt)
 			return t('requested {date}', {
-				date: formatDate(target.requestedAt, event.timezone, lang())
+				date: formatDateTime(target.requestedAt, event.timezone, lang())
 			});
 		return '';
 	}
@@ -176,7 +176,8 @@
 			e.currentTarget.form?.requestSubmit();
 	}
 
-	// Companies added in the last week (src/lib/recent.ts), counted for the section's header.
+	rememberSeen(() => `planning-${data.event.id}`);
+	// Companies added since this browser last left the page (src/lib/recent.ts), for the header.
 	const newTargets = $derived(data.targets.filter((target) => target.fresh).length);
 </script>
 
@@ -353,7 +354,7 @@
 				<h2>
 					{t('Target companies')}
 					{#if newTargets}
-						<span class="new-pill" title={t('Added in the last {days} days', { days: NEW_DAYS })}
+						<span class="new-pill" title={t('Added since you last opened this page')}
 							>{plural(newTargets, '{n} new', '{n} new')}</span
 						>
 					{/if}
@@ -379,7 +380,7 @@
 							<span
 								class="done"
 								title={t('Researched {date}', {
-									date: formatDate(target.researchedAt!, event.timezone, lang())
+									date: formatDateTime(target.researchedAt!, event.timezone, lang())
 								})}
 							>
 								<Check size={15} strokeWidth={3} />
@@ -414,9 +415,8 @@
 						<div class="target-name">
 							<strong>{target.name}</strong>
 							{#if target.fresh}
-								<span
-									class="new-pill"
-									title={t('Added in the last {days} days', { days: NEW_DAYS })}>{t('New')}</span
+								<span class="new-pill" title={t('Added since you last opened this page')}
+									>{t('New')}</span
 								>
 							{/if}
 							{#if target.website}
@@ -443,7 +443,7 @@
 								{:else if done}
 									· <span class="done-text"
 										>{t('Researched {date}', {
-											date: formatDate(target.researchedAt!, event.timezone, lang())
+											date: formatDateTime(target.researchedAt!, event.timezone, lang())
 										})}</span
 									>
 								{:else if target.research === null}

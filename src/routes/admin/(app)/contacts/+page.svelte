@@ -5,8 +5,9 @@
 	import { mailtoHref } from '$lib/mailto';
 	import { initials } from '$lib/names';
 	import { ORIGIN_LABEL } from '$lib/people';
-	import { isNew, NEW_DAYS } from '$lib/recent';
-	import { formatDate, timeAgo } from '$lib/time';
+	import { isNew } from '$lib/recent';
+	import { rememberSeen } from '$lib/seen.svelte';
+	import { formatDate, formatDateTime, timeAgo } from '$lib/time';
 	import Download from '@lucide/svelte/icons/download';
 	import Lock from '@lucide/svelte/icons/lock';
 	import Merge from '@lucide/svelte/icons/merge';
@@ -32,6 +33,8 @@
 			250
 		);
 	}
+
+	rememberSeen(() => 'contacts');
 
 	function href(q: string, prospects: boolean) {
 		const params = new URLSearchParams();
@@ -138,7 +141,9 @@
 		<div>
 			<p class="recent-title">
 				<span class="new-pill">{t('New')}</span>
-				{t('Added in the last {days} days', { days: NEW_DAYS })}
+				{data.firstVisit
+					? t('Added in the last {days} days', { days: 7 })
+					: t('Added since you last opened this page')}
 			</p>
 			<p class="recent-figures">
 				<strong>{plural(data.recent.people, '{n} person', '{n} people')}</strong>
@@ -200,7 +205,7 @@
 				class:active={data.fresh}
 				href={data.fresh ? '/admin/contacts' : '/admin/contacts?new=1'}
 				data-sveltekit-replacestate
-				title={t('Added in the last {days} days', { days: NEW_DAYS })}
+				title={t('Added since you last opened this page')}
 			>
 				{t('New')} <span class="chip-count">{data.recent.people.toLocaleString()}</span>
 			</a>
@@ -247,11 +252,11 @@
 									<span class="avatar" aria-hidden="true">{initials(c.name)}</span>
 									<span class="person-text">
 										<span class="person-name">{c.name}</span>
-										{#if isNew(c.created_at, data.now)}
+										{#if isNew(c.created_at, data.newSince)}
 											<span
 												class="new-pill"
 												title={t('Added {date}', {
-													date: formatDate(c.created_at, 'Asia/Jakarta', lang())
+													date: formatDateTime(c.created_at, 'Asia/Jakarta', lang())
 												})}>{t('New')}</span
 											>
 										{/if}
