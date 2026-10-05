@@ -141,6 +141,16 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   _self-registered, check company owner_.
 - **Owners.** Each company has an owner, picked from the team names in settings, and a row can
   override it; **Mine** shows the rows that are yours.
+- **Bulk actions.** The tick-list button in the toolbar turns on checkboxes (one per row, one
+  per company). The bar at the bottom then applies one verb to the selection: **Shortlist**,
+  **Skip**, **Mark invited** (it asks how), **Set owner**, **Set stage** (Shortlisted or
+  Invited only: replies, confirmations and check-ins are the person's own word), and **Copy to
+  another event**, which puts the people (not To-review snapshots) on that event's list at
+  Shortlisted with nothing from this event attached: no replies, consents, messages or due
+  dates. Rows the verb can't take, such as a locked person, a blocked company or someone
+  already on the other list, are reported by name and the rest go through; the activity log
+  keeps ids and counts. On a phone, swipe a To-review row right to add or left to skip (the
+  buttons stay), and hold a company name to add everyone waiting there.
 - **Row menu.** Edit details, Remove from the event, **Don't contact again…** (locks the person
   everywhere, with a reason, as hashed entries on the do-not-contact list), and **Merge into…**
   when two records turn out to be one person.

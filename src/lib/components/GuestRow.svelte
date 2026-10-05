@@ -68,6 +68,14 @@
 		onreply: (reply: Reply) => () => void;
 		/** Called as a message link opens, so the page can fetch the stage it moved to. */
 		ontouch: () => void;
+		/** Multi-select mode (§4.2): a checkbox on the row, reported through `onselect`. */
+		selectable?: boolean;
+		selected?: boolean;
+		onselect?: (selected: boolean) => void;
+		/** The phone's swipe on a Found row (D19): right adds, left skips. The buttons stay. */
+		swipe?: boolean;
+		/** Called when a swipe lands, so the page can retire its hint. */
+		onswipe?: () => void;
 	}
 
 	let {
@@ -80,7 +88,12 @@
 		errors = {},
 		values = null,
 		onreply,
-		ontouch
+		ontouch,
+		selectable = false,
+		selected = false,
+		onselect,
+		swipe = false,
+		onswipe
 	}: Props = $props();
 
 	let editing = $state(false);
@@ -227,6 +240,53 @@
 		ontouch();
 	}
 
+	// The swipe (D19): the row's own Add and Skip forms are submitted, so a swipe and a tap do
+	// exactly the same thing. Pointer events, no library; a vertical move is left to the scroll.
+	const SWIPE_START = 10;
+	const SWIPE_DONE = 72;
+	let shortlistForm = $state<HTMLFormElement | null>(null);
+	let skipForm = $state<HTMLFormElement | null>(null);
+	let dx = $state(0);
+	let dragging = $state(false);
+	let origin: { id: number; x: number; y: number } | null = null;
+	const swipeable = $derived(swipe && found && !row.skipped_at && !editing);
+	const canAdd = $derived(!row.blocked_at && !row.suppressed);
+
+	function swipeStart(e: PointerEvent) {
+		if (!swipeable || !e.isPrimary) return;
+		// A press on a button or a link is a tap, not the start of a swipe.
+		if ((e.target as HTMLElement).closest('button, a, input, select, textarea, details')) return;
+		origin = { id: e.pointerId, x: e.clientX, y: e.clientY };
+	}
+
+	function swipeMove(e: PointerEvent) {
+		if (!origin || e.pointerId !== origin.id) return;
+		const x = e.clientX - origin.x;
+		const y = e.clientY - origin.y;
+		if (!dragging) {
+			if (Math.abs(x) < SWIPE_START || Math.abs(x) < Math.abs(y)) return;
+			dragging = true;
+			(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		}
+		// A row that can't be added stops short on the right, as its Add button is disabled.
+		dx = Math.max(-120, Math.min(canAdd ? 120 : 24, x));
+	}
+
+	function swipeEnd(e: PointerEvent) {
+		if (!origin || e.pointerId !== origin.id) return;
+		const landed = dragging ? dx : 0;
+		origin = null;
+		dragging = false;
+		dx = 0;
+		if (landed > SWIPE_DONE && canAdd) {
+			shortlistForm?.requestSubmit();
+			onswipe?.();
+		} else if (landed < -SWIPE_DONE) {
+			skipForm?.requestSubmit();
+			onswipe?.();
+		}
+	}
+
 	// Survivor search for "Merge into…": the pool, minus this person.
 	$effect(() => {
 		const q = candidateQuery.trim();
@@ -253,7 +313,22 @@
 	});
 </script>
 
-<li class="row" class:editing={editing || merging} class:found class:skipped={!!row.skipped_at}>
+<li
+	class="row"
+	class:editing={editing || merging}
+	class:found
+	class:skipped={!!row.skipped_at}
+	class:selected
+	class:swipeable
+	class:swiping={dragging}
+	class:swipe-add={dragging && dx > SWIPE_DONE}
+	class:swipe-skip={dragging && dx < -SWIPE_DONE}
+	style:--dx="{dx}px"
+	onpointerdown={swipeStart}
+	onpointermove={swipeMove}
+	onpointerup={swipeEnd}
+	onpointercancel={swipeEnd}
+>
 	{#if editing}
 		<form
 			class="edit"
@@ -407,6 +482,15 @@
 		</form>
 	{:else}
 		<div class="person">
+			{#if selectable}
+				<input
+					class="pick"
+					type="checkbox"
+					checked={selected}
+					aria-label="Select {row.name}"
+					onchange={(e) => onselect?.(e.currentTarget.checked)}
+				/>
+			{/if}
 			<span class="avatar" aria-hidden="true">{initials(row.name)}</span>
 			<div class="who">
 				<div class="name-line">
@@ -530,13 +614,13 @@
 						<button class="btn btn-ghost btn-sm"><Undo2 size={15} /> Unskip</button>
 					</form>
 				{:else}
-					<form method="POST" action="?/shortlist" use:enhance>
+					<form method="POST" action="?/shortlist" use:enhance bind:this={shortlistForm}>
 						<input type="hidden" name="id" value={row.id} />
-						<button class="btn btn-soft btn-sm" disabled={!!row.blocked_at || row.suppressed}>
+						<button class="btn btn-soft btn-sm" disabled={!canAdd}>
 							<UserPlus size={15} /> Add
 						</button>
 					</form>
-					<form method="POST" action="?/skip" use:enhance>
+					<form method="POST" action="?/skip" use:enhance bind:this={skipForm}>
 						<input type="hidden" name="id" value={row.id} />
 						<button class="btn btn-ghost btn-sm">Skip</button>
 					</form>
@@ -824,6 +908,74 @@
 
 	.row.skipped {
 		opacity: 0.6;
+	}
+
+	.row.selected {
+		background: var(--brand-soft);
+	}
+
+	.pick {
+		flex: none;
+		width: 18px;
+		height: 18px;
+		margin: 0;
+		accent-color: var(--brand);
+	}
+
+	/* The swipe (D19): the content slides over the row's own background, which names the verb. */
+	.row.swipeable {
+		position: relative;
+		touch-action: pan-y;
+		user-select: none;
+		-webkit-user-select: none;
+	}
+
+	.row.swiping > * {
+		transform: translateX(var(--dx));
+		transition: none;
+	}
+
+	.row.swipeable:not(.swiping) > * {
+		transition: transform 0.18s ease;
+	}
+
+	.row.swiping::before,
+	.row.swiping::after {
+		position: absolute;
+		top: 50%;
+		translate: 0 -50%;
+		font-size: 13px;
+		font-weight: 750;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
+		color: var(--muted);
+		pointer-events: none;
+	}
+
+	.row.swiping::before {
+		content: 'Add';
+		left: 16px;
+	}
+
+	.row.swiping::after {
+		content: 'Skip';
+		right: 16px;
+	}
+
+	.row.swipe-add {
+		background: color-mix(in oklab, var(--good) 14%, var(--surface));
+	}
+
+	.row.swipe-add::before {
+		color: var(--good);
+	}
+
+	.row.swipe-skip {
+		background: color-mix(in oklab, var(--warn) 14%, var(--surface));
+	}
+
+	.row.swipe-skip::after {
+		color: var(--warn);
 	}
 
 	.row:hover:not(.editing) {

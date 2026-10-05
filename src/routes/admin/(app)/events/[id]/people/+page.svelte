@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import AddGuests from '$lib/components/AddGuests.svelte';
 	import EventTabs from '$lib/components/EventTabs.svelte';
 	import GuestRow from '$lib/components/GuestRow.svelte';
@@ -18,10 +19,11 @@
 		type PeopleRow,
 		type Reply
 	} from '$lib/people';
-	import { formatDateTime } from '$lib/time';
+	import { formatDateTime, formatDay } from '$lib/time';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Building2 from '@lucide/svelte/icons/building-2';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import ListOrdered from '@lucide/svelte/icons/list-ordered';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import ClipboardList from '@lucide/svelte/icons/clipboard-list';
@@ -30,6 +32,7 @@
 	import Link from '@lucide/svelte/icons/link';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Search from '@lucide/svelte/icons/search';
+	import Send from '@lucide/svelte/icons/send';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
 	import type { PageProps } from './$types';
 
@@ -59,14 +62,33 @@
 	let flat = $state(false);
 	let showSkipped = $state(false);
 	let renaming = $state<string | null>(null);
+	// The phone gets swipes and long-presses (D19); the hint shows until the first one lands.
+	let phone = $state(false);
+	let hintSeen = $state(true);
+	const HINT_KEY = 'ep_swipe_hint';
 
 	onMount(() => {
-		if (data.me && data.view && matchMedia('(max-width: 900px)').matches) {
+		phone = matchMedia('(max-width: 900px)').matches;
+		if (data.me && data.view && phone) {
 			mine = true;
 			due = true;
 			flat = true;
 		}
+		try {
+			hintSeen = localStorage.getItem(HINT_KEY) === '1';
+		} catch {
+			hintSeen = false;
+		}
 	});
+
+	function retireHint() {
+		hintSeen = true;
+		try {
+			localStorage.setItem(HINT_KEY, '1');
+		} catch {
+			// Private mode: the hint comes back next time, which is harmless.
+		}
+	}
 
 	// On the day the list is live: each arrival ticks its row off without a reload.
 	$effect(() => {
@@ -217,6 +239,7 @@
 		return '';
 	});
 	const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
+	const people = (n: number) => `${n.toLocaleString()} ${n === 1 ? 'person' : 'people'}`;
 
 	// The open registration link for the event (§4.6), for a channel where no row exists yet.
 	let copiedLink = $state(false);
@@ -231,6 +254,123 @@
 		} catch {
 			prompt('Copy the registration link', data.genericLink);
 		}
+	}
+
+	/* ───────────── Multi-select and bulk actions (§4.2, D22) ───────────── */
+
+	let selecting = $state(false);
+	const selected = new SvelteSet<number>();
+	// Which verb is waiting for a "via": Mark invited, or Set stage → Invited.
+	let asking = $state<'invited' | 'stage' | null>(null);
+	let bulkForm = $state<HTMLFormElement | null>(null);
+
+	const VIAS = [
+		['whatsapp', 'WhatsApp'],
+		['email', 'Email'],
+		['linkedin', 'LinkedIn'],
+		['other', 'Other']
+	] as const;
+
+	const shownRows = $derived(flat ? listed : groups.flatMap((g) => g.shown));
+	const allShownSelected = $derived(
+		shownRows.length > 0 && shownRows.every((r) => selected.has(r.id))
+	);
+
+	function setSelected(ids: number[], on: boolean) {
+		for (const id of ids)
+			if (on) selected.add(id);
+			else selected.delete(id);
+	}
+
+	function groupSelection(rows: PeopleRow[]) {
+		const n = rows.filter((r) => selected.has(r.id)).length;
+		return { all: n > 0 && n === rows.length, some: n > 0 && n < rows.length };
+	}
+
+	function stopSelecting() {
+		selecting = false;
+		selected.clear();
+		asking = null;
+	}
+
+	/** Fills the bulk form's hidden fields and sends it; `ids` overrides the selection. */
+	async function runBulk(
+		action: string,
+		fields: Record<string, string> = {},
+		ids: number[] | null = null
+	) {
+		if (!bulkForm) return;
+		if (ids) {
+			selected.clear();
+			setSelected(ids, true);
+			await tick();
+		}
+		const set = (name: string, value: string) => {
+			const input = bulkForm!.elements.namedItem(name);
+			if (input instanceof HTMLInputElement) input.value = value;
+		};
+		set('action', action);
+		set('via', fields.via ?? '');
+		set('stage', fields.stage ?? '');
+		bulkForm.requestSubmit();
+	}
+
+	function pickStage(stage: string) {
+		if (stage === 'invited') asking = 'stage';
+		else if (stage) runBulk('stage', { stage });
+	}
+
+	const copyTarget = $derived(form && 'bulk' in form && form.bulk?.to ? form.bulk.to : null);
+	const bulkMessage = $derived.by(() => {
+		if (!form || !('bulk' in form) || !form.bulk) return '';
+		const { action, done, refused, to } = form.bulk;
+		const verb: Record<string, string> = {
+			shortlist: 'Shortlisted',
+			skip: 'Skipped',
+			invited: 'Marked invited',
+			owner: 'Owner set on',
+			stage: 'Stage set on',
+			copy: `Copied${to ? ` to ${to.name}` : ''}`
+		};
+		const parts = [`${verb[action] ?? 'Done for'} ${people(done)}.`];
+		if (refused.length)
+			parts.push(
+				`Not ${refused.length === 1 ? 'this one' : `these ${refused.length}`}: ${refused
+					.map((r) => `${r.name} (${r.reason})`)
+					.join(', ')}.`
+			);
+		return parts.join(' ');
+	});
+
+	// Long-press on a company header (phone): shortlist everyone waiting there, once confirmed.
+	// A finger that drifts more than a few pixels is scrolling, not pressing.
+	let pressTimer: ReturnType<typeof setTimeout> | undefined;
+	let pressAt: { x: number; y: number } | null = null;
+	function pressStart(
+		e: PointerEvent,
+		group: { name: string; rows: PeopleRow[]; waiting: number }
+	) {
+		if (!phone || !group.waiting) return;
+		clearTimeout(pressTimer);
+		pressAt = { x: e.clientX, y: e.clientY };
+		pressTimer = setTimeout(() => {
+			const ids = group.rows.filter((r) => r.stage === 'found' && !r.skipped_at).map((r) => r.id);
+			if (
+				confirm(
+					`Shortlist all ${ids.length} at ${group.name || 'no company'}? They become people on the list.`
+				)
+			) {
+				retireHint();
+				runBulk('shortlist', {}, ids);
+			}
+		}, 600);
+	}
+	function pressMove(e: PointerEvent) {
+		if (pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > 8) pressEnd();
+	}
+	function pressEnd() {
+		clearTimeout(pressTimer);
+		pressAt = null;
 	}
 </script>
 
@@ -420,6 +560,14 @@
 			<div class="layout" role="group" aria-label="Layout">
 				<button
 					class="btn btn-ghost btn-icon btn-sm"
+					aria-pressed={selecting}
+					title="Select rows for a bulk action"
+					onclick={() => (selecting ? stopSelecting() : (selecting = true))}
+				>
+					<ListChecks size={17} /><span class="sr-only">Select rows</span>
+				</button>
+				<button
+					class="btn btn-ghost btn-icon btn-sm"
 					aria-pressed={!flat}
 					title="By company"
 					onclick={() => (flat = false)}
@@ -438,6 +586,24 @@
 		</div>
 
 		{#if problem}<p class="banner banner-warn" role="alert">{problem}</p>{/if}
+		{#if form && 'bulkError' in form && form.bulkError}
+			<p class="banner banner-warn" role="alert">{form.bulkError}</p>
+		{/if}
+		{#if bulkMessage}
+			<p class="banner" role="status">
+				{bulkMessage}
+				{#if copyTarget}
+					<a href="/admin/events/{copyTarget.id}/people">Open {copyTarget.name}</a>
+				{/if}
+			</p>
+		{/if}
+		{#if phone && !hintSeen && counts.review}
+			<p class="banner hint" role="note">
+				Swipe a row under To review to the right to add them, or left to skip. Hold a company name
+				to add everyone waiting there.
+				<button class="btn btn-ghost btn-sm" onclick={retireHint}>Got it</button>
+			</p>
+		{/if}
 
 		{#if flat}
 			{#if listed.length}
@@ -455,6 +621,11 @@
 								values={editErrors?.editId === row.id ? editErrors.editValues : null}
 								onreply={(reply) => beginReply(row.id, reply)}
 								ontouch={afterTouch}
+								selectable={selecting}
+								selected={selected.has(row.id)}
+								onselect={(on) => setSelected([row.id], on)}
+								swipe={phone}
+								onswipe={retireHint}
 							/>
 						{/each}
 					</ul>
@@ -495,7 +666,34 @@
 								</button>
 							</form>
 						{:else}
-							<div class="group-title">
+							<!-- The long-press is a phone shortcut for "Add all" below and the select-all box,
+							     never the only way, so the header stays a plain heading. -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="group-title"
+								class:pressable={phone && group.waiting > 0}
+								onpointerdown={(e) => pressStart(e, group)}
+								onpointerup={pressEnd}
+								onpointercancel={pressEnd}
+								onpointerleave={pressEnd}
+								onpointermove={pressMove}
+								oncontextmenu={(e) => phone && group.waiting > 0 && e.preventDefault()}
+							>
+								{#if selecting}
+									{@const sel = groupSelection(group.shown)}
+									<input
+										class="pick"
+										type="checkbox"
+										checked={sel.all}
+										indeterminate={sel.some}
+										aria-label="Select everyone at {group.name || 'no company'}"
+										onchange={(e) =>
+											setSelected(
+												group.shown.map((r) => r.id),
+												e.currentTarget.checked
+											)}
+									/>
+								{/if}
 								<h2>{group.name || 'No company'}</h2>
 								{#if group.id}
 									<button
@@ -629,6 +827,11 @@
 								values={editErrors?.editId === row.id ? editErrors.editValues : null}
 								onreply={(reply) => beginReply(row.id, reply)}
 								ontouch={afterTouch}
+								selectable={selecting}
+								selected={selected.has(row.id)}
+								onselect={(on) => setSelected([row.id], on)}
+								swipe={phone}
+								onswipe={retireHint}
 							/>
 						{/each}
 					</ul>
@@ -655,6 +858,157 @@
 				>
 			</div>
 		{/if}
+
+		<!-- The bulk form is always mounted: the phone's long-press sends through it too. -->
+		<form
+			class="bulk"
+			class:open={selecting}
+			method="POST"
+			action="?/bulk"
+			bind:this={bulkForm}
+			use:enhance={({ formData, cancel }) => {
+				const action = formData.get('action');
+				const to = data.events.find((e) => e.id === formData.get('to'));
+				if (
+					action === 'copy' &&
+					(!to || !confirm(`Copy ${people(selected.size)} to ${to.name}?`))
+				) {
+					cancel();
+					return;
+				}
+				return async ({ result, update }) => {
+					await update({ reset: false });
+					if (result.type === 'success') {
+						selected.clear();
+						asking = null;
+					}
+				};
+			}}
+		>
+			<input type="hidden" name="action" value="" />
+			<input type="hidden" name="via" value="" />
+			<input type="hidden" name="stage" value="" />
+			{#each [...selected] as id (id)}
+				<input type="hidden" name="ids" value={id} />
+			{/each}
+			{#if selecting}
+				<div class="bulk-bar" role="region" aria-label="Bulk actions">
+					<div class="bulk-count">
+						<strong>{selected.size.toLocaleString()}</strong> selected
+						<button
+							type="button"
+							class="btn btn-ghost btn-sm"
+							onclick={() =>
+								setSelected(
+									shownRows.map((r) => r.id),
+									!allShownSelected
+								)}
+						>
+							{allShownSelected ? 'Clear all' : 'Select all shown'}
+						</button>
+					</div>
+					{#if asking}
+						<div class="bulk-ask">
+							<span class="muted">Invited via</span>
+							{#each VIAS as [via, label] (via)}
+								<button
+									type="button"
+									class="btn btn-soft btn-sm"
+									onclick={() =>
+										runBulk(asking === 'stage' ? 'stage' : 'invited', { via, stage: 'invited' })}
+								>
+									{label}
+								</button>
+							{/each}
+							<button type="button" class="btn btn-ghost btn-sm" onclick={() => (asking = null)}>
+								Cancel
+							</button>
+						</div>
+					{:else}
+						<div class="bulk-actions">
+							<button
+								type="button"
+								class="btn btn-soft btn-sm"
+								disabled={!selected.size}
+								onclick={() => runBulk('shortlist')}
+							>
+								<UserPlus size={15} /> Shortlist
+							</button>
+							<button
+								type="button"
+								class="btn btn-ghost btn-sm"
+								disabled={!selected.size}
+								onclick={() => runBulk('skip')}
+							>
+								Skip
+							</button>
+							<button
+								type="button"
+								class="btn btn-ghost btn-sm"
+								disabled={!selected.size}
+								onclick={() => (asking = 'invited')}
+							>
+								<Send size={15} /> Mark invited…
+							</button>
+							{#if data.team.length}
+								<label class="bulk-select">
+									<span class="sr-only">Set owner</span>
+									<select
+										class="owner-select"
+										name="owner"
+										disabled={!selected.size}
+										onchange={(e) => {
+											runBulk('owner');
+											e.currentTarget.selectedIndex = 0;
+										}}
+									>
+										<option value="" disabled selected>Set owner…</option>
+										<option value="">No owner (company’s)</option>
+										{#each data.team as name (name)}<option value={name}>{name}</option>{/each}
+									</select>
+								</label>
+							{/if}
+							<label class="bulk-select">
+								<span class="sr-only">Set stage</span>
+								<select
+									class="owner-select"
+									disabled={!selected.size}
+									onchange={(e) => {
+										pickStage(e.currentTarget.value);
+										e.currentTarget.selectedIndex = 0;
+									}}
+								>
+									<option value="" disabled selected>Set stage…</option>
+									<option value="shortlisted">Shortlisted</option>
+									<option value="invited">Invited</option>
+								</select>
+							</label>
+							{#if data.events.length}
+								<label class="bulk-select">
+									<span class="sr-only">Copy to another event</span>
+									<select
+										class="owner-select"
+										name="to"
+										disabled={!selected.size}
+										onchange={(e) => {
+											if (e.currentTarget.value) runBulk('copy');
+										}}
+									>
+										<option value="" disabled selected>Copy to event…</option>
+										{#each data.events as e (e.id)}
+											<option value={e.id}>{e.name} · {formatDay(e.starts_at, e.timezone)}</option>
+										{/each}
+									</select>
+								</label>
+							{/if}
+						</div>
+					{/if}
+					<button type="button" class="btn btn-ghost btn-sm bulk-done" onclick={stopSelecting}>
+						Done
+					</button>
+				</div>
+			{/if}
+		</form>
 	{/if}
 {/if}
 
@@ -886,6 +1240,87 @@
 
 	.banner {
 		margin-bottom: 14px;
+	}
+
+	.banner a {
+		margin-left: 6px;
+		font-weight: 650;
+	}
+
+	.banner.hint {
+		display: flex;
+		align-items: center;
+		gap: 8px 14px;
+		flex-wrap: wrap;
+	}
+
+	.banner.hint .btn {
+		margin-left: auto;
+	}
+
+	.pick {
+		width: 18px;
+		height: 18px;
+		margin: 0;
+		accent-color: var(--brand);
+	}
+
+	.group-title.pressable {
+		touch-action: pan-y;
+		user-select: none;
+		-webkit-user-select: none;
+	}
+
+	/* The bulk bar (§4.2): fixed at the bottom while rows are being picked. */
+	.bulk.open {
+		padding-bottom: 88px;
+	}
+
+	.bulk-bar {
+		position: fixed;
+		left: 50%;
+		bottom: 16px;
+		translate: -50% 0;
+		z-index: 20;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px 14px;
+		width: min(100% - 32px, 1080px);
+		padding: 10px 14px;
+		border: 1px solid var(--border-strong);
+		border-radius: 16px;
+		background: color-mix(in oklab, var(--surface) 92%, transparent);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.18));
+	}
+
+	.bulk-count {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		white-space: nowrap;
+	}
+
+	.bulk-actions,
+	.bulk-ask {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.bulk-done {
+		margin-left: auto;
+	}
+
+	@media (max-width: 560px) {
+		.bulk-bar {
+			bottom: 8px;
+			width: calc(100% - 16px);
+			padding: 10px;
+		}
 	}
 
 	.group {

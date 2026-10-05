@@ -3,6 +3,16 @@ import { isReply, linkedinProfile } from '$lib/invitations';
 import { isMessageKind } from '$lib/people';
 import { fromLocalInput } from '$lib/time';
 import { logActivity } from '$lib/server/activity-log';
+import {
+	bulkMarkInvited,
+	bulkSetOwner,
+	bulkSetStage,
+	bulkShortlist,
+	bulkSkip,
+	copyToEvent,
+	type BulkAction,
+	type BulkResult
+} from '$lib/server/bulk';
 import { countCheckins } from '$lib/server/checkins';
 import {
 	blockCompany,
@@ -35,7 +45,7 @@ import {
 	unmarkInvited,
 	unskipRow
 } from '$lib/server/event-people';
-import { getEvent } from '$lib/server/events';
+import { getEvent, listEvents } from '$lib/server/events';
 import { parseGuestList } from '$lib/server/guest-list';
 import { eventPageLoad } from '$lib/server/jobs';
 import { countryResolver } from '$lib/server/messaging';
@@ -62,6 +72,15 @@ function rowId(form: FormData, field = 'id'): number | null {
 
 const VIAS: Via[] = ['whatsapp', 'email', 'linkedin', 'other'];
 const isVia = (v: unknown): v is Via => VIAS.includes(v as Via);
+const BULK_ACTIONS: BulkAction[] = ['shortlist', 'skip', 'invited', 'owner', 'stage', 'copy'];
+const isBulkAction = (v: unknown): v is BulkAction => BULK_ACTIONS.includes(v as BulkAction);
+
+/** The other events a selection can be copied to (D22): dated ones, most recent first. */
+function copyTargets(eventId: string) {
+	return listEvents(db)
+		.filter((e) => e.id !== eventId && e.starts_at !== null)
+		.map((e) => ({ id: e.id, name: e.name, starts_at: e.starts_at!, timezone: e.timezone }));
+}
 
 /** A team name from the form, or null for "the company's owner" / nobody. */
 function ownerFrom(form: FormData): string | null {
@@ -80,12 +99,14 @@ export const load: PageServerLoad = ({ params, locals, url }) => {
 	};
 	const base = { event, me: locals.who || null, team: teamNames(db), tabs };
 	// Without a date there is nothing to count down to, and Found rows have no expiry (D17).
-	if (event.starts_at === null) return { ...base, view: null, companies: [], genericLink: null };
+	if (event.starts_at === null)
+		return { ...base, view: null, companies: [], genericLink: null, events: [] };
 	const env = messagingEnv(url);
 	return {
 		...base,
 		view: peopleView(db, event, env),
 		companies: companySuggestions(db),
+		events: copyTargets(event.id),
 		// The open registration link (§4.6): anyone with it can register, flagged for review.
 		genericLink: genericRegistrationUrl(event, env.base)
 	};
@@ -332,6 +353,58 @@ export const actions: Actions = {
 		const event = requireEvent(params.id);
 		const key = String((await request.formData()).get('companyKey') ?? '');
 		return { skippedAll: skipAll(db, event.id, key, { by: locals.who }) };
+	},
+
+	// One selection, one verb (§4.2, D22): the bulk module runs it in one transaction and says
+	// which rows it refused; their names are looked up here for the message, never logged.
+	bulk: async ({ params, request, locals }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		const action = form.get('action');
+		const ids = form
+			.getAll('ids')
+			.map(Number)
+			.filter((id) => Number.isSafeInteger(id) && id > 0);
+		if (!isBulkAction(action) || !ids.length)
+			return fail(400, { bulkError: 'Pick some rows first.' });
+		const by = locals.who;
+		const via = form.get('via');
+		let result: BulkResult;
+		let to: { id: string; name: string } | null = null;
+		switch (action) {
+			case 'shortlist':
+				result = bulkShortlist(db, event.id, ids, { by });
+				break;
+			case 'skip':
+				result = bulkSkip(db, event.id, ids, { by });
+				break;
+			case 'invited':
+				if (!isVia(via)) return fail(400, { bulkError: 'Say how they were invited.' });
+				result = bulkMarkInvited(db, event.id, ids, via, { by });
+				break;
+			case 'owner':
+				result = bulkSetOwner(db, event.id, ids, ownerFrom(form), { by });
+				break;
+			case 'stage': {
+				const stage = form.get('stage');
+				if (stage !== 'shortlisted' && stage !== 'invited')
+					return fail(400, { bulkError: 'Only Shortlisted and Invited can be set in bulk.' });
+				result = bulkSetStage(db, event.id, ids, stage, { via: isVia(via) ? via : 'other', by });
+				break;
+			}
+			case 'copy': {
+				const target = copyTargets(event.id).find((e) => e.id === form.get('to'));
+				if (!target) return fail(400, { bulkError: 'Pick an event with a date to copy to.' });
+				result = copyToEvent(db, event.id, target.id, ids, { by });
+				to = { id: target.id, name: target.name };
+				break;
+			}
+		}
+		const refused = result.refused.map((r) => ({
+			...r,
+			name: getEventPerson(db, event.id, r.id)?.name ?? `#${r.id}`
+		}));
+		return { bulk: { action, done: result.done, refused, to } };
 	},
 
 	// Sent with navigator.sendBeacon as a message link opens (§7), so nothing waits on it. The
