@@ -283,7 +283,7 @@ describe('peopleView messages', () => {
 		setCompanyPhoneCountry(db, findCompany(db, 'Selat Energy')!.id, 'MY');
 		const [rina, mei] = view().rows;
 		expect(rina.message).toMatchObject({ kind: 'invitation', hint: null });
-		expect(rina.message?.text).toMatch(/^Halo Rina, SRKK mengundang Anda ke Launch/);
+		expect(rina.message?.text).toMatch(/^Halo Bu Rina, SRKK mengundang Anda ke Launch/);
 		expect(rina.message?.text).toMatch(
 			/Balas STOP jika Anda tidak ingin dihubungi lagi tentang acara\.$/
 		);
@@ -291,7 +291,8 @@ describe('peopleView messages', () => {
 		expect(rina.message?.email).toMatch(/^mailto:rina@batavia\.co\.id\?subject=Launch&body=/);
 		// Mei's company reads MY: her number is local, so email only, and the Malay wording.
 		expect(mei.company_phone_country).toBe('MY');
-		expect(mei.message?.text).toMatch(/^Hai Mei, SRKK ingin menjemput anda/);
+		// Mei could be either: Tuan/Puan in Malay (D27).
+		expect(mei.message?.text).toMatch(/^Hai Tuan\/Puan Mei, SRKK ingin menjemput anda/);
 		expect(mei.message?.whatsapp).toBeNull();
 		expect(mei.message?.email).toMatch(/^mailto:mei@selat\.my/);
 		expect(view().groups.find((g) => g.name === 'Selat Energy')?.phone_country).toBe('MY');

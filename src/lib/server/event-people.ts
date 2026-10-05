@@ -14,6 +14,7 @@ import {
 	type Origin,
 	type PersonRow
 } from './people.ts';
+import { setSalutation } from './salutation.ts';
 import type { Country } from './settings.ts';
 import {
 	applyChange,
@@ -78,6 +79,11 @@ export interface EventPersonRow {
 	linkedin_status: 'requested' | 'connected' | null;
 	linkedin_status_at: number | null;
 	linkedin_status_by: string | null;
+	/** Pak or Bu and the call name (D27); null while found, or when nobody has said. */
+	salutation: 'pak' | 'bu' | null;
+	salutation_source: 'self' | 'team' | 'research' | null;
+	salutation_note: string | null;
+	call_name: string | null;
 	d365_suppressed: 0 | 1 | null;
 	d365_no_email: 0 | 1 | null;
 	d365_no_phone: 0 | 1 | null;
@@ -112,6 +118,7 @@ const ROW_SELECT = `SELECT ep.id, ep.event_id, ep.person_id,
 	ep.next_action_at, ep.next_action_kind, ep.next_action_overridden, ep.needs_review, ep.note,
 	ep.added_by, ep.created_at, ep.updated_at,
 	p.origin, p.locked_at, p.linkedin_status, p.linkedin_status_at, p.linkedin_status_by,
+	p.salutation, p.salutation_source, p.salutation_note, p.call_name,
 	p.d365_suppressed, p.d365_no_email, p.d365_no_phone, p.is_customer,
 	p.consent_future_at, p.legacy_notice_at, p.legacy_kept_at, p.country,
 	p.created_at AS person_created_at,
@@ -197,6 +204,9 @@ export interface RowExtra {
 	isCustomer?: boolean;
 	owner?: string;
 	status?: string;
+	/** Pak or Bu that research found stated, and the words (D27). */
+	salutation?: 'pak' | 'bu';
+	salutationEvidence?: string;
 }
 
 export interface AddOptions {
@@ -494,6 +504,16 @@ export function shortlistFound(
 		).run({ id, personId: person.id, companyId: person.company_id, by, now });
 		applyChange(db, id, { type: 'shortlist' }, now);
 		touchLastEvent(db, person.id, now);
+		// Research's Pak or Bu, with its quote, unless someone already said otherwise (D27).
+		if (extra?.salutation)
+			setSalutation(
+				db,
+				person.id,
+				extra.salutation,
+				'research',
+				{ note: extra.salutationEvidence ?? '' },
+				now
+			);
 		return { status: 'added', personId: person.id, name: row.name };
 	})();
 }

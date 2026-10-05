@@ -2,7 +2,7 @@
 
 The build spec for the invitation pipeline that replaces the **Invitations** and **Planning**
 tabs' guest handling. It implements the 25 decisions agreed with the organizer on 2026-10-02
-(listed at the end as D1–D26). Statements about today's code were checked against `main` at
+(listed at the end as D1–D27). Statements about today's code were checked against `main` at
 `0dba76a`. Where the decisions left something undefined, the choice is marked **(builder)**.
 
 ## 1. Purpose and vocabulary
@@ -269,6 +269,19 @@ says no or no usable value; copy text; copy registration link); **LinkedIn** (th
 D26); then the note. "Park as Found" exists only on the add/review card, before a person
 exists. A collapsed **How this list works** above the list explains the three lines. The
 **LinkedIn request sent** filter shows people with `linkedin_status = 'requested'`.
+
+Pak or Bu (D27): `people.salutation` ('pak' | 'bu'), `salutation_source` ('self' | 'team' |
+'research'), `salutation_note` (research's quote) and `call_name` (schema v7, which also moves
+default message bodies still in the old wording from "Halo {name}" to "Halo {salutation}"). The
+row shows the greeting next to the name, dashed with a ? while it is a guess, and its picker
+stores the team's answer (blank goes back to the guess). Precedence: self (the registration
+page's _How should we address you?_) > team > research (only with the quoted words) > the guess
+from the name (`guessSalutation`: titles, bin/binti, Balinese I/Ni, Muhammad, then clearly
+gendered given names; ambiguous names stay unknown) > Bapak/Ibu. The guess is never stored.
+`{salutation}` renders "Pak Kevin" / "Bu Dewi" / "Bapak/Ibu Ade" (ms: Encik / Puan / Tuan/Puan;
+en: the call name alone); `{name}` is the call name (`callName`: skips titles, Muhammad
+variants, initials, Balinese birth-order names, and reads "Tan Wei Ming" as Wei Ming). A merge
+keeps the stronger source's answer and fills a blank call name.
 
 LinkedIn connection (D26): on the person, since a connection outlives an event, and shown with
 the channels because it gates one. **Connect** opens the profile and sends `?/linkedin` with
@@ -617,4 +630,4 @@ Mine-due-today · D20 chase rules and in-app due counts · D21 message kinds, la
 D22 bulk actions · D23 settings page and activity log · D24 earlier bindings (no scraping, human
 approval, token API, on-demand research, guided brief) · D25 research ticks, batches of 15,
 researched_at · D26 LinkedIn connection status on the person, step track and plain next step on
-every row.
+every row · D27 Pak / Bu and the call name on the person, guessed from the name until someone says.

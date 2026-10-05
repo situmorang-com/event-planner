@@ -13,8 +13,9 @@ export interface RegistrationPageData {
 	token: string | null;
 	org: { name: string; privacyUrl: string };
 	event: { name: string; venue: string; when: string | null; coHosts: string };
-	/** The personal link's name and company (never email or mobile, §7). */
-	prefill: { name: string; company: string } | null;
+	/** The personal link's name and company (never email or mobile, §7), and Pak or Bu only
+	 * when they gave it themselves before (D27): a guess is never put to them as their answer. */
+	prefill: { name: string; company: string; salutation?: 'pak' | 'bu' | null } | null;
 }
 
 export type DoneKind = 'yes' | 'maybe' | 'no' | 'notMe' | 'removeMe' | 'reconfirm';
@@ -27,6 +28,7 @@ export interface RegistrationValues {
 	email: string;
 	phone: string;
 	note: string;
+	salutation: string;
 }
 
 export type RegistrationField = 'rsvp' | 'name' | 'contact' | 'email' | 'consent';

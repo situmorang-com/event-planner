@@ -66,8 +66,9 @@ describe('message template seeding', () => {
 				expect(body).not.toContain('STOP');
 				expect(body).not.toContain(OPT_OUT_LINE[language]);
 				expect(body).not.toMatch(/\{(source_url|privacy_url)\}/);
-				expect(body).toMatch(/\{name\}/);
-				expect(body).not.toMatch(/\{(?!name|event|date|venue|link|org)\w+\}/);
+				// The greeting is Pak or Bu and the call name (D27): "Halo Pak Kevin".
+				expect(body).toMatch(/^\S+ \{salutation\},/);
+				expect(body).not.toMatch(/\{(?!salutation|name|event|date|venue|link|org)\w+\}/);
 			}
 		for (const language of LANGUAGES)
 			expect(DEFAULT_TEMPLATES.reminder[language]).toContain('{link}');

@@ -6,6 +6,7 @@ import { stageRank, type Stage } from '../people.ts';
 import { logActivity } from './activity-log.ts';
 import { ensureCompany } from './companies.ts';
 import type { DB } from './database.ts';
+import { SALUTATION_RANK } from '../salutation.ts';
 import { linkedinRank } from './linkedin.ts';
 import type { Country } from './settings.ts';
 
@@ -39,6 +40,10 @@ export interface PersonRow {
 	linkedin_status: 'requested' | 'connected' | null;
 	linkedin_status_at: number | null;
 	linkedin_status_by: string;
+	salutation: 'pak' | 'bu' | null;
+	salutation_source: 'self' | 'team' | 'research' | null;
+	salutation_note: string;
+	call_name: string | null;
 	last_event_at: number | null;
 	created_by: string;
 	created_at: number;
@@ -662,6 +667,14 @@ export function mergeInto(
 				`UPDATE people SET linkedin_status = ?, linkedin_status_at = ?, linkedin_status_by = ?
 				WHERE id = ?`
 			).run(loser.linkedin_status, loser.linkedin_status_at, loser.linkedin_status_by, survivorId);
+		// Pak or Bu (D27): the stronger source's answer stays; a call name fills a blank.
+		const rank = (p: PersonRow) => (p.salutation_source ? SALUTATION_RANK[p.salutation_source] : 0);
+		if (loser.salutation && rank(loser) > rank(survivor))
+			db.prepare(
+				`UPDATE people SET salutation = ?, salutation_source = ?, salutation_note = ? WHERE id = ?`
+			).run(loser.salutation, loser.salutation_source, loser.salutation_note, survivorId);
+		if (loser.call_name && !survivor.call_name)
+			db.prepare(`UPDATE people SET call_name = ? WHERE id = ?`).run(loser.call_name, survivorId);
 
 		const loserRows = db
 			.prepare(`${ROW_FOR_MERGE} WHERE person_id = ?`)

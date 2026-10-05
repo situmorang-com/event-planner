@@ -10,6 +10,7 @@ import {
 	type RowMessage,
 	type Today
 } from '../people.ts';
+import { addressAs, addressee, type SalutationLanguage } from '../salutation.ts';
 import { endOfDay, startOfDay } from '../time.ts';
 import type { DB } from './database.ts';
 import {
@@ -25,7 +26,13 @@ import {
 } from './event-people.ts';
 import type { EventRow } from './events.ts';
 import { countryOf, type CountryOption } from './guest-list.ts';
-import { contactPerson, registrationUrl, rowMessage, type MessagingEnv } from './messaging.ts';
+import {
+	contactPerson,
+	registrationUrl,
+	rowLanguage,
+	rowMessage,
+	type MessagingEnv
+} from './messaging.ts';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
 import { contactBlock, type PersonRow } from './people.ts';
 import { isLegacyIndonesian } from './retention.ts';
@@ -91,8 +98,10 @@ export function toView(
 	since: number | null,
 	dueBy: number,
 	message: RowMessage | null = null,
-	registrationLink: string | null = null
+	registrationLink: string | null = null,
+	language: SalutationLanguage = 'id'
 ): PeopleRow {
+	const who = addressee(row);
 	// A Found row has no person yet, so nothing can be closed to it except its company.
 	const person = row.person_id === null ? null : contactPerson(row);
 	const whatsapp = person ? contactBlock(person, 'whatsapp', since) : null;
@@ -109,6 +118,15 @@ export function toView(
 		linkedin_status: row.linkedin_status ?? 'none',
 		linkedin_status_at: row.linkedin_status_at,
 		linkedin_status_by: row.linkedin_status_by || null,
+		address: {
+			salutation: who.salutation,
+			source: who.source,
+			note: row.salutation_note ?? '',
+			call_name: who.callName,
+			call_name_set: !!row.call_name,
+			greeting: addressAs(who, language),
+			language
+		},
 		company: row.company,
 		company_key: row.company_key,
 		company_phone_country: row.company_phone_country,
@@ -201,7 +219,8 @@ export function peopleView(
 			env
 				? rowMessage(db, { row: r, event, since }, env, suggestedKind(r, since, today.end))
 				: null,
-			linkable && r.stage !== 'found' && !r.blocked_at ? registrationUrl(r, event, env) : null
+			linkable && r.stage !== 'found' && !r.blocked_at ? registrationUrl(r, event, env) : null,
+			rowLanguage(r, event)
 		)
 	);
 	// A row skipped by "not me" is nobody's reply (D8).

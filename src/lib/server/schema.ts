@@ -101,6 +101,12 @@ export const TABLES = {
 		linkedin_status TEXT CHECK (linkedin_status IN ('requested', 'connected')),
 		linkedin_status_at INTEGER,
 		linkedin_status_by TEXT NOT NULL DEFAULT '',
+		-- Pak or Bu and who said so (D27); NULL means the name's guess, or Bapak/Ibu.
+		salutation TEXT CHECK (salutation IN ('pak', 'bu')),
+		salutation_source TEXT CHECK (salutation_source IN ('self', 'team', 'research')),
+		salutation_note TEXT NOT NULL DEFAULT '',
+		-- The name after Pak or Bu when it isn't the first given name (D27).
+		call_name TEXT,
 		last_event_at INTEGER,
 		created_by TEXT NOT NULL DEFAULT '',
 		created_at INTEGER NOT NULL,

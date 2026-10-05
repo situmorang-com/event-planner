@@ -33,7 +33,14 @@ export const load: PageServerLoad = ({ params }): RegistrationPageData => {
 		token: params.token,
 		org: { name: ORG_NAME, privacyUrl: PRIVACY_URL },
 		event: registrationPageEvent(event, language),
-		prefill: found.status === 'ok' ? { name: row.name, company: row.company } : null
+		prefill:
+			found.status === 'ok'
+				? {
+						name: row.name,
+						company: row.company,
+						salutation: row.salutation_source === 'self' ? row.salutation : null
+					}
+				: null
 	};
 };
 
@@ -72,6 +79,7 @@ export const actions: Actions = {
 				email: read.email,
 				phone: read.phone,
 				note: read.note,
+				salutation: read.salutation,
 				consentFuture: read.consentFuture,
 				consentShare: read.consentShare
 			}

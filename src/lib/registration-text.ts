@@ -24,6 +24,10 @@ export interface RegistrationText {
 	email: string;
 	mobile: string;
 	note: string;
+	/** How we greet them (D27): the question and its two answers. */
+	address: string;
+	addressPak: string;
+	addressBu: string;
 	optional: string;
 	send: string;
 	register: string;
@@ -72,6 +76,9 @@ export const REGISTRATION_TEXT: Record<Language, RegistrationText> = {
 		email: 'Email',
 		mobile: 'Mobile',
 		note: 'Note',
+		address: 'How should we address you?',
+		addressPak: 'Mr.',
+		addressBu: 'Ms.',
 		optional: '(optional)',
 		send: 'Send my reply',
 		register: 'Register',
@@ -118,6 +125,9 @@ export const REGISTRATION_TEXT: Record<Language, RegistrationText> = {
 		email: 'Email',
 		mobile: 'No. HP',
 		note: 'Catatan',
+		address: 'Bagaimana kami menyapa Anda?',
+		addressPak: 'Bapak',
+		addressBu: 'Ibu',
 		optional: '(opsional)',
 		send: 'Kirim jawaban',
 		register: 'Daftar',
@@ -164,6 +174,9 @@ export const REGISTRATION_TEXT: Record<Language, RegistrationText> = {
 		email: 'E-mel',
 		mobile: 'Telefon bimbit',
 		note: 'Nota',
+		address: 'Bagaimana kami patut menyapa anda?',
+		addressPak: 'Encik',
+		addressBu: 'Puan',
 		optional: '(pilihan)',
 		send: 'Hantar jawapan',
 		register: 'Daftar',

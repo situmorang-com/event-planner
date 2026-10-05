@@ -2,6 +2,7 @@ import { error, fail } from '@sveltejs/kit';
 import { isReply, linkedinProfile } from '$lib/invitations';
 import { isLinkedinStatus, isMessageKind } from '$lib/people';
 import { setLinkedinStatus } from '$lib/server/linkedin';
+import { isSalutation, setCallName, setSalutation } from '$lib/server/salutation';
 import { fromLocalInput } from '$lib/time';
 import { logActivity } from '$lib/server/activity-log';
 import {
@@ -195,7 +196,8 @@ export const actions: Actions = {
 			jobTitle: String(form.get('jobTitle') ?? ''),
 			email: String(form.get('email') ?? ''),
 			phone: String(form.get('phone') ?? ''),
-			linkedin: String(form.get('linkedin') ?? '')
+			linkedin: String(form.get('linkedin') ?? ''),
+			callName: String(form.get('callName') ?? '')
 		};
 		const details = {
 			name: cleanText(values.name, 100),
@@ -219,7 +221,24 @@ export const actions: Actions = {
 				editErrors: { email: 'Those details are on the do-not-contact list.' },
 				editValues: values
 			});
+		// The name after Pak or Bu (D27); blank goes back to the first given name.
+		const personId = getEventPerson(db, event.id, id)?.person_id;
+		if (personId) setCallName(db, personId, values.callName);
 		return { edited: id };
+	},
+
+	// Pak or Bu from the team (D27); blank takes it back to the name's guess.
+	salutation: async ({ params, request }) => {
+		const event = requireEvent(params.id);
+		const form = await request.formData();
+		const id = rowId(form);
+		const value = form.get('salutation');
+		if (id === null || (value !== '' && !isSalutation(value)))
+			return fail(400, { salutationError: true });
+		const row = getEventPerson(db, event.id, id);
+		if (!row?.person_id) return fail(404, { salutationError: true });
+		setSalutation(db, row.person_id, value === '' ? null : value, 'team');
+		return { salutation: id };
 	},
 
 	remove: async ({ params, request, locals }) => {

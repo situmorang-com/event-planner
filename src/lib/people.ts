@@ -1,6 +1,8 @@
 // What the People page and the server view share: stages, chips and the markers a row shows.
 // Pure, so the page can filter and count rows without a round trip after every tap.
 
+import type { Salutation, SalutationLanguage, SalutationSource } from './salutation.ts';
+
 export type Stage = 'found' | 'shortlisted' | 'invited' | 'replied' | 'confirmed' | 'checked_in';
 export type Reply = 'pending' | 'yes' | 'maybe' | 'no';
 export type Via = 'whatsapp' | 'email' | 'linkedin' | 'other';
@@ -308,6 +310,20 @@ export interface PeopleRow extends ChipRow {
 	linkedin: string | null;
 	/** The person's LinkedIn connection (D26); 'none' while found or not connected. */
 	linkedin_status: LinkedinStatus;
+	/**
+	 * How messages address them (D27): Pak or Bu (stored, or 'name' when guessed), the call name,
+	 * and the greeting exactly as the row's language writes it ("Pak Kevin", "Bapak/Ibu Ade").
+	 */
+	address: {
+		salutation: Salutation | null;
+		source: SalutationSource | 'name' | null;
+		note: string;
+		call_name: string;
+		/** Set by hand; otherwise the call name is worked out from the name. */
+		call_name_set: boolean;
+		greeting: string;
+		language: SalutationLanguage;
+	};
 	linkedin_status_at: number | null;
 	linkedin_status_by: string | null;
 	company: string;

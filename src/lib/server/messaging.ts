@@ -1,4 +1,4 @@
-import { greetingName } from '../invitations.ts';
+import { addressAs, addressee } from '../salutation.ts';
 import { mailtoHref } from '../mailto.ts';
 import type { RowMessage } from '../people.ts';
 import { formatDate, formatTime } from '../time.ts';
@@ -85,7 +85,9 @@ export type MessageRow = Pick<
 	| 'stage'
 	| 'reply'
 	| 'skipped_at'
->;
+> &
+	// How to address them (D27); absent, the name decides.
+	Partial<Pick<EventPersonRow, 'salutation' | 'salutation_source' | 'call_name'>>;
 
 export type MessageEvent = Pick<
 	EventRow,
@@ -140,7 +142,9 @@ export function tidy(text: string): string {
 }
 
 export function fillPlaceholders(body: string, values: Record<string, string>): string {
-	return tidy(body.replace(/\{(name|event|date|venue|link|org)\}/g, (_, key) => values[key] ?? ''));
+	return tidy(
+		body.replace(/\{(salutation|name|event|date|venue|link|org)\}/g, (_, key) => values[key] ?? '')
+	);
 }
 
 export const rowLanguage = (row: Pick<MessageRow, 'company_phone_country'>, event: MessageEvent) =>
@@ -170,8 +174,11 @@ export function renderMessage(
 	const language = rowLanguage(row, event);
 	const body =
 		(kind === 'invitation' && event.invitation_text?.trim()) || templateBody(db, kind, language);
+	// "Halo Pak Kevin": Pak or Bu as stored or guessed from the name, else Bapak/Ibu (D27).
+	const who = addressee(row);
 	const text = fillPlaceholders(body, {
-		name: greetingName(row.name) || '',
+		salutation: addressAs(who, language),
+		name: who.callName,
 		event: event.name,
 		date: event.starts_at === null ? '' : formatWhen(event.starts_at, event.timezone, language),
 		venue: event.venue,

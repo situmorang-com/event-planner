@@ -67,6 +67,7 @@ export const actions: Actions = {
 			email: read.email,
 			phone: read.phone,
 			note: read.note,
+			salutation: read.salutation,
 			consentFuture: read.consentFuture,
 			consentShare: read.consentShare
 		});

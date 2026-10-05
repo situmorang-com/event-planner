@@ -139,7 +139,8 @@ describe('renderMessage (§7)', () => {
 		const parts = text.split('\n\n');
 		expect(parts).toHaveLength(3);
 		expect(parts[0]).toMatch(
-			/^Halo Andi, SRKK mengundang Anda ke Partner Summit pada .*2026.*, Grand Ballroom\./
+			// Andi could be either, so Bapak/Ibu (D27).
+			/^Halo Bapak\/Ibu Andi, SRKK mengundang Anda ke Partner Summit pada .*2026.*, Grand Ballroom\./
 		);
 		expect(parts[0]).toContain(`https://ep.test/r/${registrationToken('s', eventId, row(1).id)}`);
 		expect(parts[1]).toBe(
@@ -150,7 +151,7 @@ describe('renderMessage (§7)', () => {
 		// Someone typed in gets no source line; the opt-out line still closes the message.
 		const typed = renderMessage(db, 'invitation', ctx(0), ENV)!.split('\n\n');
 		expect(typed).toHaveLength(2);
-		expect(typed[0]).toMatch(/^Halo Rina/);
+		expect(typed[0]).toMatch(/^Halo Bu Rina/);
 		expect(typed[1]).toBe(OPT_OUT_LINE.id);
 	});
 
@@ -161,7 +162,7 @@ describe('renderMessage (§7)', () => {
 		expect(rowMessage(db, ctx(1), env)?.hint).toMatch(/PRIVACY_URL/);
 		expect(messageLink(db, 'invitation', ctx(1), env)).toBeNull();
 		// Everyone else is unaffected.
-		expect(renderMessage(db, 'invitation', ctx(0), env)).toMatch(/^Halo Rina/);
+		expect(renderMessage(db, 'invitation', ctx(0), env)).toMatch(/^Halo Bu Rina/);
 	});
 
 	it('resolves the invitation text, then the template, then the built-in default', () => {
@@ -191,7 +192,7 @@ describe('renderMessage (§7)', () => {
 	it('writes in the company’s language and leaves {link} out while the event has no date', () => {
 		setCompanyPhoneCountry(db, findCompany(db, 'Batavia Foods')!.id, 'MY');
 		const text = renderMessage(db, 'reminder', ctx(0), ENV)!;
-		expect(text).toMatch(/^Hai Rina, sekadar peringatan/);
+		expect(text).toMatch(/^Hai Puan Rina, sekadar peringatan/);
 		expect(text.endsWith(OPT_OUT_LINE.ms)).toBe(true);
 		// A reminder links the one-tap reconfirm page (§4.6); every other kind the full form.
 		expect(text).toContain(`https://ep.test/r/${registrationToken('s', eventId, row(0).id)}/ok`);
@@ -232,11 +233,11 @@ describe('messageLink', () => {
 	it('opens WhatsApp for an international mobile, else email, else nothing', () => {
 		const rina = messageLink(db, 'invitation', ctx(0), ENV)!;
 		expect(rina.via).toBe('whatsapp');
-		expect(rina.href).toMatch(/^https:\/\/wa\.me\/6281234567890\?text=Halo%20Rina/);
+		expect(rina.href).toMatch(/^https:\/\/wa\.me\/6281234567890\?text=Halo%20Bu%20Rina/);
 		expect(decodeURIComponent(rina.href.split('text=')[1])).toContain(OPT_OUT_LINE.id);
 		const budi = messageLink(db, 'invitation', ctx(1), ENV)!;
 		expect(budi.via).toBe('email');
-		expect(budi.href).toMatch(/^mailto:budi@a\.test\?subject=Summit&body=Halo%20Budi/);
+		expect(budi.href).toMatch(/^mailto:budi@a\.test\?subject=Summit&body=Halo%20Pak%20Budi/);
 		expect(messageLink(db, 'invitation', ctx(2), ENV)).toBeNull();
 	});
 
@@ -245,7 +246,7 @@ describe('messageLink', () => {
 		setReply(db, eventId, ctx(0).row.id, 'yes');
 		expect(rowMessage(db, ctx(0), ENV)?.kind).toBe('thanks_yes');
 		expect(rowMessage(db, ctx(0), ENV)?.text).toMatch(
-			/^Halo Rina, terima kasih atas konfirmasinya/
+			/^Halo Bu Rina, terima kasih atas konfirmasinya/
 		);
 		lockPerson(db, ctx(0).row.person_id!, { source: 'staff' });
 		expect(messageLink(db, 'thanks_yes', ctx(0), ENV)).toBeNull();

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { greetingName, linkedinMessageUrl, REPLY_LABEL } from '$lib/invitations';
+	import { linkedinMessageUrl, REPLY_LABEL } from '$lib/invitations';
+	import { callName, salutationWord, type Salutation } from '$lib/salutation';
 	import { initials } from '$lib/names';
 	import {
 		effectiveOwner,
@@ -21,6 +22,7 @@
 	} from '$lib/people';
 	import { formatDay, formatDueDay, formatTime, localDate } from '$lib/time';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Check from '@lucide/svelte/icons/check';
 	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
@@ -45,6 +47,7 @@
 		email: string;
 		phone: string;
 		linkedin: string;
+		callName?: string;
 	}
 
 	interface Candidate {
@@ -129,7 +132,28 @@
 	const details = $derived(
 		[showCompany ? row.company : '', row.job_title, row.email, row.phone].filter(Boolean)
 	);
-	const first = $derived(greetingName(row.name));
+	// Their call name, as the messages use it (D27).
+	const first = $derived(row.address.call_name || row.name);
+
+	// Pak or Bu (D27): what the team, the person or research said, else the name's guess.
+	const stored = $derived<Salutation | ''>(
+		row.address.source && row.address.source !== 'name' ? (row.address.salutation ?? '') : ''
+	);
+	const word = (s: Salutation | null) => salutationWord(s, row.address.language);
+	const greetLabel = $derived(`${word(row.address.salutation)} ${row.address.call_name}`.trim());
+	const greetTitle = $derived(
+		{
+			self: `${first} chose this when registering.`,
+			team: 'Set by the team.',
+			research: `From research: ${row.address.note || 'a public page said so'}.`,
+			name: 'Guessed from the name: pick Pak or Bu to confirm it.',
+			unsure: 'The name could be either, so messages say Bapak/Ibu: pick Pak or Bu if you know.'
+		}[row.address.source ?? 'unsure'] +
+			(row.address.language === 'en'
+				? ' English messages use the name only.'
+				: ` Messages open “${row.address.greeting}”.`) +
+			' Edit sets the name after it.'
+	);
 
 	// The message menu (§7): the page carries the suggested kind's text, rendered on the server
 	// for the row's language with the opt-out line on it; another kind is fetched when picked.
@@ -282,7 +306,8 @@
 			jobTitle: row.job_title,
 			email: row.email ?? '',
 			phone: row.phone ?? '',
-			linkedin: row.linkedin ?? ''
+			linkedin: row.linkedin ?? '',
+			callName: row.address.call_name_set ? row.address.call_name : ''
 		}
 	);
 
@@ -302,6 +327,35 @@
 	function closeMenu() {
 		if (menu) menu.open = false;
 	}
+
+	// A details element only closes when its own summary is clicked again; a menu should also
+	// close on a click or tap anywhere else, or Escape. Listens only while this one is open.
+	let menuOpen = $state(false);
+	function toggledMenu(e: Event & { currentTarget: HTMLDetailsElement }) {
+		menuOpen = e.currentTarget.open;
+		// One menu at a time, however it was opened (a keyboard opens without a pointer).
+		if (menuOpen)
+			for (const other of document.querySelectorAll<HTMLDetailsElement>('details.menu[open]'))
+				if (other !== e.currentTarget) other.open = false;
+	}
+	$effect(() => {
+		const el = menu;
+		if (!menuOpen || !el) return;
+		const outside = (e: PointerEvent) => {
+			if (!el.contains(e.target as Node)) el.open = false;
+		};
+		const escape = (e: KeyboardEvent) => {
+			if (e.key !== 'Escape') return;
+			el.open = false;
+			el.querySelector('summary')?.focus();
+		};
+		document.addEventListener('pointerdown', outside);
+		document.addEventListener('keydown', escape);
+		return () => {
+			document.removeEventListener('pointerdown', outside);
+			document.removeEventListener('keydown', escape);
+		};
+	});
 
 	// Saved on leaving the field (Enter leaves it too), and only when it actually changed.
 	function saveNote(e: FocusEvent & { currentTarget: HTMLInputElement }) {
@@ -439,7 +493,7 @@
 {/snippet}
 
 {#snippet rowMenu()}
-	<details class="menu" bind:this={menu}>
+	<details class="menu" bind:this={menu} ontoggle={toggledMenu}>
 		<summary class="btn btn-ghost btn-icon btn-sm" title="More">
 			<Ellipsis size={17} /><span class="sr-only">More for {row.name}</span>
 		</summary>
@@ -685,6 +739,21 @@
 					/>
 					{#if errors.linkedin}<p class="error-text">{errors.linkedin}</p>{/if}
 				</div>
+				{#if row.person_id}
+					<div class="field">
+						<label class="label" for="callname-{row.id}"
+							>Call name <span class="optional">(after Pak or Bu)</span></label
+						>
+						<input
+							class="input"
+							id="callname-{row.id}"
+							name="callName"
+							onkeydown={closeOnEscape}
+							placeholder={callName(fields.name || row.name)}
+							value={fields.callName ?? ''}
+						/>
+					</div>
+				{/if}
 			</div>
 			<div class="edit-actions">
 				<span class="spacer"></span>
@@ -765,6 +834,39 @@
 			<div class="who">
 				<div class="name-line">
 					<span class="person-name">{row.name}</span>
+					{#if listed && row.person_id}
+						<!-- How messages greet them (D27): the exact words, and a tap to say Pak or Bu. -->
+						<form
+							class="greet-form"
+							method="POST"
+							action="?/salutation"
+							use:enhance={() =>
+								async ({ update }) =>
+									update({ reset: false })}
+						>
+							<input type="hidden" name="id" value={row.id} />
+							<label class="greet {row.address.source ?? 'unsure'}" title={greetTitle}>
+								<span>{greetLabel}</span>
+								{#if !stored}<span class="greet-q" aria-hidden="true">?</span>{/if}
+								<ChevronDown size={12} />
+								<span class="sr-only">How messages greet {row.name}</span>
+								<select
+									class="greet-select"
+									name="salutation"
+									value={stored}
+									onchange={(e) => e.currentTarget.form?.requestSubmit()}
+								>
+									<option value="">
+										{row.address.source === 'name'
+											? `${word(row.address.salutation)} (guessed from the name)`
+											: `${word(null)} (not sure)`}
+									</option>
+									<option value="pak">{word('pak')}</option>
+									<option value="bu">{word('bu')}</option>
+								</select>
+							</label>
+						</form>
+					{/if}
 					{#if row.skipped_at}<span class="pill tiny">Skipped</span>{/if}
 					{#each marks as m (m.key)}
 						{#if m.key === 'chased'}
@@ -1323,6 +1425,47 @@
 
 	.person-name {
 		font-weight: 650;
+	}
+
+	/* The greeting (D27): solid once someone has said, dashed with a ? while it is a guess. */
+	.greet {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		height: 22px;
+		padding: 0 7px 0 8px;
+		border-radius: 999px;
+		border: 1px solid var(--border-strong);
+		background: var(--surface);
+		font-size: 12px;
+		font-weight: 650;
+		color: var(--text-2);
+		cursor: pointer;
+	}
+
+	.greet.name,
+	.greet.unsure {
+		border-style: dashed;
+		color: var(--muted);
+	}
+
+	.greet.self,
+	.greet.team,
+	.greet.research {
+		border-color: color-mix(in oklab, var(--brand) 45%, transparent);
+		color: var(--brand-text);
+	}
+
+	.greet-q {
+		font-weight: 800;
+	}
+
+	.greet-select {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		cursor: pointer;
 	}
 
 	.tiny {

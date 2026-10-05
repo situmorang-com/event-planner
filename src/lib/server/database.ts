@@ -3,7 +3,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { backfillCheckinCountry } from './backfill-country.ts';
 import { addLinkedinStatusColumns } from './linkedin.ts';
-import { seedMessageTemplates } from './message-templates.ts';
+import { seedMessageTemplates, upgradeGreetings } from './message-templates.ts';
+import { addSalutationColumns } from './salutation.ts';
 import { migrateToV2 } from './migrate-v2.ts';
 import { SCHEMA, SCHEMA_TABLES_VERSION, TABLES, tableExists } from './schema.ts';
 import {
@@ -38,7 +39,16 @@ const STEPS: { version: number; run: (db: DB, opts: MigrateOptions) => void }[] 
 	// which check-ins between the version-2 migration and this deploy left empty.
 	{ version: 5, run: (db) => backfillCheckinCountry(db) },
 	// Version 6 adds the LinkedIn connection status (D26); a fresh file has the columns already.
-	{ version: 6, run: (db) => addLinkedinStatusColumns(db) }
+	{ version: 6, run: (db) => addLinkedinStatusColumns(db) },
+	// Version 7 adds Pak / Bu and the call name (D27), and greets with them in the default
+	// messages nobody has edited.
+	{
+		version: 7,
+		run: (db) => {
+			addSalutationColumns(db);
+			upgradeGreetings(db);
+		}
+	}
 ];
 
 /** The version a database is at once every step has run: the last step's, so it can't drift. */

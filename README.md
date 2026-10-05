@@ -129,6 +129,17 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   Buttons stay hidden for people who may not be
   contacted (locked, suppressed by a D365 flag, or past Malaysian attendees who never agreed to
   hear about future events).
+- **Pak or Bu.** Next to each listed person's name is how messages greet them: _Pak Kevin_,
+  _Bu Dewi_, or _Bapak/Ibu Ade_ when the name could be either (Malay: _Encik / Puan / Tuan/Puan_;
+  English uses the name alone). Tap it to say Pak or Bu. Until someone does, it is a guess from the
+  name, dashed with a ?: a title in the name (Bapak, Ibu, Drs., Dra.), _bin / binti_, a Balinese
+  _I / Ni_, Muhammad, then a list of given names that are clearly one or the other; names used
+  for both (Ade, Andi, Dian, Nur, Rizki…) stay Bapak/Ibu. Research reports Pak or Bu only when a
+  public page states it, with the quote shown on hover, and the registration page asks _How should
+  we address you?_; their own answer beats everyone's, research never overrides the team. The
+  name after it skips Muhammad, M., Moch., initials and Balinese birth-order names (_Pak Faiz_ for
+  Muhammad Faiz Azhari); **Edit › Call name** changes it. Messages greet with `{salutation}`;
+  `{name}` is the call name alone.
 - **LinkedIn connection.** The third line, **LinkedIn**, is your connection with the person:
   **Not connected → Request sent → Connected**. It sits with the channels rather than with the
   person's details because it decides whether the LinkedIn send button works (LinkedIn only lets

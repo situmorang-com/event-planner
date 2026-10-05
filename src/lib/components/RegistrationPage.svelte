@@ -45,7 +45,8 @@
 			jobTitle: '',
 			email: '',
 			phone: '',
-			note: ''
+			note: '',
+			salutation: data.prefill?.salutation ?? ''
 		}
 	);
 
@@ -247,6 +248,26 @@
 					</div>
 				</div>
 			{/if}
+
+			<!-- How we greet them (D27): their own answer beats anything the team guessed. -->
+			<fieldset class="field address">
+				<legend class="label">{t.address} <span class="optional">{t.optional}</span></legend>
+				<div class="address-choices">
+					<label class="address-choice">
+						<input
+							type="radio"
+							name="salutation"
+							value="pak"
+							checked={values.salutation === 'pak'}
+						/>
+						{t.addressPak}
+					</label>
+					<label class="address-choice">
+						<input type="radio" name="salutation" value="bu" checked={values.salutation === 'bu'} />
+						{t.addressBu}
+					</label>
+				</div>
+			</fieldset>
 
 			<div class="row">
 				<div class="field">
@@ -498,6 +519,42 @@
 		display: grid;
 		gap: 14px;
 		grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+	}
+
+	.address {
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	.address-choices {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.address-choice {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 44px;
+		padding: 0 16px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border-strong);
+		background: var(--surface);
+		font-weight: 650;
+		cursor: pointer;
+	}
+
+	.address-choice:has(input:checked) {
+		border-color: var(--brand);
+		background: var(--brand-soft);
+		color: var(--brand-text);
+	}
+
+	.address-choice input {
+		margin: 0;
+		accent-color: var(--brand);
 	}
 
 	.consent {

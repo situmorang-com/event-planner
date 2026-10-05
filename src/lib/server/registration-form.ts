@@ -6,6 +6,7 @@ import type {
 	RegistrationValues
 } from '../registration-page.ts';
 import { REGISTRATION_TEXT, type RegistrationText } from '../registration-text.ts';
+import { isSalutation, type Salutation } from '../salutation.ts';
 import type { EventRow } from './events.ts';
 import { formatWhen } from './messaging.ts';
 import { cleanText, isValidEmail, normalizeEmail, normalizePhone } from './normalize.ts';
@@ -21,6 +22,8 @@ export interface ReadForm {
 	email: string | null;
 	phone: string | null;
 	note: string;
+	/** Their own answer to "how should we address you?" (D27), or null when they skipped it. */
+	salutation: Salutation | null;
 	consent: boolean;
 	consentFuture: boolean;
 	consentShare: boolean;
@@ -39,7 +42,8 @@ export function readRegistrationForm(
 		jobTitle: cleanText(form.get('jobTitle'), 120),
 		email: cleanText(form.get('email'), 254),
 		phone: cleanText(form.get('phone'), 40),
-		note: cleanText(form.get('note'), 300)
+		note: cleanText(form.get('note'), 300),
+		salutation: cleanText(form.get('salutation'), 10)
 	};
 	const email = normalizeEmail(values.email);
 	const phone = normalizePhone(values.phone, country);
@@ -54,6 +58,7 @@ export function readRegistrationForm(
 		email,
 		phone,
 		note: values.note,
+		salutation: isSalutation(values.salutation) ? values.salutation : null,
 		consent,
 		consentFuture: form.get('consentFuture') === 'on',
 		consentShare: form.get('consentShare') === 'on',

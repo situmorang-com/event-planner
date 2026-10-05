@@ -1,3 +1,4 @@
+import type { Salutation } from '../salutation.ts';
 import { logActivity } from './activity-log.ts';
 import { findCompany, isBlocked } from './companies.ts';
 import type { DB } from './database.ts';
@@ -13,6 +14,7 @@ import {
 } from './event-people.ts';
 import { getEvent, type EventRow } from './events.ts';
 import { recomputePerson } from './next-action.ts';
+import { setSalutation } from './salutation.ts';
 import {
 	createPerson,
 	detailsAgree,
@@ -87,6 +89,8 @@ export interface RegistrationInput extends Consents {
 	email: string | null;
 	phone: string | null;
 	note: string;
+	/** How they asked to be addressed (D27); their answer beats anyone else's. */
+	salutation?: Salutation | null;
 }
 
 export interface GenericInput extends Consents {
@@ -96,6 +100,7 @@ export interface GenericInput extends Consents {
 	email: string | null;
 	phone: string | null;
 	note: string;
+	salutation?: Salutation | null;
 }
 
 const REFUSED: RegistrationResult = { status: 'refused' };
@@ -136,6 +141,7 @@ export function submitRegistration(
 		recordConsents(db, row.id, personId, event, input, now);
 		answer(db, row.id, input.rsvp, 'registration', now);
 		if (input.note) appendNote(db, row.id, input.note, now);
+		if (input.salutation) setSalutation(db, personId, input.salutation, 'self', {}, now);
 		if (twin) flagReview(db, row.id, now);
 		touchLastEvent(db, personId, now);
 		// The person changed (consent, details), so their rows on other events follow too.
@@ -187,6 +193,7 @@ export function registerGeneric(
 		}
 		recordConsents(db, rowId, personId, event, input, now);
 		answer(db, rowId, 'yes', 'registration', now);
+		if (input.salutation) setSalutation(db, personId, input.salutation, 'self', {}, now);
 		touchLastEvent(db, personId, now);
 		recomputePerson(db, personId, now);
 		return { status: 'saved', rowId, personId };
