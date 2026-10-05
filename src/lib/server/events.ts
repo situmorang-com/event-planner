@@ -62,11 +62,14 @@ export function listEvents(db: DB) {
 	return db
 		.prepare(
 			`SELECT e.*, COUNT(c.id) AS checkins, MAX(c.checked_in_at) AS last_checkin_at,
-				(SELECT COUNT(*) FROM event_people ep WHERE ep.event_id = e.id AND ep.stage <> 'found')
+				(SELECT COUNT(*) FROM event_people ep WHERE ep.event_id = e.id AND ep.stage <> 'found'
+					AND ep.skipped_at IS NULL)
 					AS invited,
-				(SELECT COUNT(*) FROM event_people ep WHERE ep.event_id = e.id AND ep.reply = 'yes')
+				(SELECT COUNT(*) FROM event_people ep WHERE ep.event_id = e.id AND ep.reply = 'yes'
+					AND ep.skipped_at IS NULL)
 					AS attending,
-				(SELECT COUNT(*) FROM event_people ep WHERE ep.event_id = e.id AND ep.confirmed_at IS NOT NULL)
+				(SELECT COUNT(*) FROM event_people ep WHERE ep.event_id = e.id AND ep.confirmed_at IS NOT NULL
+					AND ep.skipped_at IS NULL)
 					AS confirmed
 			FROM events e LEFT JOIN checkins c ON c.event_id = e.id
 			GROUP BY e.id
