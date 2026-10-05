@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { KIND_LABEL, nextStep, phaseTrack, type PeopleRow, type RowMessage } from './people';
+import {
+	KIND_LABEL,
+	needsDetails,
+	nextStep,
+	phaseTrack,
+	type PeopleRow,
+	type RowMessage
+} from './people';
 
 type Row = Parameters<typeof phaseTrack>[0] & Parameters<typeof nextStep>[0];
 
@@ -91,25 +98,40 @@ describe('phaseTrack', () => {
 });
 
 describe('nextStep', () => {
-	it('says to send the invitation when a button can open it', () => {
+	it('says to send the invitation on the channels that can open it', () => {
 		expect(
 			nextStep(row({ phone: '+62812', message: message({ whatsapp: 'https://wa.me/1' }) }))
-		).toBe('Send the invitation with the WhatsApp or email button');
+		).toBe('Send the invitation by WhatsApp');
+		expect(
+			nextStep(
+				row({
+					phone: '+62812',
+					email: 'rina@x.id',
+					message: message({ whatsapp: 'https://wa.me/1', email: 'mailto:rina@x.id' })
+				})
+			)
+		).toBe('Send the invitation by WhatsApp or email');
 	});
 
 	it('walks a LinkedIn-only person through connecting before inviting', () => {
 		const li = { linkedin: 'https://www.linkedin.com/in/rina', message: message() };
-		expect(nextStep(row(li))).toMatch(/^Open their LinkedIn and send a connection request/);
-		expect(nextStep(row({ ...li, linkedin_status: 'requested' }))).toMatch(
-			/^Wait for them to accept on LinkedIn/
+		expect(nextStep(row(li))).toBe('Connect with them on LinkedIn, or add a phone or email');
+		expect(nextStep(row({ ...li, linkedin_status: 'requested' }))).toBe(
+			'Wait for them to accept on LinkedIn, then send the invitation there'
 		);
 		expect(nextStep(row({ ...li, linkedin_status: 'connected' }))).toBe(
-			'Copy the message, send it on LinkedIn, then press “Mark invited on LinkedIn”'
+			'Send the invitation on LinkedIn'
 		);
-		// Without a message to copy (research finds before PRIVACY_URL), it still says what to do.
+		// A research find before PRIVACY_URL has no message to send, on LinkedIn either.
 		expect(
-			nextStep(row({ ...li, linkedin_status: 'connected', message: message({ text: null }) }))
-		).toBe('Invite them on LinkedIn, then press “Mark invited on LinkedIn”');
+			nextStep(
+				row({
+					...li,
+					linkedin_status: 'connected',
+					message: message({ text: null, hint: 'Set PRIVACY_URL to message people found…' })
+				})
+			)
+		).toBe('Set PRIVACY_URL, then send the invitation');
 	});
 
 	it('asks for details when there is no way to reach them', () => {
@@ -147,5 +169,17 @@ describe('message names', () => {
 	it('say when each message is for, so the menu does not read as steps', () => {
 		expect(KIND_LABEL.chase).toBe('Chase (no reply yet)');
 		expect(KIND_LABEL.reminder).toBe('Reminder (before the event)');
+	});
+});
+
+describe('needsDetails', () => {
+	it('counts a LinkedIn connection as a way to reach them, but not a profile alone', () => {
+		const li = { linkedin: 'https://www.linkedin.com/in/rina' };
+		expect(needsDetails(row())).toBe(true);
+		expect(needsDetails(row(li))).toBe(true);
+		expect(needsDetails(row({ ...li, linkedin_status: 'requested' }))).toBe(true);
+		expect(needsDetails(row({ ...li, linkedin_status: 'connected' }))).toBe(false);
+		expect(needsDetails(row({ email: 'rina@x.id' }))).toBe(false);
+		expect(needsDetails(row({ stage: 'found' }))).toBe(false);
 	});
 });

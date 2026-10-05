@@ -642,21 +642,28 @@
 					<strong>Confirmed</strong> (registered through their link) → <strong>Checked in</strong>.
 					The track on each row shows where they are, and <strong>Next</strong> says what to do.
 				</dd>
-				<dt>Message</dt>
+				<dt>Answer</dt>
 				<dd>
-					Picks which message the WhatsApp, email and Copy buttons use: the invitation, a chase if
-					they haven't answered, a reminder before the event, or a thank-you or follow-up after they
-					answer. It is not a step. The right one is picked for you; sending it moves them on.
+					Record what they said: <strong>Attending</strong>, <strong>Tentative</strong> or
+					<strong>Declined</strong>. Tap it again to clear it.
+				</dd>
+				<dt>Send</dt>
+				<dd>
+					Pick which message, then the channel: <strong>WhatsApp</strong>,
+					<strong>Email</strong> or <strong>LinkedIn</strong>. The message is the invitation, a
+					chase if they haven't answered, a reminder before the event, or a thank-you or follow-up
+					after they answer; it is not a step, and the right one is picked for you. LinkedIn can't
+					take the text in a link, so its button copies the draft and opens a message to them: paste
+					(⌘V) and press Send. Every send is recorded and moves them on.
 				</dd>
 				<dt>LinkedIn</dt>
 				<dd>
-					Each person's connection with you: <strong>Not connected</strong> →
-					<strong>Request sent</strong> → <strong>Connected</strong>. Opening their LinkedIn from
-					the row records a request as sent; press <strong>mark connected</strong> once they accept
-					(the
-					<strong>LinkedIn request sent</strong> filter lists who to check), and fix it from the ⋯
-					menu any time. <strong>Mark invited on LinkedIn</strong> records that you sent the invitation
-					there.
+					Your connection with them: <strong>Not connected</strong> →
+					<strong>Request sent</strong> → <strong>Connected</strong>. <strong>Connect</strong> opens
+					their profile to send the request and records it; press <strong>They accepted</strong>
+					when they do (the <strong>LinkedIn request sent</strong> filter lists who to check). LinkedIn
+					only lets you message connections, so the LinkedIn send button waits for this. Fix it from the
+					⋯ menu any time.
 				</dd>
 			</dl>
 		</details>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	companyKey,
 	greetingName,
+	linkedinMessageUrl,
 	linkedinProfile,
 	nameFromLinkedin,
 	nameKey
@@ -39,6 +40,18 @@ describe('LinkedIn links', () => {
 		expect(linkedinProfile(' http://linkedin.com/in/rina-wijaya-4a1b2c#about ')).toBe(url);
 		expect(linkedinProfile('https://www.linkedin.com/company/srkk')).toBeNull();
 		expect(linkedinProfile('Rina Wijaya')).toBeNull();
+	});
+
+	it('addresses a new LinkedIn message to the profile owner', () => {
+		const compose = 'https://www.linkedin.com/messaging/compose/?recipient=rina-wijaya-4a1b2c';
+		expect(linkedinMessageUrl('https://www.linkedin.com/in/rina-wijaya-4a1b2c')).toBe(compose);
+		expect(linkedinMessageUrl('https://id.linkedin.com/in/Rina-Wijaya-4a1b2c/?utm=x')).toBe(
+			compose
+		);
+		expect(linkedinMessageUrl('https://www.linkedin.com/in/andr%C3%A9-tan')).toBe(
+			'https://www.linkedin.com/messaging/compose/?recipient=andr%C3%A9-tan'
+		);
+		expect(linkedinMessageUrl('https://www.linkedin.com/company/srkk')).toBeNull();
 	});
 
 	it('reads a name from the link only when the link spells one out', () => {

@@ -183,18 +183,17 @@ export function nextStep(row: NextRow): string | null {
 		return null;
 	switch (row.stage) {
 		case 'shortlisted': {
-			if (row.message?.whatsapp || row.message?.email)
-				return 'Send the invitation with the WhatsApp or email button';
-			if ((row.phone || row.email) && row.message?.hint)
+			const by = [row.message?.whatsapp && 'WhatsApp', row.message?.email && 'email'].filter(
+				Boolean
+			);
+			if (by.length) return `Send the invitation by ${by.join(' or ')}`;
+			if (row.message?.hint && (row.phone || row.email || row.linkedin_status === 'connected'))
 				return 'Set PRIVACY_URL, then send the invitation';
 			if (row.linkedin) {
-				if (row.linkedin_status === 'connected')
-					return row.message?.text
-						? 'Copy the message, send it on LinkedIn, then press “Mark invited on LinkedIn”'
-						: 'Invite them on LinkedIn, then press “Mark invited on LinkedIn”';
+				if (row.linkedin_status === 'connected') return 'Send the invitation on LinkedIn';
 				if (row.linkedin_status === 'requested')
-					return 'Wait for them to accept on LinkedIn, then invite them there';
-				return 'Open their LinkedIn and send a connection request, or add a phone or email';
+					return 'Wait for them to accept on LinkedIn, then send the invitation there';
+				return 'Connect with them on LinkedIn, or add a phone or email';
 			}
 			if (row.phone || row.email) return 'Check their phone or email (Edit), then invite them';
 			return 'Find a phone, email or LinkedIn profile for them (Edit)';
@@ -399,9 +398,15 @@ export function effectiveOwner(row: Pick<PeopleRow, 'owner' | 'company_owner'>):
 	return row.owner ?? row.company_owner ?? null;
 }
 
-/** A live row with no way to reach the person: the organizer still has details to find. */
-export function needsDetails(row: Pick<PeopleRow, 'stage' | 'email' | 'phone'>): boolean {
-	return isLive(row) && !row.email && !row.phone;
+/**
+ * A live row with no way to reach the person: the organizer still has details to find. A
+ * LinkedIn connection is a way (D26); a profile alone is not, until they accept.
+ */
+export function needsDetails(
+	row: Pick<PeopleRow, 'stage' | 'email' | 'phone' | 'linkedin' | 'linkedin_status'>
+): boolean {
+	const linkedin = !!row.linkedin && row.linkedin_status === 'connected';
+	return isLive(row) && !row.email && !row.phone && !linkedin;
 }
 
 export interface Marker {

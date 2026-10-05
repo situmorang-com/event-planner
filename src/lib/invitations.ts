@@ -124,15 +124,30 @@ const LINKEDIN = /(?:^|[/.\s])linkedin\.com\/in\/([^/?#\s]+)/i;
  * "https://id.linkedin.com/in/rina/?utm…"), tidied to one canonical URL; null otherwise.
  */
 export function linkedinProfile(text: string): string | null {
+	const slug = profileSlug(text);
+	return slug ? `https://www.linkedin.com/in/${encodeURIComponent(slug)}` : null;
+}
+
+/** The public name in a profile link ("rina-wijaya-4a1b2c"), lower-cased and decoded. */
+function profileSlug(text: string): string | null {
 	const slug = LINKEDIN.exec(text.trim())?.[1];
 	if (!slug) return null;
-	let decoded: string;
 	try {
-		decoded = decodeURIComponent(slug);
+		return decodeURIComponent(slug).toLowerCase();
 	} catch {
-		decoded = slug;
+		return slug.toLowerCase();
 	}
-	return `https://www.linkedin.com/in/${encodeURIComponent(decoded.toLowerCase())}`;
+}
+
+/**
+ * LinkedIn's new-message page addressed to the profile's owner. LinkedIn takes no message text
+ * in a link, so the row copies the draft first and the organizer pastes it there.
+ */
+export function linkedinMessageUrl(profile: string): string | null {
+	const slug = profileSlug(profile);
+	return slug
+		? `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(slug)}`
+		: null;
 }
 
 /**

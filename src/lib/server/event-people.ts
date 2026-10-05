@@ -793,7 +793,7 @@ function syncLegacyNotice(db: DB, personId: string, now: number) {
 	).run({ id: personId, now });
 }
 
-/** "Mark invited on LinkedIn", or the bulk Mark invited: a touch without a message link. */
+/** "Record invited on LinkedIn" in the row menu, or the bulk Mark invited: a touch without a message link. */
 export function markInvited(
 	db: DB,
 	eventId: string,
@@ -805,7 +805,7 @@ export function markInvited(
 	return addTouch(db, eventId, id, { kind: 'invitation', via, by }, now);
 }
 
-/** The "Mark invited on LinkedIn" toggle going off: only its own touch may be undone. */
+/** Taking a LinkedIn invitation record back: only its own touch may be undone. */
 export function unmarkInvited(db: DB, eventId: string, id: number, via: Via, now = Date.now()) {
 	return db.transaction(() => {
 		const latest = listTouches(db, id).at(-1);

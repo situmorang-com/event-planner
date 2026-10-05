@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { greetingName, REPLY_LABEL } from '$lib/invitations';
+	import { greetingName, linkedinMessageUrl, REPLY_LABEL } from '$lib/invitations';
 	import { initials } from '$lib/names';
 	import {
 		effectiveOwner,
@@ -171,20 +171,27 @@
 	);
 	const owner = $derived(effectiveOwner(row));
 	const marks = $derived(markers(row, (ts) => formatDay(ts, event.timezone)));
-	const viaLinkedin = $derived(row.invited_via === 'linkedin');
 	// Where they are and what comes next (§4.2), for anyone picking up the list.
 	const listed = $derived(!found && !row.skipped_at);
 	const track = $derived(listed ? phaseTrack(row) : []);
 	const step = $derived(listed ? nextStep(row) : null);
 
-	// The LinkedIn connection (D26) belongs to the person, so a Found row (no person yet) has none.
-	// Opening the profile from the row records "request sent"; the page data catches up a moment
-	// later, and until then the row shows what was just recorded.
+	// LinkedIn (D26) is a channel like WhatsApp and email, so it lives with them on the right:
+	// the connection decides whether the Send line's LinkedIn button works. It belongs to the
+	// person, so a Found row (no person yet) has none, and nobody closed to contact gets one.
 	let pendingLinkedin = $state<LinkedinStatus | null>(null);
-	let linkedinNote = $state(false);
-	const connectable = $derived(listed && !!row.person_id && !!row.linkedin);
+	let requestNote = $state(false);
+	const linkedinOpen = $derived(
+		listed &&
+			!!row.person_id &&
+			!!row.linkedin &&
+			!row.locked_at &&
+			!row.suppressed &&
+			!row.blocked_at &&
+			row.contact.reason !== 'not contactable'
+	);
 	// Without a connection to track, the profile is a plain link on the details line.
-	const profileLink = $derived(!!row.linkedin && !connectable);
+	const profileLink = $derived(!!row.linkedin && !linkedinOpen);
 	const linkedinStatus = $derived(pendingLinkedin ?? row.linkedin_status);
 	// "Request sent · 5 Oct": when it went out, so a long wait stands out.
 	const linkedinLabel = $derived(
@@ -192,36 +199,81 @@
 			? `${LINKEDIN_STATUS_LABEL.requested} · ${formatDay(row.linkedin_status_at, event.timezone)}`
 			: LINKEDIN_STATUS_LABEL[linkedinStatus]
 	);
+	// The page data catches up a moment after a change; until then the row shows what was set.
 	$effect(() => {
 		void row.linkedin_status;
 		pendingLinkedin = null;
 	});
 
-	function openedProfile() {
-		if (!connectable || linkedinStatus !== 'none') return;
+	// Connect: their profile opens, where LinkedIn's own Connect button sends the request, and
+	// the row records it as sent, with Undo right there for a look that sent nothing.
+	function connect() {
+		if (!linkedinOpen || !row.linkedin) return;
+		window.open(row.linkedin, '_blank', 'noopener');
 		const data = new FormData();
 		data.set('id', String(row.id));
 		data.set('status', 'requested');
 		data.set('opened', '1');
 		navigator.sendBeacon(`${location.pathname}?/linkedin`, data);
 		pendingLinkedin = 'requested';
-		linkedinNote = true;
+		requestNote = true;
 		ontouch();
 	}
 
-	// The message as text, for the channels the app can't open itself (a LinkedIn message).
+	// Copies synchronously, inside the click, before a new tab takes the focus away: the async
+	// clipboard API refuses a page that has lost focus. Falls back to it where execCommand is gone.
+	function copyNow(text: string): boolean {
+		const area = document.createElement('textarea');
+		area.value = text;
+		area.setAttribute('readonly', '');
+		area.style.position = 'fixed';
+		area.style.opacity = '0';
+		document.body.append(area);
+		area.select();
+		let ok = false;
+		try {
+			ok = document.execCommand('copy');
+		} catch {
+			ok = false;
+		}
+		area.remove();
+		if (!ok) navigator.clipboard?.writeText(text).catch(() => {});
+		return ok;
+	}
+
+	// LinkedIn takes no message text in a link (D26): the draft goes on the clipboard and a new
+	// message to them opens, so it is paste and Send. The tap is recorded like WhatsApp's.
+	let sent = $state<{ kind: MessageKind; copied: boolean } | null>(null);
+	const linkedinReady = $derived(linkedinOpen && linkedinStatus === 'connected' && !!message?.text);
+	function messageOnLinkedin() {
+		if (!linkedinReady || !message?.text || !row.linkedin) return;
+		const sending = kind;
+		const copiedOk = copyNow(message.text);
+		window.open(linkedinMessageUrl(row.linkedin) ?? row.linkedin, '_blank', 'noopener');
+		recordTouch('linkedin');
+		sent = { kind: sending, copied: copiedOk };
+	}
+
+	// The message as text, for any other app; also the way back when the copy above failed.
 	let copiedMessage = $state(false);
 	let copiedMessageTimer: ReturnType<typeof setTimeout> | undefined;
 	async function copyMessage() {
 		if (!message?.text) return;
-		try {
-			await navigator.clipboard.writeText(message.text);
-			copiedMessage = true;
-			clearTimeout(copiedMessageTimer);
-			copiedMessageTimer = setTimeout(() => (copiedMessage = false), 1500);
-		} catch {
-			prompt('Copy the message', message.text);
+		const text = message.text;
+		const ok =
+			copyNow(text) ||
+			(await navigator.clipboard?.writeText(text).then(
+				() => true,
+				() => false
+			));
+		if (!ok) {
+			prompt('Copy the message', text);
+			return;
 		}
+		copiedMessage = true;
+		if (sent) sent = { ...sent, copied: true };
+		clearTimeout(copiedMessageTimer);
+		copiedMessageTimer = setTimeout(() => (copiedMessage = false), 1500);
 	}
 	const fields = $derived<EditValues>(
 		values ?? {
@@ -282,10 +334,10 @@
 		}
 	}
 
-	// The link opens in WhatsApp or mail as usual; the beacon records the touch in parallel
+	// The link opens in WhatsApp, mail or LinkedIn as usual; the beacon records the touch in parallel
 	// so the stage moves without anything waiting on the server (§7, D9). It carries the kind
 	// picked in the menu; the next suggestion starts fresh once the page data returns.
-	function recordTouch(via: 'whatsapp' | 'email') {
+	function recordTouch(via: 'whatsapp' | 'email' | 'linkedin') {
 		const data = new FormData();
 		data.set('id', String(row.id));
 		data.set('via', via);
@@ -376,7 +428,7 @@
 		action="?/linkedin"
 		use:enhance={() => {
 			pendingLinkedin = status;
-			linkedinNote = false;
+			requestNote = false;
 			return async ({ update }) => update({ reset: false });
 		}}
 	>
@@ -384,6 +436,151 @@
 		<input type="hidden" name="status" value={status} />
 		<button class="btn btn-ghost btn-sm connect-btn">{label}</button>
 	</form>
+{/snippet}
+
+{#snippet rowMenu()}
+	<details class="menu" bind:this={menu}>
+		<summary class="btn btn-ghost btn-icon btn-sm" title="More">
+			<Ellipsis size={17} /><span class="sr-only">More for {row.name}</span>
+		</summary>
+		<div class="menu-list">
+			<button
+				type="button"
+				class="menu-item"
+				onclick={() => {
+					closeMenu();
+					editing = true;
+				}}
+			>
+				<Pencil size={15} /> Edit
+			</button>
+			{#if canHaveDue}
+				<button
+					type="button"
+					class="menu-item"
+					onclick={() => {
+						closeMenu();
+						settingDue = true;
+					}}
+				>
+					<CalendarClock size={15} /> Due date…
+				</button>
+			{/if}
+			{#if row.person_id}
+				<button
+					type="button"
+					class="menu-item"
+					onclick={() => {
+						closeMenu();
+						merging = true;
+					}}
+				>
+					<Merge size={15} /> Merge into…
+				</button>
+			{/if}
+			{#if linkedinOpen}
+				<!-- Corrections to the LinkedIn connection, whichever way it went. -->
+				{#each (['none', 'requested', 'connected'] as const).filter((s) => s !== linkedinStatus) as s (s)}
+					<form
+						method="POST"
+						action="?/linkedin"
+						use:enhance={() => {
+							pendingLinkedin = s;
+							requestNote = false;
+							closeMenu();
+							return async ({ update }) => update({ reset: false });
+						}}
+					>
+						<input type="hidden" name="id" value={row.id} />
+						<input type="hidden" name="status" value={s} />
+						<button class="menu-item">
+							<span class="in" aria-hidden="true">in</span>
+							LinkedIn: {LINKEDIN_STATUS_LABEL[s].toLowerCase()}
+						</button>
+					</form>
+				{/each}
+			{/if}
+			{#if listed && row.stage === 'shortlisted'}
+				<!-- An invitation sent on LinkedIn without the Send line (typed there by hand). -->
+				<form method="POST" action="?/invited" use:enhance={() => closeMenu()}>
+					<input type="hidden" name="id" value={row.id} />
+					<input type="hidden" name="on" value="1" />
+					<button class="menu-item">
+						<span class="in" aria-hidden="true">in</span> Record invited on LinkedIn
+					</button>
+				</form>
+			{/if}
+			{#if row.touch_count > 0 && !found}
+				<form
+					method="POST"
+					action="?/untouch"
+					use:enhance={({ cancel }) => {
+						if (!confirm(`Undo the last message recorded for ${row.name}?`)) cancel();
+						closeMenu();
+					}}
+				>
+					<input type="hidden" name="id" value={row.id} />
+					<button class="menu-item"><Undo2 size={15} /> Undo last recorded message</button>
+				</form>
+			{/if}
+			{#if row.needs_review}
+				<form method="POST" action="?/reviewed" use:enhance={() => closeMenu()}>
+					<input type="hidden" name="id" value={row.id} />
+					<button class="menu-item"><Check size={15} /> Reviewed</button>
+				</form>
+			{/if}
+			{#if row.person_id && row.d365_flagged}
+				<form
+					method="POST"
+					action="?/unflag"
+					use:enhance={({ cancel }) => {
+						if (!confirm(`Clear the Dynamics 365 flags on ${row.name}? This is logged.`)) cancel();
+						closeMenu();
+					}}
+				>
+					<input type="hidden" name="id" value={row.id} />
+					<button class="menu-item"><Flag size={15} /> Clear D365 flags</button>
+				</form>
+			{/if}
+			{#if !row.locked_at}
+				<form
+					method="POST"
+					action="?/lock"
+					use:enhance={({ formData, cancel }) => {
+						const reason = prompt(
+							`Don’t contact ${row.name} again. Why? (kept with the entry)`,
+							''
+						);
+						if (reason === null) {
+							cancel();
+							return;
+						}
+						formData.set('reason', reason);
+						closeMenu();
+					}}
+				>
+					<input type="hidden" name="id" value={row.id} />
+					<button class="menu-item"><Ban size={15} /> Don’t contact again…</button>
+				</form>
+			{/if}
+			{#if row.checkin_id}
+				<!-- A check-in is attendance: undoing it belongs to the Check-ins tab, which also keeps this row. -->
+				<p class="menu-note">Checked in: remove the check-in on the Check-ins tab.</p>
+			{:else}
+				<form
+					method="POST"
+					action="?/remove"
+					use:enhance={({ cancel }) => {
+						if (!confirm(`Remove ${row.name} from this event?`)) cancel();
+						closeMenu();
+					}}
+				>
+					<input type="hidden" name="id" value={row.id} />
+					<button class="menu-item danger"><Trash2 size={15} /> Remove</button>
+				</form>
+			{/if}
+		</div>
+	</details>
 {/snippet}
 
 <li
@@ -631,32 +828,6 @@
 					</ol>
 				{/if}
 
-				{#if connectable}
-					<div class="connect">
-						<a
-							class="li-status {linkedinStatus}"
-							href={row.linkedin}
-							target="_blank"
-							rel="noreferrer"
-							title={linkedinStatus === 'none'
-								? `Open ${first}’s LinkedIn to send a connection request; it is recorded as sent`
-								: `Open ${first}’s LinkedIn`}
-							onclick={openedProfile}
-						>
-							<span class="in" aria-hidden="true">in</span>
-							{linkedinLabel}
-							<ExternalLink size={11} />
-						</a>
-						{#if linkedinNote && linkedinStatus === 'requested'}
-							<span class="connect-note">Recorded as request sent.</span>
-							{@render linkedinButton('connected', 'Already connected')}
-							{@render linkedinButton('none', 'I didn’t send one')}
-						{:else if linkedinStatus === 'requested'}
-							{@render linkedinButton('connected', 'They accepted: mark connected')}
-						{/if}
-					</div>
-				{/if}
-
 				{#if step || settingDue || (dueLabel && canHaveDue)}
 					<div class="next">
 						{#if step}<span class="next-text"><strong>Next:</strong> {step}</span>{/if}
@@ -746,319 +917,271 @@
 					</form>
 				{/if}
 			</div>
+			<div class="actions">{@render rowMenu()}</div>
 		{:else}
-			<form
-				class="note-form"
-				method="POST"
-				action="?/note"
-				use:enhance={() =>
-					async ({ update }) =>
-						update({ reset: false })}
-			>
-				<input type="hidden" name="id" value={row.id} />
-				<input
-					class="note"
-					name="note"
-					value={row.note}
-					placeholder="Add a note"
-					aria-label="Note about {row.name}"
-					maxlength="300"
-					autocomplete="off"
-					onkeydown={noteKeys}
-					onblur={saveNote}
-				/>
-			</form>
-
-			<form
-				class="reply-form"
-				method="POST"
-				action="?/reply"
-				use:enhance={({ formData }) => {
-					const settle = onreply(formData.get('reply') as Reply);
-					return async ({ update }) => {
-						await update({ reset: false });
-						settle();
-					};
-				}}
-			>
-				<input type="hidden" name="id" value={row.id} />
-				<div class="reply" role="group" aria-label="Reply from {row.name}">
-					{#each CHOICES as choice (choice.reply)}
-						{@const on = reply === choice.reply}
-						<button
-							class="choice {choice.reply}"
-							name="reply"
-							value={on ? 'pending' : choice.reply}
-							aria-pressed={on}
-							title={on ? 'Click again to clear the reply' : undefined}
+			<!-- Acting on them, top to bottom: their answer, a message on any channel they can be
+			     reached on, and the LinkedIn connection that opens that channel (D26). -->
+			<div class="act">
+				<div class="line answer-line">
+					<span class="line-label">Answer</span>
+					<div class="line-body">
+						<form
+							class="reply-form"
+							method="POST"
+							action="?/reply"
+							use:enhance={({ formData }) => {
+								const settle = onreply(formData.get('reply') as Reply);
+								return async ({ update }) => {
+									await update({ reset: false });
+									settle();
+								};
+							}}
 						>
-							<choice.icon size={16} />
-							<span>{REPLY_LABEL[choice.reply]}</span>
-						</button>
-					{/each}
+							<input type="hidden" name="id" value={row.id} />
+							<div class="reply" role="group" aria-label="Reply from {row.name}">
+								{#each CHOICES as choice (choice.reply)}
+									{@const on = reply === choice.reply}
+									<button
+										class="choice {choice.reply}"
+										name="reply"
+										value={on ? 'pending' : choice.reply}
+										aria-pressed={on}
+										title={on ? 'Click again to clear the reply' : undefined}
+									>
+										<choice.icon size={16} />
+										<span>{REPLY_LABEL[choice.reply]}</span>
+									</button>
+								{/each}
+							</div>
+						</form>
+						<span class="line-end">
+							{#if team.length}
+								<form
+									class="owner-form"
+									method="POST"
+									action="?/owner"
+									use:enhance={() =>
+										async ({ update }) =>
+											update({ reset: false })}
+								>
+									<input type="hidden" name="id" value={row.id} />
+									<label class="owner" title={owner ? `Owner: ${owner}` : 'No owner yet'}>
+										<span class="owner-avatar" class:unset={!owner} aria-hidden="true">
+											{owner ? initials(owner) : '?'}
+										</span>
+										<span class="sr-only">Owner of {row.name}</span>
+										<select
+											class="owner-select"
+											name="owner"
+											value={row.owner ?? ''}
+											onchange={(e) => e.currentTarget.form?.requestSubmit()}
+										>
+											<option value="">
+												{row.company_owner ? `${row.company_owner} (company)` : 'No owner'}
+											</option>
+											{#each team as name (name)}<option value={name}>{name}</option>{/each}
+										</select>
+									</label>
+								</form>
+							{/if}
+							{@render rowMenu()}
+						</span>
+					</div>
 				</div>
-			</form>
-		{/if}
 
-		<div class="actions">
-			{#if !found && team.length}
+				{#if listed && (row.message || row.registration_link)}
+					<div class="line send-line">
+						<span class="line-label">Send</span>
+						<div class="line-body">
+							{#if row.message?.text}
+								<!-- Which message the buttons send (§7); the rules' suggestion is picked already.
+								     It is not a step: sending the message is what moves them along the track. -->
+								<label
+									class="kind"
+									title="Which message the buttons send. Picking one doesn’t move {first} to another step; sending it does."
+								>
+									<span class="sr-only">Message for {row.name}</span>
+									<select
+										class="kind-select"
+										value={kind}
+										onchange={(e) => (chosen = e.currentTarget.value as MessageKind)}
+									>
+										{#each menuKinds(row) as k (k)}
+											<option value={k}
+												>{KIND_LABEL[k]}{k === row.suggested_kind ? ' (suggested)' : ''}</option
+											>
+										{/each}
+									</select>
+								</label>
+							{/if}
+							{#if loading}<span class="hint-text">…</span>{/if}
+							{#if message?.whatsapp}
+								<a
+									class="btn btn-soft btn-sm channel"
+									href={message.whatsapp}
+									target="_blank"
+									rel="noreferrer"
+									title="{purpose} {first} on WhatsApp"
+									onclick={() => recordTouch('whatsapp')}
+								>
+									<MessageCircle size={15} /> WhatsApp
+								</a>
+							{/if}
+							{#if message?.email}
+								<a
+									class="btn btn-soft btn-sm channel"
+									href={message.email}
+									target="_blank"
+									rel="noreferrer"
+									title="{purpose} {first} by email"
+									onclick={() => recordTouch('email')}
+								>
+									<Mail size={15} /> Email
+								</a>
+							{/if}
+							{#if linkedinOpen && message?.text}
+								<button
+									type="button"
+									class="btn btn-soft btn-sm channel"
+									disabled={!linkedinReady}
+									title={linkedinReady
+										? `${purpose} ${first} on LinkedIn: the draft is copied and a message to ${first} opens, so it is paste and Send`
+										: `Connect with ${first} on LinkedIn first: LinkedIn only lets you message your connections`}
+									onclick={messageOnLinkedin}
+								>
+									<span class="in" aria-hidden="true">in</span> LinkedIn
+								</button>
+							{/if}
+							{#if message?.text}
+								<button
+									type="button"
+									class="btn btn-ghost btn-icon btn-sm"
+									class:copied={copiedMessage}
+									title="Copy the message, to paste anywhere else"
+									onclick={copyMessage}
+								>
+									{#if copiedMessage}<Check size={17} />{:else}<Copy size={17} />{/if}
+									<span class="sr-only">Copy the message for {row.name}</span>
+								</button>
+							{:else if message?.hint}
+								<span class="hint-text" title={message.hint}>Messages need PRIVACY_URL</span>
+							{/if}
+							{#if row.registration_link && !row.skipped_at && !row.locked_at}
+								<button
+									type="button"
+									class="btn btn-ghost btn-icon btn-sm copy-link"
+									class:copied
+									title={copied ? 'Copied' : `Copy ${first}’s registration link`}
+									onclick={copyLink}
+								>
+									{#if copied}<Check size={17} />{:else}<Link size={17} />{/if}
+									<span class="sr-only"
+										>{copied ? 'Copied' : `Copy ${first}’s registration link`}</span
+									>
+								</button>
+							{/if}
+						</div>
+					</div>
+					{#if sent}
+						<div class="sent-note" role="status">
+							<span>
+								{#if sent.copied}
+									Draft copied. In LinkedIn, paste it (⌘V or Ctrl+V) and press Send.
+								{:else}
+									The draft couldn’t be copied here:
+									<button type="button" class="link-btn" onclick={copyMessage}>copy it</button>
+									and paste it in LinkedIn.
+								{/if}
+								Recorded as {KIND_LABEL[sent.kind].replace(/ \(.*\)$/, '').toLowerCase()} on LinkedIn.
+							</span>
+							<form
+								method="POST"
+								action="?/untouch"
+								use:enhance={() => {
+									sent = null;
+									return async ({ update }) => update({ reset: false });
+								}}
+							>
+								<input type="hidden" name="id" value={row.id} />
+								<button class="link-btn" title="Not sent after all: take the record back"
+									>Undo</button
+								>
+							</form>
+							<button type="button" class="link-btn" onclick={() => (sent = null)}>OK</button>
+						</div>
+					{/if}
+				{/if}
+
+				{#if linkedinOpen}
+					<div class="line connect-line">
+						<span class="line-label">LinkedIn</span>
+						<div class="line-body">
+							<a
+								class="li-status {linkedinStatus}"
+								href={row.linkedin}
+								target="_blank"
+								rel="noreferrer"
+								title="Open {first}’s LinkedIn profile"
+							>
+								<span class="in" aria-hidden="true">in</span>
+								{linkedinLabel}
+								{#if linkedinStatus === 'connected'}<Check size={13} strokeWidth={3} />{/if}
+							</a>
+							{#if linkedinStatus === 'none'}
+								<button
+									type="button"
+									class="btn btn-soft btn-sm connect-btn"
+									title="Open {first}’s profile to send a connection request there; it is recorded as sent"
+									onclick={connect}
+								>
+									Connect
+								</button>
+								{@render linkedinButton('connected', 'Already connected')}
+							{:else if linkedinStatus === 'requested'}
+								{@render linkedinButton('connected', 'They accepted')}
+								{#if requestNote}
+									<!-- Just recorded by Connect: a look that sent nothing takes it back here. -->
+									<span class="connect-note">Recorded as sent.</span>
+									{@render linkedinButton('none', 'Undo')}
+								{/if}
+							{/if}
+						</div>
+					</div>
+				{/if}
+
 				<form
-					class="owner-form"
+					class="note-form"
 					method="POST"
-					action="?/owner"
+					action="?/note"
 					use:enhance={() =>
 						async ({ update }) =>
 							update({ reset: false })}
 				>
 					<input type="hidden" name="id" value={row.id} />
-					<label class="owner" title={owner ? `Owner: ${owner}` : 'No owner yet'}>
-						<span class="owner-avatar" class:unset={!owner} aria-hidden="true">
-							{owner ? initials(owner) : '?'}
-						</span>
-						<span class="sr-only">Owner of {row.name}</span>
-						<select
-							class="owner-select"
-							name="owner"
-							value={row.owner ?? ''}
-							onchange={(e) => e.currentTarget.form?.requestSubmit()}
-						>
-							<option value="">
-								{row.company_owner ? `${row.company_owner} (company)` : 'No owner'}
-							</option>
-							{#each team as name (name)}<option value={name}>{name}</option>{/each}
-						</select>
-					</label>
+					<input
+						class="note"
+						name="note"
+						value={row.note}
+						placeholder="Add a note"
+						aria-label="Note about {row.name}"
+						maxlength="300"
+						autocomplete="off"
+						onkeydown={noteKeys}
+						onblur={saveNote}
+					/>
 				</form>
-			{/if}
-			{#if !found && !row.skipped_at && row.message?.text}
-				<!-- Which message the buttons open (§7); the rules' suggestion is picked already. It
-				     is not a step: sending the message is what moves them along the track. -->
-				<label
-					class="kind"
-					title="Which message the WhatsApp, email and copy buttons use. Picking one doesn’t move {first} to another step; sending it does."
-				>
-					<span class="kind-label">Message</span>
-					<span class="sr-only">for {row.name}</span>
-					<select
-						class="kind-select"
-						value={kind}
-						onchange={(e) => (chosen = e.currentTarget.value as MessageKind)}
-					>
-						{#each menuKinds(row) as k (k)}
-							<option value={k}
-								>{KIND_LABEL[k]}{k === row.suggested_kind ? ' (suggested)' : ''}</option
-							>
-						{/each}
-					</select>
-				</label>
-			{/if}
-			{#if loading}
-				<span class="hint-text">…</span>
-			{/if}
-			{#if message?.whatsapp}
-				<a
-					class="btn btn-ghost btn-icon btn-sm"
-					href={message.whatsapp}
-					target="_blank"
-					rel="noreferrer"
-					title="{purpose} {first} on WhatsApp"
-					onclick={() => recordTouch('whatsapp')}
-				>
-					<MessageCircle size={17} />
-					<span class="sr-only">{purpose} {first} on WhatsApp</span>
-				</a>
-			{/if}
-			{#if message?.email}
-				<a
-					class="btn btn-ghost btn-icon btn-sm"
-					href={message.email}
-					target="_blank"
-					rel="noreferrer"
-					title="{purpose} {first} by email"
-					onclick={() => recordTouch('email')}
-				>
-					<Mail size={17} />
-					<span class="sr-only">{purpose} {first} by email</span>
-				</a>
-			{/if}
-			{#if message?.text && !message.whatsapp && !message.email}
-				<!-- No phone or email to open: copy the text for LinkedIn or anywhere else. -->
-				<button
-					type="button"
-					class="btn btn-ghost btn-sm copy-message"
-					class:copied={copiedMessage}
-					title="Copy the message to paste into LinkedIn or another app"
-					onclick={copyMessage}
-				>
-					{#if copiedMessage}<Check size={15} /> Copied{:else}<Copy size={15} /> Copy message{/if}
-				</button>
-			{:else if message?.hint && !message.whatsapp && !message.email}
-				<span class="hint-text" title={message.hint}>Messages need PRIVACY_URL</span>
-			{/if}
-			{#if row.registration_link && !row.skipped_at && !row.locked_at}
-				<button
-					type="button"
-					class="btn btn-ghost btn-icon btn-sm copy-link"
-					class:copied
-					title={copied ? 'Copied' : `Copy ${first}’s registration link`}
-					onclick={copyLink}
-				>
-					{#if copied}<Check size={17} />{:else}<Link size={17} />{/if}
-					<span class="sr-only">{copied ? 'Copied' : `Copy ${first}’s registration link`}</span>
-				</button>
-			{/if}
-			{#if !found && row.stage !== 'checked_in' && (row.stage === 'shortlisted' || viaLinkedin)}
-				<form method="POST" action="?/invited" use:enhance>
-					<input type="hidden" name="id" value={row.id} />
-					<input type="hidden" name="on" value={viaLinkedin ? '0' : '1'} />
-					<button
-						class="btn btn-ghost btn-sm linkedin"
-						aria-pressed={viaLinkedin}
-						title={viaLinkedin
-							? 'Recorded as invited on LinkedIn; click to undo'
-							: `Record that you sent ${first} the invitation on LinkedIn`}
-					>
-						<span class="in" aria-hidden="true">in</span>
-						<span class="linkedin-label"
-							>{viaLinkedin ? 'Invited on LinkedIn' : 'Mark invited on LinkedIn'}</span
-						>
-					</button>
-				</form>
-			{/if}
-			<details class="menu" bind:this={menu}>
-				<summary class="btn btn-ghost btn-icon btn-sm" title="More">
-					<Ellipsis size={17} /><span class="sr-only">More for {row.name}</span>
-				</summary>
-				<div class="menu-list">
-					<button
-						type="button"
-						class="menu-item"
-						onclick={() => {
-							closeMenu();
-							editing = true;
-						}}
-					>
-						<Pencil size={15} /> Edit
-					</button>
-					{#if canHaveDue}
-						<button
-							type="button"
-							class="menu-item"
-							onclick={() => {
-								closeMenu();
-								settingDue = true;
-							}}
-						>
-							<CalendarClock size={15} /> Due date…
-						</button>
-					{/if}
-					{#if row.person_id}
-						<button
-							type="button"
-							class="menu-item"
-							onclick={() => {
-								closeMenu();
-								merging = true;
-							}}
-						>
-							<Merge size={15} /> Merge into…
-						</button>
-					{/if}
-					{#if connectable}
-						<!-- Corrections to the LinkedIn connection, whichever way it went. -->
-						{#each (['none', 'requested', 'connected'] as const).filter((s) => s !== linkedinStatus) as s (s)}
-							<form
-								method="POST"
-								action="?/linkedin"
-								use:enhance={() => {
-									pendingLinkedin = s;
-									linkedinNote = false;
-									closeMenu();
-									return async ({ update }) => update({ reset: false });
-								}}
-							>
-								<input type="hidden" name="id" value={row.id} />
-								<input type="hidden" name="status" value={s} />
-								<button class="menu-item">
-									<span class="in" aria-hidden="true">in</span>
-									LinkedIn: {LINKEDIN_STATUS_LABEL[s].toLowerCase()}
-								</button>
-							</form>
-						{/each}
-					{/if}
-					{#if row.needs_review}
-						<form method="POST" action="?/reviewed" use:enhance={() => closeMenu()}>
-							<input type="hidden" name="id" value={row.id} />
-							<button class="menu-item"><Check size={15} /> Reviewed</button>
-						</form>
-					{/if}
-					{#if row.person_id && row.d365_flagged}
-						<form
-							method="POST"
-							action="?/unflag"
-							use:enhance={({ cancel }) => {
-								if (!confirm(`Clear the Dynamics 365 flags on ${row.name}? This is logged.`))
-									cancel();
-								closeMenu();
-							}}
-						>
-							<input type="hidden" name="id" value={row.id} />
-							<button class="menu-item"><Flag size={15} /> Clear D365 flags</button>
-						</form>
-					{/if}
-					{#if !row.locked_at}
-						<form
-							method="POST"
-							action="?/lock"
-							use:enhance={({ formData, cancel }) => {
-								const reason = prompt(
-									`Don’t contact ${row.name} again. Why? (kept with the entry)`,
-									''
-								);
-								if (reason === null) {
-									cancel();
-									return;
-								}
-								formData.set('reason', reason);
-								closeMenu();
-							}}
-						>
-							<input type="hidden" name="id" value={row.id} />
-							<button class="menu-item"><Ban size={15} /> Don’t contact again…</button>
-						</form>
-					{/if}
-					{#if row.checkin_id}
-						<!-- A check-in is attendance: undoing it belongs to the Check-ins tab, which also keeps this row. -->
-						<p class="menu-note">Checked in: remove the check-in on the Check-ins tab.</p>
-					{:else}
-						<form
-							method="POST"
-							action="?/remove"
-							use:enhance={({ cancel }) => {
-								if (!confirm(`Remove ${row.name} from this event?`)) cancel();
-								closeMenu();
-							}}
-						>
-							<input type="hidden" name="id" value={row.id} />
-							<button class="menu-item danger"><Trash2 size={15} /> Remove</button>
-						</form>
-					{/if}
-				</div>
-			</details>
-		</div>
+			</div>
+		{/if}
 	{/if}
 </li>
 
 <style>
-	/* The person gets the full left side, several lines tall; the answer buttons and actions sit
-	   to the right with the note under them, so nothing squeezes the name or the track. */
+	/* The person gets the left side, several lines tall: who, why, where, what next. Acting on
+	   them is the right side, one labelled line per thing to do. */
 	.row {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) fit-content(460px);
-		grid-template-areas:
-			'person reply'
-			'person actions'
-			'person note';
+		grid-template-columns: minmax(0, 1fr) fit-content(570px);
+		grid-template-areas: 'person act';
 		align-items: start;
 		gap: 8px 14px;
 		padding: 12px 16px 12px 20px;
@@ -1267,9 +1390,9 @@
 
 	.step + .step::before {
 		content: '';
-		width: 14px;
+		width: 10px;
 		height: 1.5px;
-		margin: 0 6px;
+		margin: 0 4px;
 		background: var(--border-strong);
 	}
 
@@ -1378,13 +1501,93 @@
 		color: var(--text);
 	}
 
-	/* The LinkedIn connection (D26): a status that is also the link to the profile. */
-	.connect {
+	/* The right side: Answer, Send and LinkedIn, each a label and its controls. */
+	.act {
+		grid-area: act;
+		display: grid;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.line {
+		display: grid;
+		grid-template-columns: 4.6rem minmax(0, 1fr);
+		align-items: center;
+		gap: 10px;
+	}
+
+	.line-label {
+		font-size: 12px;
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+
+	.line-body {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 4px 8px;
+		gap: 4px 6px;
+		min-width: 0;
+	}
+
+	.line-end {
+		display: inline-flex;
+		align-items: center;
+		margin-left: auto;
+	}
+
+	.channel {
+		--h: 32px;
+		gap: 6px;
+		padding: 0 10px;
 		font-size: 13px;
+	}
+
+	.channel:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
+	.channel .in {
+		height: 16px;
+		font-size: 10px;
+	}
+
+	.copied {
+		color: var(--good);
+	}
+
+	/* After a LinkedIn message: the paste step, and the record it made, with a way back. */
+	.sent-note {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 10px;
+		margin-left: calc(4.6rem + 10px);
+		padding: 8px 10px;
+		border-radius: 10px;
+		background: var(--brand-soft);
+		color: var(--brand-text);
+		font-size: 13px;
+		line-height: 1.45;
+	}
+
+	.link-btn {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		font-weight: 700;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+		cursor: pointer;
+	}
+
+	.note-form {
+		margin-left: calc(4.6rem + 10px);
 	}
 
 	.li-status {
@@ -1392,6 +1595,7 @@
 		align-items: center;
 		gap: 6px;
 		height: 26px;
+		font-size: 13px;
 		padding: 0 10px 0 6px;
 		border-radius: 999px;
 		background: var(--surface-2);
@@ -1489,31 +1693,12 @@
 	.kind {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
 		height: 32px;
-		cursor: help;
-	}
-
-	.kind-label {
-		font-size: 12px;
-		font-weight: 650;
-		color: var(--muted);
-	}
-
-	.copy-message {
-		--h: 32px;
-		gap: 6px;
-		padding: 0 9px;
-		font-size: 13px;
-	}
-
-	.copy-message.copied {
-		color: var(--good);
 	}
 
 	.kind-select {
 		height: 32px;
-		max-width: 210px;
+		max-width: 190px;
 		cursor: pointer;
 		padding: 0 6px;
 		border-radius: 999px;
@@ -1529,11 +1714,6 @@
 		grid-area: decide;
 		display: flex;
 		gap: 4px;
-	}
-
-	.note-form {
-		grid-area: note;
-		min-width: 0;
 	}
 
 	.note {
@@ -1567,11 +1747,6 @@
 		border-color: var(--brand);
 		box-shadow: var(--ring);
 		color: var(--text);
-	}
-
-	.reply-form {
-		grid-area: reply;
-		justify-self: end;
 	}
 
 	.reply {
@@ -1670,28 +1845,12 @@
 		cursor: pointer;
 	}
 
-	.copy-link.copied {
-		color: var(--good);
-	}
-
 	.hint-text {
 		padding: 0 6px;
 		font-size: 12.5px;
 		color: var(--muted);
 		white-space: nowrap;
 		cursor: help;
-	}
-
-	.linkedin {
-		--h: 32px;
-		gap: 6px;
-		padding: 0 8px;
-		font-size: 13px;
-	}
-
-	.linkedin[aria-pressed='true'] {
-		background: var(--brand-soft);
-		color: var(--brand-text);
 	}
 
 	.in {
@@ -1841,19 +2000,23 @@
 			grid-template-columns: minmax(0, 1fr);
 			grid-template-areas:
 				'person'
-				'reply'
-				'actions'
-				'note';
+				'act';
+			gap: 12px;
 			padding: 14px 16px;
 		}
 
-		.row:not(.found) .actions {
-			justify-content: flex-start;
-			flex-wrap: wrap;
+		.line {
+			grid-template-columns: 4rem minmax(0, 1fr);
 		}
 
-		.reply-form {
-			justify-self: stretch;
+		.sent-note,
+		.note-form {
+			margin-left: 0;
+		}
+
+		/* The answer buttons share the line; the owner and the menu sit after them. */
+		.answer-line .reply-form {
+			flex: 1;
 		}
 
 		.row.found {
@@ -1871,10 +2034,6 @@
 			background: var(--surface-2);
 		}
 
-		.linkedin-label {
-			display: none;
-		}
-
 		/* On a phone the track names only where they are; the dots show the rest. */
 		.step:not(.current) .step-label {
 			display: none;
@@ -1886,7 +2045,7 @@
 		}
 
 		.kind-select {
-			max-width: 120px;
+			max-width: 160px;
 		}
 	}
 

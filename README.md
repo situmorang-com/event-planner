@@ -115,24 +115,30 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   **Next** says in plain words what to do (send the invitation, connect on LinkedIn first, wait
   for an answer, follow up, send the reminder) beside the date the chase rules set. **How this
   list works** above the list explains the steps, the message menu and LinkedIn.
-- **Replies and messages.** Tap _Attending_, _Tentative_ or _Declined_; tap it again to clear
-  it. Notes save when you leave the field. **Message** picks which message the buttons use:
-  _Invitation_, _Chase (no reply yet)_, _Reminder (before the event)_, or the thank-you or
-  follow-up that fits the answer. It is not a step; the right one is picked for you. The
-  WhatsApp button (for numbers in international format) and the email button open it; for
-  someone with neither, **Copy message** puts the text on the clipboard for LinkedIn. Nothing is
-  sent until you press send, but the tap is recorded: the row moves to **Invited** and later
-  taps show as _chased ×N_. **Mark invited on LinkedIn** records an invitation sent there.
+- **Acting on a person.** The right side of a row has three labelled lines. **Answer**:
+  _Attending_, _Tentative_ or _Declined_ (tap again to clear), with the owner and the ⋯ menu.
+  **Send**: which message (_Invitation_, _Chase (no reply yet)_, _Reminder (before the event)_,
+  or the thank-you or follow-up that fits the answer; it is not a step, and the right one is
+  picked for you), then the channel: **WhatsApp** (numbers in international format), **Email**
+  or **LinkedIn**, plus copy-the-text and copy-the-registration-link. LinkedIn takes no message
+  text in a link, so its button copies the draft and opens a new LinkedIn message to the person
+  (`linkedin.com/messaging/compose/?recipient=<their profile name>`): paste and press Send.
+  Nothing is sent by the app, but every tap is recorded: the row moves to **Invited**, later
+  taps show as _chased ×N_, and a note under the line offers **Undo**. Notes save when you
+  leave the field.
   Buttons stay hidden for people who may not be
   contacted (locked, suppressed by a D365 flag, or past Malaysian attendees who never agreed to
   hear about future events).
-- **LinkedIn connection.** A listed person with a profile shows their connection with you:
-  **Not connected → Request sent → Connected**. Opening their LinkedIn from that status records
-  the request as sent (once; it never undoes a connection), with _Already connected_ and _I
-  didn't send one_ right there to correct it; **They accepted: mark connected** finishes it. The
-  **LinkedIn request sent** filter lists everyone still waiting, so you can check who accepted,
-  and the row menu sets any status by hand. The status belongs to the person, so it carries to
-  every event they are on.
+- **LinkedIn connection.** The third line, **LinkedIn**, is your connection with the person:
+  **Not connected → Request sent → Connected**. It sits with the channels rather than with the
+  person's details because it decides whether the LinkedIn send button works (LinkedIn only lets
+  you message connections). **Connect** opens their profile to send the request there and
+  records it (with **Undo** for a look that sent nothing); **Already connected** and **They
+  accepted** mark it connected. The **LinkedIn request sent** filter lists everyone still
+  waiting, the ⋯ menu sets any status and offers _Record invited on LinkedIn_ for an invitation
+  typed there by hand, and _Undo last recorded message_. The status belongs to the person, so it
+  carries to every event they are on, and a connection counts as a way to reach them (no _Needs
+  details_).
 - **Registration links.** The link button on a row copies that person's registration link to
   paste into WhatsApp, an email or anywhere else (the message buttons already include it). The
   page it opens prefills only their name and company, never an email or mobile: the link
