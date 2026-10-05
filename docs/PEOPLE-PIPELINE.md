@@ -261,12 +261,13 @@ title, company and the research source; the research reason (kept after Add); a 
 (`phaseTrack`: Shortlisted → Invited → Replied, named by the answer → Confirmed → Checked in; a
 no closes the last two, a step passed without happening is struck through); **Next:** in plain
 words (`nextStep`) beside the next-action date (editable = override). Right side (acting on
-them), one panel on `--surface-2`: the answer line (reply buttons, tap again to clear; owner
-avatar; ⋯ menu: Edit, Due date, Merge into…, the LinkedIn statuses, Record invited on LinkedIn,
-Undo last recorded message, Don't contact again…, Remove); the send line (the message menu,
-kinds named by when they are for and not a stage; WhatsApp / Email / LinkedIn buttons, hidden
-when `contactable()` says no or no usable value; copy text; copy registration link; and, after a
-divider, the LinkedIn connection, D26); then the note. Under 1100px the panel goes below the
+them), one panel on `--surface-2`, in the order things happen: the LinkedIn connection line
+(D26, when they have a profile and may be contacted); the send line (the message menu, kinds
+named by when they are for and not a stage; WhatsApp / Email / LinkedIn buttons, hidden when
+`contactable()` says no or no usable value; copy text; copy registration link); the answer line
+(reply buttons, tap again to clear); then the note. The owner avatar and the ⋯ menu (Edit, Due
+date, Merge into…, the LinkedIn statuses, Record invited on LinkedIn, Undo last recorded
+message, Don't contact again…, Remove) end whichever line comes first. Under 1100px the panel goes below the
 person, full width. "Park as Found" exists only on the add/review card, before a person
 exists. A collapsed **How this list works** above the list explains the three lines. The
 **LinkedIn request sent** filter shows people with `linkedin_status = 'requested'`.

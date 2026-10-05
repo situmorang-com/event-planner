@@ -197,6 +197,7 @@
 	const marks = $derived(markers(row, (ts) => formatDay(ts, event.timezone)));
 	// Where they are and what comes next (§4.2), for anyone picking up the list.
 	const listed = $derived(!found && !row.skipped_at);
+	const sendShown = $derived(listed && !!(row.message || row.registration_link));
 	const track = $derived(listed ? phaseTrack(row) : []);
 	const step = $derived(listed ? nextStep(row) : null);
 
@@ -490,6 +491,42 @@
 		<input type="hidden" name="status" value={status} />
 		<button class="btn btn-ghost btn-sm connect-btn">{label}</button>
 	</form>
+{/snippet}
+
+{#snippet panelTail()}
+	<!-- The owner and the row menu, at the end of the panel's first line. -->
+	<span class="line-end">
+		{#if team.length}
+			<form
+				class="owner-form"
+				method="POST"
+				action="?/owner"
+				use:enhance={() =>
+					async ({ update }) =>
+						update({ reset: false })}
+			>
+				<input type="hidden" name="id" value={row.id} />
+				<label class="owner" title={owner ? `Owner: ${owner}` : 'No owner yet'}>
+					<span class="owner-avatar" class:unset={!owner} aria-hidden="true">
+						{owner ? initials(owner) : '?'}
+					</span>
+					<span class="sr-only">Owner of {row.name}</span>
+					<select
+						class="owner-select"
+						name="owner"
+						value={row.owner ?? ''}
+						onchange={(e) => e.currentTarget.form?.requestSubmit()}
+					>
+						<option value="">
+							{row.company_owner ? `${row.company_owner} (company)` : 'No owner'}
+						</option>
+						{#each team as name (name)}<option value={name}>{name}</option>{/each}
+					</select>
+				</label>
+			</form>
+		{/if}
+		{@render rowMenu()}
+	</span>
 {/snippet}
 
 {#snippet rowMenu()}
@@ -1021,233 +1058,202 @@
 			</div>
 			<div class="actions">{@render rowMenu()}</div>
 		{:else}
-			<!-- Acting on them, top to bottom: their answer, a message on any channel they can be
-			     reached on, and the LinkedIn connection that opens that channel (D26). -->
+			<!-- Acting on them, in the order it happens (D26, D27): connect on LinkedIn, send the
+			     invitation on a channel they can be reached on, then record their answer. -->
 			<div class="act">
-				<div class="line answer-line">
-					<span class="sr-only">Answer</span>
-					<div class="line-body">
-						<form
-							class="reply-form"
-							method="POST"
-							action="?/reply"
-							use:enhance={({ formData }) => {
-								const settle = onreply(formData.get('reply') as Reply);
-								return async ({ update }) => {
-									await update({ reset: false });
-									settle();
-								};
-							}}
+				{#if linkedinOpen}
+					<div class="line connect-line">
+						<span class="sr-only">LinkedIn connection</span>
+						<a
+							class="li-status {linkedinStatus}"
+							href={row.linkedin}
+							target="_blank"
+							rel="noreferrer"
+							title="Open {first}’s LinkedIn profile"
 						>
-							<input type="hidden" name="id" value={row.id} />
-							<div class="reply" role="group" aria-label="Reply from {row.name}">
-								{#each CHOICES as choice (choice.reply)}
-									{@const on = reply === choice.reply}
-									<button
-										class="choice {choice.reply}"
-										name="reply"
-										value={on ? 'pending' : choice.reply}
-										aria-pressed={on}
-										title={on ? 'Click again to clear the reply' : undefined}
-									>
-										<choice.icon size={16} />
-										<span>{REPLY_LABEL[choice.reply]}</span>
-									</button>
-								{/each}
-							</div>
-						</form>
-						<span class="line-end">
-							{#if team.length}
-								<form
-									class="owner-form"
-									method="POST"
-									action="?/owner"
-									use:enhance={() =>
-										async ({ update }) =>
-											update({ reset: false })}
-								>
-									<input type="hidden" name="id" value={row.id} />
-									<label class="owner" title={owner ? `Owner: ${owner}` : 'No owner yet'}>
-										<span class="owner-avatar" class:unset={!owner} aria-hidden="true">
-											{owner ? initials(owner) : '?'}
-										</span>
-										<span class="sr-only">Owner of {row.name}</span>
-										<select
-											class="owner-select"
-											name="owner"
-											value={row.owner ?? ''}
-											onchange={(e) => e.currentTarget.form?.requestSubmit()}
-										>
-											<option value="">
-												{row.company_owner ? `${row.company_owner} (company)` : 'No owner'}
-											</option>
-											{#each team as name (name)}<option value={name}>{name}</option>{/each}
-										</select>
-									</label>
-								</form>
+							<span class="in" aria-hidden="true">in</span>
+							{linkedinLabel}
+							{#if linkedinStatus === 'connected'}<Check size={13} strokeWidth={3} />{/if}
+						</a>
+						{#if linkedinStatus === 'none'}
+							<button
+								type="button"
+								class="btn btn-soft btn-sm connect-btn"
+								title="Open {first}’s profile to send a connection request there; it is recorded as sent"
+								onclick={connect}
+							>
+								Connect
+							</button>
+							{@render linkedinButton('connected', 'Already connected')}
+						{:else if linkedinStatus === 'requested'}
+							{@render linkedinButton('connected', 'They accepted')}
+							{#if requestNote}
+								<!-- Just recorded by Connect: a look that sent nothing takes it back here. -->
+								<span class="connect-note">Recorded as sent.</span>
+								{@render linkedinButton('none', 'Undo')}
 							{/if}
-							{@render rowMenu()}
-						</span>
+						{/if}
+						{@render panelTail()}
 					</div>
-				</div>
+				{/if}
 
-				{#if listed && (row.message || row.registration_link || linkedinOpen)}
+				{#if sendShown}
 					<div class="line send-line">
 						<span class="sr-only">Send</span>
-						<div class="line-body">
-							{#if row.message?.text}
-								<!-- Which message the buttons send (§7); the rules' suggestion is picked already.
-								     It is not a step: sending the message is what moves them along the track. -->
-								<label
-									class="kind"
-									title="Which message the buttons send. Picking one doesn’t move {first} to another step; sending it does."
+						{#if row.message?.text}
+							<!-- Which message the buttons send (§7); the rules' suggestion is picked already.
+							     It is not a step: sending the message is what moves them along the track. -->
+							<label
+								class="kind"
+								title="Which message the buttons send. Picking one doesn’t move {first} to another step; sending it does."
+							>
+								<span class="sr-only">Message for {row.name}</span>
+								<select
+									class="kind-select"
+									value={kind}
+									onchange={(e) => (chosen = e.currentTarget.value as MessageKind)}
 								>
-									<span class="sr-only">Message for {row.name}</span>
-									<select
-										class="kind-select"
-										value={kind}
-										onchange={(e) => (chosen = e.currentTarget.value as MessageKind)}
-									>
-										{#each menuKinds(row) as k (k)}
-											<option value={k}
-												>{KIND_LABEL[k]}{k === row.suggested_kind ? ' (suggested)' : ''}</option
-											>
-										{/each}
-									</select>
-								</label>
-							{/if}
-							{#if loading}<span class="hint-text">…</span>{/if}
-							{#if message?.whatsapp}
-								<a
-									class="btn btn-soft btn-sm channel"
-									href={message.whatsapp}
-									target="_blank"
-									rel="noreferrer"
-									title="{purpose} {first} on WhatsApp"
-									onclick={() => recordTouch('whatsapp')}
-								>
-									<MessageCircle size={15} /> WhatsApp
-								</a>
-							{/if}
-							{#if message?.email}
-								<a
-									class="btn btn-soft btn-sm channel"
-									href={message.email}
-									target="_blank"
-									rel="noreferrer"
-									title="{purpose} {first} by email"
-									onclick={() => recordTouch('email')}
-								>
-									<Mail size={15} /> Email
-								</a>
-							{/if}
-							{#if linkedinOpen && message?.text}
-								<button
-									type="button"
-									class="btn btn-soft btn-sm channel"
-									disabled={!linkedinReady}
-									title={linkedinReady
-										? `${purpose} ${first} on LinkedIn: the draft is copied and a message to ${first} opens, so it is paste and Send`
-										: `Connect with ${first} on LinkedIn first: LinkedIn only lets you message your connections`}
-									onclick={messageOnLinkedin}
-								>
-									<span class="in" aria-hidden="true">in</span> LinkedIn
-								</button>
-							{/if}
-							{#if message?.text}
-								<button
-									type="button"
-									class="btn btn-ghost btn-icon btn-sm"
-									class:copied={copiedMessage}
-									title="Copy the message, to paste anywhere else"
-									onclick={copyMessage}
-								>
-									{#if copiedMessage}<Check size={17} />{:else}<Copy size={17} />{/if}
-									<span class="sr-only">Copy the message for {row.name}</span>
-								</button>
-							{:else if message?.hint}
-								<span class="hint-text" title={message.hint}>Messages need PRIVACY_URL</span>
-							{/if}
-							{#if row.registration_link && !row.skipped_at && !row.locked_at}
-								<button
-									type="button"
-									class="btn btn-ghost btn-icon btn-sm copy-link"
-									class:copied
-									title={copied ? 'Copied' : `Copy ${first}’s registration link`}
-									onclick={copyLink}
-								>
-									{#if copied}<Check size={17} />{:else}<Link size={17} />{/if}
-									<span class="sr-only"
-										>{copied ? 'Copied' : `Copy ${first}’s registration link`}</span
-									>
-								</button>
-							{/if}
-							{#if linkedinOpen}
-								<!-- The LinkedIn connection (D26), beside the channel it opens. -->
-								<span class="li-group">
-									<span class="sr-only">LinkedIn connection</span>
-									<a
-										class="li-status {linkedinStatus}"
-										href={row.linkedin}
-										target="_blank"
-										rel="noreferrer"
-										title="Open {first}’s LinkedIn profile"
-									>
-										<span class="in" aria-hidden="true">in</span>
-										{linkedinLabel}
-										{#if linkedinStatus === 'connected'}<Check size={13} strokeWidth={3} />{/if}
-									</a>
-									{#if linkedinStatus === 'none'}
-										<button
-											type="button"
-											class="btn btn-soft btn-sm connect-btn"
-											title="Open {first}’s profile to send a connection request there; it is recorded as sent"
-											onclick={connect}
+									{#each menuKinds(row) as k (k)}
+										<option value={k}
+											>{KIND_LABEL[k]}{k === row.suggested_kind ? ' (suggested)' : ''}</option
 										>
-											Connect
-										</button>
-										{@render linkedinButton('connected', 'Already connected')}
-									{:else if linkedinStatus === 'requested'}
-										{@render linkedinButton('connected', 'They accepted')}
-										{#if requestNote}
-											<!-- Just recorded by Connect: a look that sent nothing takes it back here. -->
-											<span class="connect-note">Recorded as sent.</span>
-											{@render linkedinButton('none', 'Undo')}
-										{/if}
-									{/if}
-								</span>
-							{/if}
-						</div>
+									{/each}
+								</select>
+							</label>
+						{/if}
+						{#if loading}<span class="hint-text">…</span>{/if}
+						{#if message?.whatsapp}
+							<a
+								class="btn btn-soft btn-sm channel"
+								href={message.whatsapp}
+								target="_blank"
+								rel="noreferrer"
+								title="{purpose} {first} on WhatsApp"
+								onclick={() => recordTouch('whatsapp')}
+							>
+								<MessageCircle size={15} /> WhatsApp
+							</a>
+						{/if}
+						{#if message?.email}
+							<a
+								class="btn btn-soft btn-sm channel"
+								href={message.email}
+								target="_blank"
+								rel="noreferrer"
+								title="{purpose} {first} by email"
+								onclick={() => recordTouch('email')}
+							>
+								<Mail size={15} /> Email
+							</a>
+						{/if}
+						{#if linkedinOpen && message?.text}
+							<button
+								type="button"
+								class="btn btn-soft btn-sm channel"
+								disabled={!linkedinReady}
+								title={linkedinReady
+									? `${purpose} ${first} on LinkedIn: the draft is copied and a message to ${first} opens, so it is paste and Send`
+									: `Connect with ${first} on LinkedIn first: LinkedIn only lets you message your connections`}
+								onclick={messageOnLinkedin}
+							>
+								<span class="in" aria-hidden="true">in</span> LinkedIn
+							</button>
+						{/if}
+						{#if message?.text}
+							<button
+								type="button"
+								class="btn btn-ghost btn-icon btn-sm"
+								class:copied={copiedMessage}
+								title="Copy the message, to paste anywhere else"
+								onclick={copyMessage}
+							>
+								{#if copiedMessage}<Check size={17} />{:else}<Copy size={17} />{/if}
+								<span class="sr-only">Copy the message for {row.name}</span>
+							</button>
+						{:else if message?.hint}
+							<span class="hint-text" title={message.hint}>Messages need PRIVACY_URL</span>
+						{/if}
+						{#if row.registration_link && !row.skipped_at && !row.locked_at}
+							<button
+								type="button"
+								class="btn btn-ghost btn-icon btn-sm copy-link"
+								class:copied
+								title={copied ? 'Copied' : `Copy ${first}’s registration link`}
+								onclick={copyLink}
+							>
+								{#if copied}<Check size={17} />{:else}<Link size={17} />{/if}
+								<span class="sr-only"
+									>{copied ? 'Copied' : `Copy ${first}’s registration link`}</span
+								>
+							</button>
+						{/if}
+						{#if !linkedinOpen}{@render panelTail()}{/if}
 					</div>
 					{#if sent}
-						<div class="sent-note" role="status">
-							<span>
-								{#if sent.copied}
-									Draft copied. In LinkedIn, paste it (⌘V or Ctrl+V) and press Send.
-								{:else}
-									The draft couldn’t be copied here:
-									<button type="button" class="link-btn" onclick={copyMessage}>copy it</button>
-									and paste it in LinkedIn.
-								{/if}
-								Recorded as {KIND_LABEL[sent.kind].replace(/ \(.*\)$/, '').toLowerCase()} on LinkedIn.
-							</span>
-							<form
-								method="POST"
-								action="?/untouch"
-								use:enhance={() => {
-									sent = null;
-									return async ({ update }) => update({ reset: false });
-								}}
-							>
-								<input type="hidden" name="id" value={row.id} />
-								<button class="link-btn" title="Not sent after all: take the record back"
-									>Undo</button
+						{#if sent}
+							<div class="sent-note" role="status">
+								<span>
+									{#if sent.copied}
+										Draft copied. In LinkedIn, paste it (⌘V or Ctrl+V) and press Send.
+									{:else}
+										The draft couldn’t be copied here:
+										<button type="button" class="link-btn" onclick={copyMessage}>copy it</button>
+										and paste it in LinkedIn.
+									{/if}
+									Recorded as {KIND_LABEL[sent.kind].replace(/ \(.*\)$/, '').toLowerCase()} on LinkedIn.
+								</span>
+								<form
+									method="POST"
+									action="?/untouch"
+									use:enhance={() => {
+										sent = null;
+										return async ({ update }) => update({ reset: false });
+									}}
 								>
-							</form>
-							<button type="button" class="link-btn" onclick={() => (sent = null)}>OK</button>
-						</div>
+									<input type="hidden" name="id" value={row.id} />
+									<button class="link-btn" title="Not sent after all: take the record back"
+										>Undo</button
+									>
+								</form>
+								<button type="button" class="link-btn" onclick={() => (sent = null)}>OK</button>
+							</div>
+						{/if}
 					{/if}
 				{/if}
+
+				<div class="line answer-line">
+					<span class="sr-only">Answer</span>
+					<form
+						class="reply-form"
+						method="POST"
+						action="?/reply"
+						use:enhance={({ formData }) => {
+							const settle = onreply(formData.get('reply') as Reply);
+							return async ({ update }) => {
+								await update({ reset: false });
+								settle();
+							};
+						}}
+					>
+						<input type="hidden" name="id" value={row.id} />
+						<div class="reply" role="group" aria-label="Reply from {row.name}">
+							{#each CHOICES as choice (choice.reply)}
+								{@const on = reply === choice.reply}
+								<button
+									class="choice {choice.reply}"
+									name="reply"
+									value={on ? 'pending' : choice.reply}
+									aria-pressed={on}
+									title={on ? 'Click again to clear the reply' : undefined}
+								>
+									<choice.icon size={16} />
+									<span>{REPLY_LABEL[choice.reply]}</span>
+								</button>
+							{/each}
+						</div>
+					</form>
+					{#if !linkedinOpen && !sendShown}{@render panelTail()}{/if}
+				</div>
 
 				<form
 					class="note-form"
@@ -1666,20 +1672,6 @@
 		align-items: center;
 		gap: 4px 6px;
 		min-width: 0;
-	}
-
-	.line-body {
-		display: contents;
-	}
-
-	.li-group {
-		display: inline-flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 4px 6px;
-		margin-left: auto;
-		padding-left: 10px;
-		border-left: 1px solid var(--border-strong);
 	}
 
 	.line-end {
@@ -2148,12 +2140,6 @@
 				'act';
 			gap: 12px;
 			padding: 14px 16px;
-		}
-
-		.li-group {
-			margin-left: 0;
-			padding-left: 0;
-			border-left: 0;
 		}
 
 		/* The answer buttons share the line; the owner and the menu sit after them. */
