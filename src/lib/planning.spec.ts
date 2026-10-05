@@ -24,23 +24,28 @@ describe('researchCommand', () => {
 		expect(command).toContain(`up to ${RESEARCH_CAP} companies`);
 		// A failed claude or POST must not echo the prompt as if it were the server's refusal, and
 		// must end the line the error body left open before anything else is printed.
-		expect(command).toContain('|| { brief=; failed=1; echo; break; }');
-		expect(command).toContain('[ -n "$brief" ] && echo "$brief" >&2');
+		expect(command).toContain('|| { brief=; end=failed; echo; break; }');
+		expect(command).toContain('*) [ -n "$brief" ] && echo "$brief" >&2;');
 	});
 
-	it('counts posted batches only and says which batch failed, with a status to match', () => {
-		// Both counters start afresh, so running it twice in one shell cannot inherit a failure.
-		expect(command).toMatch(/^n=0; failed=; while /);
+	it('tells a clean end, a failed batch and an unreachable server apart', () => {
+		// Both start afresh, so running it twice in one shell cannot inherit an ending.
+		expect(command).toMatch(/^n=0; end=; while /);
+		// A GET that fails ends the loop as an error whether or not it carried a message; only an
+		// empty 200/204 body means there is nothing left.
+		expect(command).toContain('|| { end=error; false; }; do');
+		expect(command).toContain('[ -n "$brief" ] || { end=done; break; }');
 		// n moves on after the POST, so a failed batch is never counted as finished.
 		expect(command.indexOf('\n  n=$((n+1))\n')).toBeGreaterThan(command.indexOf('break; }'));
 		expect(command).toContain('"Batch $((n+1)): researching');
+		expect(command).toContain('done) echo "Finished: $n batch(es).";;');
 		expect(command).toContain(
-			'[ -n "$failed" ] && echo "Batch $((n+1)) failed after $n posted; run the command again to resume." >&2'
+			'failed) echo "Batch $((n+1)) failed after $n posted; run the command again to resume." >&2; false;;'
 		);
-		// The last line: "Finished" only after a clean end, and the exit status says the same.
-		expect(command.split('\n').at(-1)).toBe(
-			'[ -z "$brief" ] && [ -z "$failed" ] && echo "Finished: $n batch(es)."'
+		expect(command).toContain(
+			'[ "$n" -gt 0 ] && echo "Stopped after $n posted; run the command again to resume." >&2; false;;'
 		);
+		expect(command.split('\n').at(-1)).toBe('esac');
 	});
 });
 

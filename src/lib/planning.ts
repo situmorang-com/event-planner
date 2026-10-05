@@ -84,16 +84,21 @@ export function researchCommand(base: string, eventId: string): string {
 	const auth = `-H "Authorization: Bearer $${RESEARCH_TOKEN_VAR}"`;
 	const promptUrl = `${base}/api/research/events/${eventId}/prompt`;
 	const postUrl = `${base}/api/research/events/${eventId}/suggestions`;
+	// `end` tells the three endings apart: a 204 (done), a failed claude/POST (failed), and a GET
+	// that failed (a refusal with its message in $brief, or curl's own error with nothing).
 	return [
-		`n=0; failed=; while brief=$(curl -sS --fail-with-body ${auth} "${promptUrl}?batch=$n") && [ -n "$brief" ]; do`,
+		`n=0; end=; while brief=$(curl -sS --fail-with-body ${auth} "${promptUrl}?batch=$n") || { end=error; false; }; do`,
+		`  [ -n "$brief" ] || { end=done; break; }`,
 		`  echo "Batch $((n+1)): researching up to ${RESEARCH_CAP} companies…" >&2`,
 		`  printf '%s' "$brief" \\`,
 		`    | claude -p --tools "WebSearch WebFetch" --allowedTools "WebSearch WebFetch" --output-format json \\`,
-		`    | tee "event-planner-research-${eventId}-$(date +%H%M%S).json" \\`,
-		`    | curl -sS --fail-with-body ${auth} -H "content-type: application/json" --data-binary @- ${postUrl} || { brief=; failed=1; echo; break; }`,
+		`    | tee "event-planner-research-${eventId}-$(date +%H%M)-batch$((n+1)).json" \\`,
+		`    | curl -sS --fail-with-body ${auth} -H "content-type: application/json" --data-binary @- ${postUrl} || { brief=; end=failed; echo; break; }`,
 		`  n=$((n+1))`,
-		`done; [ -n "$brief" ] && echo "$brief" >&2`,
-		`[ -n "$failed" ] && echo "Batch $((n+1)) failed after $n posted; run the command again to resume." >&2`,
-		`[ -z "$brief" ] && [ -z "$failed" ] && echo "Finished: $n batch(es)."`
+		`done; case $end in`,
+		`  done) echo "Finished: $n batch(es).";;`,
+		`  failed) echo "Batch $((n+1)) failed after $n posted; run the command again to resume." >&2; false;;`,
+		`  *) [ -n "$brief" ] && echo "$brief" >&2; [ "$n" -gt 0 ] && echo "Stopped after $n posted; run the command again to resume." >&2; false;;`,
+		`esac`
 	].join('\n');
 }

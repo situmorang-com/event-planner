@@ -472,9 +472,12 @@ deleted; touch and activity logs → with the row/event; do-not-contact → fore
   `claude -p` and posting the answer back before asking for the next batch, with
   `EVENT_PLANNER_TOKEN`; new tokens are `ep_…`, `verifyBearer` accepts `^(ep|hdr)_`. It ends
   with "Finished: n batch(es)." and status 0 only after a 204; a failed `claude -p` or POST
-  prints "Batch n failed after n−1 posted; run the command again to resume." and a refusal its
-  sentence, both with status 1. The page states the run uses the organizer's own Claude Code
-  sign-in, and says how many ticked companies sit out the next run as researched today.
+  prints "Batch n failed after n−1 posted; run the command again to resume.", a refusal its
+  sentence, and a GET that fails without a body (the server unreachable, say) leaves curl's own
+  error plus "Stopped after n posted…" once a batch was posted; all three end with status 1, so
+  an empty body is never mistaken for a clean end. The page states the run uses the organizer's
+  own Claude Code sign-in, and says how many ticked companies sit out the next run as researched
+  today.
 - `PRIVACY_URL` is required for messaging research-origin people: without it their message
   buttons are hidden with a hint, and `docs/DEPLOY.md` lists it.
 
