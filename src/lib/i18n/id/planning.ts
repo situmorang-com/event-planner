@@ -231,7 +231,10 @@ const id: Record<string, string> = {
 	'Research again': 'Riset lagi',
 	'Put it back in the queue for the next run': 'Masukkan lagi ke antrean riset berikutnya',
 	'Every ticked company has been researched. Press Research again on a company, or add new ones, to research more.':
-		'Semua perusahaan yang dicentang sudah diriset. Tekan Riset lagi pada sebuah perusahaan, atau tambahkan perusahaan baru, untuk riset berikutnya.'
+		'Semua perusahaan yang dicentang sudah diriset. Tekan Riset lagi pada sebuah perusahaan, atau tambahkan perusahaan baru, untuk riset berikutnya.',
+	'Added in the last {days} days': 'Ditambahkan {days} hari terakhir',
+	'{n} new': '{n} baru',
+	New: 'Baru'
 };
 
 export default id;

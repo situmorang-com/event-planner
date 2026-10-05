@@ -218,7 +218,20 @@ const id: Record<string, string> = {
 	Password: 'Kata sandi',
 	'Too many attempts. Wait a minute and try again.':
 		'Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.',
-	'That password isn’t right.': 'Kata sandi itu salah.'
+	'That password isn’t right.': 'Kata sandi itu salah.',
+	'Added in the last {days} days': 'Ditambahkan {days} hari terakhir',
+	New: 'Baru',
+	'Added {date}': 'Ditambahkan {date}',
+	'{n} person': '{n} orang',
+	'{n} people': '{n} orang',
+	'{n} company': '{n} perusahaan',
+	'{n} companies': '{n} perusahaan',
+	'{n} of them is still a prospect (no reply yet), so the default list leaves them out.':
+		'{n} di antaranya masih prospek (belum menjawab), jadi tidak tampil di daftar utama.',
+	'{n} of them are still prospects (no reply yet), so the default list leaves them out.':
+		'{n} di antaranya masih prospek (belum menjawab), jadi tidak tampil di daftar utama.',
+	'Show everyone': 'Tampilkan semua',
+	'Show the new ones': 'Tampilkan yang baru'
 };
 
 export default id;

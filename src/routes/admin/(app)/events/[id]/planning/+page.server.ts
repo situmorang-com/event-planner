@@ -43,6 +43,7 @@ import {
 import { planningKeptUntil } from '$lib/server/retention';
 import { chaseDefaults } from '$lib/server/settings';
 import { publicBaseUrl } from '$lib/server/urls';
+import { isNew } from '$lib/recent';
 import type { Actions, PageServerLoad } from './$types';
 
 function requireEvent(id: string) {
@@ -93,6 +94,7 @@ export const load: PageServerLoad = ({ params, url }) => {
 			name: t.name,
 			website: t.website,
 			focus: t.focus,
+			fresh: isNew(t.created_at, now),
 			live: live.get(t.key) ?? 0,
 			waiting: waiting.get(t.key) ?? 0,
 			known: t.known,

@@ -446,10 +446,13 @@ export function listPeople(
 	{
 		q = '',
 		limit = 1000,
-		prospects = false
-	}: { q?: string; limit?: number; prospects?: boolean } = {}
+		prospects = false,
+		createdSince = null
+	}: { q?: string; limit?: number; prospects?: boolean; createdSince?: number | null } = {}
 ): PersonListRow[] {
 	const search = q.trim();
+	// "New" lists everyone added since then, contact or prospect alike, newest first.
+	const recent = createdSince !== null;
 	return db
 		.prepare(
 			`SELECT p.*, COALESCE(co.name, '') AS company, COALESCE(co.key, '') AS company_key,
@@ -463,19 +466,51 @@ export function listPeople(
 			FROM people p
 				LEFT JOIN companies co ON co.id = p.company_id
 				LEFT JOIN checkins c ON c.person_id = p.id
-			WHERE ${DEFAULT_LIST} = @wanted
+			WHERE (@recent = 1 AND p.created_at >= @since OR @recent = 0 AND ${DEFAULT_LIST} = @wanted)
 				AND (@q = '' OR p.name LIKE @like ESCAPE '\\' OR p.email LIKE @like ESCAPE '\\'
 					OR co.name LIKE @like ESCAPE '\\' OR p.phone LIKE @like ESCAPE '\\')
 			GROUP BY p.id
-			ORDER BY COALESCE(MAX(c.checked_in_at), p.last_event_at, p.created_at) DESC
+			ORDER BY CASE WHEN @recent = 1 THEN p.created_at END DESC,
+				COALESCE(MAX(c.checked_in_at), p.last_event_at, p.created_at) DESC
 			LIMIT @limit`
 		)
 		.all({
 			q: search,
 			like: likePattern(search),
 			limit,
-			wanted: prospects ? 0 : 1
+			wanted: prospects ? 0 : 1,
+			recent: recent ? 1 : 0,
+			since: createdSince ?? 0
 		}) as PersonListRow[];
+}
+
+export interface NewSummary {
+	people: number;
+	/** Of those, still prospects (found or typed, no reply yet): not on the default list. */
+	prospects: number;
+	byOrigin: { origin: Origin; n: number }[];
+	companies: number;
+}
+
+/** What came in since `since`, for the summary at the top of Contacts. */
+export function newSummary(db: DB, since: number): NewSummary {
+	const byOrigin = db
+		.prepare(
+			`SELECT origin, COUNT(*) AS n FROM people WHERE created_at >= ?
+			GROUP BY origin ORDER BY n DESC`
+		)
+		.all(since) as { origin: Origin; n: number }[];
+	const prospects = (
+		db
+			.prepare(`SELECT COUNT(*) AS n FROM people p WHERE p.created_at >= ? AND NOT ${DEFAULT_LIST}`)
+			.get(since) as { n: number }
+	).n;
+	const companies = (
+		db.prepare(`SELECT COUNT(*) AS n FROM companies WHERE created_at >= ?`).get(since) as {
+			n: number;
+		}
+	).n;
+	return { people: byOrigin.reduce((a, r) => a + r.n, 0), prospects, byOrigin, companies };
 }
 
 export function countPeople(db: DB, prospects = false): number {

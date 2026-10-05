@@ -14,6 +14,7 @@
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
 	import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
 	import Check from '@lucide/svelte/icons/check';
+	import { NEW_DAYS } from '$lib/recent';
 	import Columns3 from '@lucide/svelte/icons/columns-3';
 	import Copy from '@lucide/svelte/icons/copy';
 	import FileUp from '@lucide/svelte/icons/file-up';
@@ -174,6 +175,9 @@
 		if (e.currentTarget.value.replace(/\s+/g, ' ').trim() !== saved)
 			e.currentTarget.form?.requestSubmit();
 	}
+
+	// Companies added in the last week (src/lib/recent.ts), counted for the section's header.
+	const newTargets = $derived(data.targets.filter((target) => target.fresh).length);
 </script>
 
 <svelte:head>
@@ -346,7 +350,14 @@
 		<div class="step-head">
 			<span class="step-number">2</span>
 			<div>
-				<h2>{t('Target companies')}</h2>
+				<h2>
+					{t('Target companies')}
+					{#if newTargets}
+						<span class="new-pill" title={t('Added in the last {days} days', { days: NEW_DAYS })}
+							>{plural(newTargets, '{n} new', '{n} new')}</span
+						>
+					{/if}
+				</h2>
 				<p class="muted">
 					{plural(
 						brief.perCompany,
@@ -402,6 +413,12 @@
 						{/if}
 						<div class="target-name">
 							<strong>{target.name}</strong>
+							{#if target.fresh}
+								<span
+									class="new-pill"
+									title={t('Added in the last {days} days', { days: NEW_DAYS })}>{t('New')}</span
+								>
+							{/if}
 							{#if target.website}
 								<a
 									class="muted small"

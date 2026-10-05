@@ -12,8 +12,14 @@ import {
 
 export type ContactListRow = PersonListRow;
 
-export function listContacts(db: DB, q = '', limit = 1000, prospects = false): ContactListRow[] {
-	return listPeople(db, { q, limit, prospects });
+export function listContacts(
+	db: DB,
+	q = '',
+	limit = 1000,
+	prospects = false,
+	createdSince: number | null = null
+): ContactListRow[] {
+	return listPeople(db, { q, limit, prospects, createdSince });
 }
 
 export function countContacts(db: DB, prospects = false): number {

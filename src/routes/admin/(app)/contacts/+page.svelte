@@ -5,6 +5,7 @@
 	import { mailtoHref } from '$lib/mailto';
 	import { initials } from '$lib/names';
 	import { ORIGIN_LABEL } from '$lib/people';
+	import { isNew, NEW_DAYS } from '$lib/recent';
 	import { formatDate, timeAgo } from '$lib/time';
 	import Download from '@lucide/svelte/icons/download';
 	import Lock from '@lucide/svelte/icons/lock';
@@ -131,6 +132,45 @@
 	</div>
 </div>
 
+{#if data.recent.people || data.recent.companies}
+	<!-- What came in this week (src/lib/recent.ts), with a way to see exactly who. -->
+	<section class="card recent">
+		<div>
+			<p class="recent-title">
+				<span class="new-pill">{t('New')}</span>
+				{t('Added in the last {days} days', { days: NEW_DAYS })}
+			</p>
+			<p class="recent-figures">
+				<strong>{plural(data.recent.people, '{n} person', '{n} people')}</strong>
+				{#if data.recent.byOrigin.length}
+					<span class="muted"
+						>({data.recent.byOrigin
+							.map((o) => `${o.n.toLocaleString()} ${t(ORIGIN_LABEL[o.origin])}`)
+							.join(' · ')})</span
+					>
+				{/if}
+				· <strong>{plural(data.recent.companies, '{n} company', '{n} companies')}</strong>
+			</p>
+			{#if data.recent.prospects}
+				<p class="muted small">
+					{plural(
+						data.recent.prospects,
+						'{n} of them is still a prospect (no reply yet), so the default list leaves them out.',
+						'{n} of them are still prospects (no reply yet), so the default list leaves them out.'
+					)}
+				</p>
+			{/if}
+		</div>
+		{#if data.recent.people}
+			<a
+				class="btn btn-secondary btn-sm"
+				href={data.fresh ? '/admin/contacts' : '/admin/contacts?new=1'}
+				data-sveltekit-replacestate>{data.fresh ? t('Show everyone') : t('Show the new ones')}</a
+			>
+		{/if}
+	</section>
+{/if}
+
 <section class="card">
 	<form class="tools" method="GET" onsubmit={(e) => e.preventDefault()}>
 		<label class="search">
@@ -154,6 +194,17 @@
 		>
 			{t('Prospects')} <span class="chip-count">{data.prospectTotal.toLocaleString()}</span>
 		</a>
+		{#if data.recent.people}
+			<a
+				class="chip"
+				class:active={data.fresh}
+				href={data.fresh ? '/admin/contacts' : '/admin/contacts?new=1'}
+				data-sveltekit-replacestate
+				title={t('Added in the last {days} days', { days: NEW_DAYS })}
+			>
+				{t('New')} <span class="chip-count">{data.recent.people.toLocaleString()}</span>
+			</a>
+		{/if}
 		{#if data.q}<p class="muted">
 				{plural(data.contacts.length, '{n} match', '{n} matches')}
 			</p>{/if}
@@ -196,6 +247,14 @@
 									<span class="avatar" aria-hidden="true">{initials(c.name)}</span>
 									<span class="person-text">
 										<span class="person-name">{c.name}</span>
+										{#if isNew(c.created_at, data.now)}
+											<span
+												class="new-pill"
+												title={t('Added {date}', {
+													date: formatDate(c.created_at, 'Asia/Jakarta', lang())
+												})}>{t('New')}</span
+											>
+										{/if}
 										{#if c.locked_at}
 											<span class="pill pill-bad tiny" title={c.lock_reason || t('Do not contact')}>
 												<Lock size={11} />
@@ -385,6 +444,28 @@
 </section>
 
 <style>
+	.recent {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px 16px;
+		margin-bottom: 14px;
+		padding: 14px 18px;
+	}
+
+	.recent-title {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0;
+		font-weight: 700;
+	}
+
+	.recent-figures {
+		margin: 4px 0 0;
+	}
+
 	.head {
 		display: flex;
 		align-items: flex-end;
