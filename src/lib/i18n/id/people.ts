@@ -309,7 +309,37 @@ const id: Record<string, string> = {
 	'{which} needs a name.': '{which} perlu nama.',
 	'{which}: check the email.': '{which}: periksa email.',
 	'{which}: that isn’t a LinkedIn profile link (linkedin.com/in/…).':
-		'{which}: itu bukan tautan profil LinkedIn (linkedin.com/in/…).'
+		'{which}: itu bukan tautan profil LinkedIn (linkedin.com/in/…).',
+	'Go through the people research found, one at a time, with the keyboard':
+		'Tinjau orang-orang hasil riset satu per satu, dengan keyboard',
+	'Review {n}': 'Tinjau {n}',
+	'That didn’t work. Try again.': 'Tidak berhasil. Coba lagi.',
+	'Review the people research found': 'Tinjau orang-orang hasil riset',
+	'All reviewed': 'Semua sudah ditinjau',
+	'Review · {n} of {total}': 'Tinjau · {n} dari {total}',
+	'Close (Esc)': 'Tutup (Esc)',
+	'Done for now': 'Selesai untuk saat ini',
+	'{n} added': '{n} ditambahkan',
+	'{n} LinkedIn request recorded': '{n} permintaan LinkedIn dicatat',
+	'{n} LinkedIn requests recorded': '{n} permintaan LinkedIn dicatat',
+	'{n} skipped': '{n} dilewati',
+	'Everyone you added is Shortlisted on the People tab, ready to invite.':
+		'Semua yang Anda tambahkan sudah Masuk daftar di tab Tamu, siap diundang.',
+	'Back to the list': 'Kembali ke daftar',
+	'Source: {site}': 'Sumber: {site}',
+	'LinkedIn profile': 'Profil LinkedIn',
+	'Their company is blocked: they can only be skipped.':
+		'Perusahaannya diblokir: hanya bisa dilewati.',
+	'Dynamics 365 marks them do-not-contact: they can only be skipped.':
+		'Dynamics 365 menandai mereka jangan dihubungi: hanya bisa dilewati.',
+	'Added, LinkedIn request recorded': 'Ditambahkan, permintaan LinkedIn dicatat',
+	Added: 'Ditambahkan',
+	'Add them and open their LinkedIn to send a connection request; it is recorded as sent':
+		'Tambahkan dan buka LinkedIn mereka untuk mengirim permintaan koneksi; dicatat sebagai terkirim',
+	'Add & connect': 'Tambah & hubungkan',
+	'← → move without deciding · L opens LinkedIn · O opens the source':
+		'← → pindah tanpa memutuskan · L buka LinkedIn · O buka sumber',
+	'Undo the last skip': 'Urungkan lewati terakhir'
 };
 
 export default id;

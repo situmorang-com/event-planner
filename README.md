@@ -127,6 +127,12 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   **Skip** hides the row (reversibly). A company header offers **Add all** and **Skip all**.
   Found rows are deleted when the event starts; skipped ones go 90 days later, or sooner with
   **Delete planning data** on the Planning tab.
+- **Review mode.** **Review N** in the header goes through everyone under To review one at a
+  time, company by company: who they are, why research suggested them, the source and their
+  LinkedIn. Keys: **A** add, **S** skip, **C** add and connect (opens their LinkedIn and records
+  the request), **U** undo the last skip, **← →** move without deciding, **L** / **O** open
+  LinkedIn / the source, **Esc** close. It ends with a count of what was added, connected and
+  skipped.
 - **Steps and next.** Every listed person shows a track of five steps, **Shortlisted →
   Invited → Replied → Confirmed → Checked in**, with the current one highlighted; the reply step
   names the answer (_Attending_, _Tentative_, _Declined_), and a no ends there. Under it,

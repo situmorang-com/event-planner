@@ -7,6 +7,7 @@
 	import EventTabs from '$lib/components/EventTabs.svelte';
 	import GuestRow from '$lib/components/GuestRow.svelte';
 	import QuickAdd from '$lib/components/QuickAdd.svelte';
+	import ReviewQueue from '$lib/components/ReviewQueue.svelte';
 	import { connectLive } from '$lib/live';
 	import {
 		CHIP_LABEL,
@@ -36,6 +37,7 @@
 	import Search from '@lucide/svelte/icons/search';
 	import Send from '@lucide/svelte/icons/send';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
+	import ScanEye from '@lucide/svelte/icons/scan-eye';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -46,6 +48,23 @@
 	const view = $derived(data.view);
 	const rows = $derived(view?.rows ?? []);
 	const live = $derived(rows.filter((r) => r.stage !== 'found'));
+
+	// Review mode: the To review rows one at a time, in company order, frozen on opening so the
+	// cards don't shift while deciding; the page reloads its data when it closes.
+	let reviewing = $state<{ queue: PeopleRow[]; listed: Record<string, number> } | null>(null);
+	function startReview() {
+		const queue = (view?.groups ?? []).flatMap((g) =>
+			g.rows.filter((r) => r.stage === 'found' && !r.skipped_at)
+		);
+		const listed: Record<string, number> = {};
+		for (const r of live)
+			if (!r.skipped_at) listed[r.company_key] = (listed[r.company_key] ?? 0) + 1;
+		reviewing = { queue, listed };
+	}
+	async function endReview() {
+		reviewing = null;
+		await invalidateAll();
+	}
 	const ended = $derived(view?.ended ?? false);
 	const today = $derived(view?.today ?? { start: 0, end: 0 });
 
@@ -471,6 +490,16 @@
 					</a>
 				{/if}
 			{/if}
+			{#if counts.review}
+				<button
+					class="btn btn-secondary"
+					onclick={startReview}
+					title={t('Go through the people research found, one at a time, with the keyboard')}
+				>
+					<ScanEye size={17} />
+					{t('Review {n}', { n: counts.review.toLocaleString() })}
+				</button>
+			{/if}
 			<button class="btn btn-primary" onclick={openAdd} aria-expanded={adding}>
 				<UserPlus size={18} />
 				{t('Add people')}
@@ -478,6 +507,10 @@
 		</div>
 	{/if}
 </header>
+
+{#if reviewing}
+	<ReviewQueue queue={reviewing.queue} listed={reviewing.listed} onclose={endReview} />
+{/if}
 
 <EventTabs
 	eventId={event.id}
