@@ -38,6 +38,7 @@
 	import Send from '@lucide/svelte/icons/send';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
 	import ScanEye from '@lucide/svelte/icons/scan-eye';
+	import TableIcon from '@lucide/svelte/icons/table';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -489,6 +490,16 @@
 						{t('Partner list · after')}
 					</a>
 				{/if}
+			{/if}
+			{#if rows.length}
+				<a
+					class="btn btn-secondary"
+					href="/admin/events/{event.id}/people/list"
+					title={t('Everyone on one page with their status, to read down quickly')}
+				>
+					<TableIcon size={17} />
+					{t('List')}
+				</a>
 			{/if}
 			{#if counts.review}
 				<button

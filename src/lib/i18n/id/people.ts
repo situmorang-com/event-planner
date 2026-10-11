@@ -339,7 +339,18 @@ const id: Record<string, string> = {
 	'Add & connect': 'Tambah & hubungkan',
 	'← → move without deciding · L opens LinkedIn · O opens the source':
 		'← → pindah tanpa memutuskan · L buka LinkedIn · O buka sumber',
-	'Undo the last skip': 'Urungkan lewati terakhir'
+	'Undo the last skip': 'Urungkan lewati terakhir',
+	'Everyone on one page with their status, to read down quickly':
+		'Semua orang dalam satu halaman beserta statusnya, untuk dibaca cepat',
+	List: 'Daftar',
+	'People list': 'Daftar tamu',
+	'{n} person shown': '{n} orang ditampilkan',
+	'{n} people shown': '{n} orang ditampilkan',
+	'No one on this event yet.': 'Belum ada orang di acara ini.',
+	Status: 'Status',
+	'Last contact': 'Kontak terakhir',
+	Next: 'Berikutnya',
+	Profile: 'Profil'
 };
 
 export default id;

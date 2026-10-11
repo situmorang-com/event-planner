@@ -127,6 +127,10 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   **Skip** hides the row (reversibly). A company header offers **Add all** and **Skip all**.
   Found rows are deleted when the event starts; skipped ones go 90 days later, or sooner with
   **Delete planning data** on the Planning tab.
+- **List.** **List** in the header opens everyone on the event as one table: name and title,
+  company, status (To review, Shortlisted, Invited, Attending, Tentative, Declined, Confirmed,
+  Checked in), LinkedIn connection, last contact and channel, what's next, owner and note.
+  Filter by status, search, sort by any underlined column, and print it.
 - **Review mode.** **Review N** in the header goes through everyone under To review one at a
   time, company by company: who they are, why research suggested them, the source and their
   LinkedIn. Keys: **A** add, **S** skip, **C** add and connect (opens their LinkedIn and records
