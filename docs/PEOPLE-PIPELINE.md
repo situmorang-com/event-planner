@@ -2,7 +2,7 @@
 
 The build spec for the invitation pipeline that replaces the **Invitations** and **Planning**
 tabs' guest handling. It implements the 25 decisions agreed with the organizer on 2026-10-02
-(listed at the end as D1–D27). Statements about today's code were checked against `main` at
+(listed at the end as D1–D28). Statements about today's code were checked against `main` at
 `0dba76a`. Where the decisions left something undefined, the choice is marked **(builder)**.
 
 ## 1. Purpose and vocabulary
@@ -633,4 +633,7 @@ Mine-due-today · D20 chase rules and in-app due counts · D21 message kinds, la
 D22 bulk actions · D23 settings page and activity log · D24 earlier bindings (no scraping, human
 approval, token API, on-demand research, guided brief) · D25 research ticks, batches of 15,
 researched_at · D26 LinkedIn connection status on the person, step track and plain next step on
-every row · D27 Pak / Bu and the call name on the person, guessed from the name until someone says.
+every row · D27 Pak / Bu and the call name on the person, guessed from the name until someone says
+· D28 LinkedIn sync from LinkedIn's own Connections export (no scraping, D24), read in the browser;
+accepted requests turn Connected and the Events page lists who to message (14 days, not messaged
+since, events to come).

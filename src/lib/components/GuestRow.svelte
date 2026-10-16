@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { copyNow } from '$lib/copy';
 	import { linkedinMessageUrl, REPLY_LABEL } from '$lib/invitations';
 	import { callName, salutationWord, type Salutation } from '$lib/salutation';
 	import { initials } from '$lib/names';
@@ -253,27 +254,6 @@
 		pendingLinkedin = 'requested';
 		requestNote = true;
 		ontouch();
-	}
-
-	// Copies synchronously, inside the click, before a new tab takes the focus away: the async
-	// clipboard API refuses a page that has lost focus. Falls back to it where execCommand is gone.
-	function copyNow(text: string): boolean {
-		const area = document.createElement('textarea');
-		area.value = text;
-		area.setAttribute('readonly', '');
-		area.style.position = 'fixed';
-		area.style.opacity = '0';
-		document.body.append(area);
-		area.select();
-		let ok = false;
-		try {
-			ok = document.execCommand('copy');
-		} catch {
-			ok = false;
-		}
-		area.remove();
-		if (!ok) navigator.clipboard?.writeText(text).catch(() => {});
-		return ok;
 	}
 
 	// LinkedIn takes no message text in a link (D26): the draft goes on the clipboard and a new

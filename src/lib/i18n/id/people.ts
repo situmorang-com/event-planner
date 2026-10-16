@@ -350,7 +350,38 @@ const id: Record<string, string> = {
 	Status: 'Status',
 	'Last contact': 'Kontak terakhir',
 	Next: 'Berikutnya',
-	Profile: 'Profil'
+	Profile: 'Profil',
+	'Just accepted on LinkedIn': 'Baru menerima di LinkedIn',
+	'All messaged. Nice.': 'Semua sudah dikirimi pesan. Mantap.',
+	'Accepted {date}': 'Diterima {date}',
+	'Draft copied: paste and Send': 'Draf tersalin: tempel lalu Kirim',
+	Opened: 'Dibuka',
+	'Copies the draft and opens a LinkedIn message to {name}':
+		'Menyalin draf dan membuka pesan LinkedIn ke {name}',
+	'Message on LinkedIn': 'Kirim pesan di LinkedIn',
+	'Open in People': 'Buka di Tamu',
+	'{n} person to message while it’s fresh': '{n} orang untuk dikirimi pesan selagi baru',
+	'{n} people to message while it’s fresh': '{n} orang untuk dikirimi pesan selagi baru',
+	'That isn’t LinkedIn’s Connections file. Choose the zip LinkedIn sent, or Connections.csv inside it.':
+		'Itu bukan file Connections dari LinkedIn. Pilih zip yang dikirim LinkedIn, atau Connections.csv di dalamnya.',
+	'Sync LinkedIn': 'Sinkronkan LinkedIn',
+	'Sync LinkedIn connections': 'Sinkronkan koneksi LinkedIn',
+	'Who accepted on LinkedIn?': 'Siapa yang menerima di LinkedIn?',
+	'LinkedIn doesn’t let other apps see your connections, so this reads the list LinkedIn gives you. Everyone who accepted turns Connected, and they show here to message.':
+		'LinkedIn tidak mengizinkan aplikasi lain melihat koneksi Anda, jadi ini membaca daftar yang diberikan LinkedIn. Semua yang menerima menjadi Terhubung, dan muncul di sini untuk dikirimi pesan.',
+	'Request the export on LinkedIn': 'Minta ekspor di LinkedIn',
+	'Tick only “Connections”: LinkedIn emails it in about 10 minutes.':
+		'Centang “Connections” saja: LinkedIn mengirimkannya lewat email dalam sekitar 10 menit.',
+	'Syncing…': 'Menyinkronkan…',
+	'Choose the file': 'Pilih file',
+	'The zip from LinkedIn, or Connections.csv. You can drop it here.':
+		'Zip dari LinkedIn, atau Connections.csv. Bisa juga diseret ke sini.',
+	'No new connections among your guests.': 'Tidak ada koneksi baru di antara tamu Anda.',
+	'Last synced {ago}': 'Terakhir disinkronkan {ago}',
+	'{n} new connection': '{n} koneksi baru',
+	'{n} new connections': '{n} koneksi baru',
+	'{n} in the file': '{n} di file',
+	'{n} already connected': '{n} sudah terhubung'
 };
 
 export default id;

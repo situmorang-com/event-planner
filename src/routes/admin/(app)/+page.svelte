@@ -8,6 +8,8 @@
 	import ScanLine from '@lucide/svelte/icons/scan-line';
 	import MailCheck from '@lucide/svelte/icons/mail-check';
 	import CalendarClock from '@lucide/svelte/icons/calendar-clock';
+	import JustAccepted from '$lib/components/JustAccepted.svelte';
+	import LinkedinSync from '$lib/components/LinkedinSync.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -25,8 +27,13 @@
 			{plural(data.checkins, '{n} check-in so far', '{n} check-ins so far')}
 		</p>
 	</div>
-	<a class="btn btn-primary" href="/admin/events/new"><Plus size={18} /> {t('New event')}</a>
+	<div class="head-actions">
+		<LinkedinSync syncedAt={data.linkedinSyncedAt} now={data.now} />
+		<a class="btn btn-primary" href="/admin/events/new"><Plus size={18} /> {t('New event')}</a>
+	</div>
 </div>
+
+<JustAccepted items={data.accepted} />
 
 {#if data.events.length === 0}
 	<section class="empty card rise">
@@ -108,12 +115,19 @@
 
 <style>
 	.head {
+		position: relative;
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
 		gap: 16px;
 		flex-wrap: wrap;
 		margin-bottom: 24px;
+	}
+
+	.head-actions {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
 	}
 
 	h1 {

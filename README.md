@@ -179,6 +179,17 @@ the event no chip is on; once it has ended, Checked in and No-show are.
   typed there by hand, and _Undo last recorded message_. The status belongs to the person, so it
   carries to every event they are on, and a connection counts as a way to reach them (no _Needs
   details_).
+- **Sync LinkedIn.** LinkedIn has no way for another app to see who accepted, so **Sync
+  LinkedIn** on the Events page reads LinkedIn's own export: _Request the export on LinkedIn_
+  opens Settings › Data privacy › Get a copy of your data (tick only **Connections**; LinkedIn
+  emails a zip in about ten minutes), then _Choose the file_ takes that zip or the
+  `Connections.csv` inside it (or drop it on the panel). The file is read in the browser and only
+  names, profile links and dates are sent. Everyone on your lists who is in it turns
+  **Connected**, matched by profile link, or by name for someone you sent a request to who has no
+  link yet. **Just accepted on LinkedIn** at the top of the Events page then lists people who
+  accepted in the last 14 days and haven't been messaged since, on events still to come;
+  **Message on LinkedIn** copies their draft and opens a message to them (paste and Send), and
+  records it on the event like the row's LinkedIn button.
 - **Registration links.** The link button on a row copies that person's registration link to
   paste into WhatsApp, an email or anywhere else (the message buttons already include it). The
   page it opens prefills only their name and company, never an email or mobile: the link
